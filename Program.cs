@@ -1,0 +1,169 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.DataProtection;
+using WorkLens;
+using WorkLens.Components;
+using WorkLens.Data;
+using WorkLens.Domain;
+using WorkLens.Logging;
+using WorkLens.Services;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.UseStaticWebAssets();
+builder.WebHost.UseUrls("http://127.0.0.1:5077");
+
+var configuredConnection = builder.Configuration.GetConnectionString("WorkLens")
+    ?? "%LOCALAPPDATA%\\WorkLens\\data\\worklens.db";
+var configuredDatabasePath = configuredConnection.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase)
+    ? configuredConnection["Data Source=".Length..]
+    : configuredConnection;
+var databasePath = AppPaths.ExpandPath(configuredDatabasePath);
+var backupPath = AppPaths.ExpandPath(
+    builder.Configuration["WorkLens:BackupPath"]
+    ?? "%LOCALAPPDATA%\\WorkLens\\backups");
+var logPath = AppPaths.ExpandPath(
+    builder.Configuration["WorkLens:LogPath"]
+    ?? "%LOCALAPPDATA%\\WorkLens\\logs");
+
+var paths = new AppPaths(databasePath, backupPath, logPath);
+Exception? pathSetupException = null;
+try
+{
+    paths.EnsureDirectories();
+}
+catch (Exception exception) when (
+    exception is IOException or
+    UnauthorizedAccessException or
+    ArgumentException or
+    NotSupportedException)
+{
+    pathSetupException = exception;
+    Console.Error.WriteLine($"WorkLens runtime directory setup failed: {exception.Message}");
+}
+
+var dataProtectionPath = Path.Combine(paths.DataDirectory, "keys");
+try
+{
+    Directory.CreateDirectory(dataProtectionPath);
+}
+catch (Exception exception) when (
+    exception is IOException or
+    UnauthorizedAccessException or
+    ArgumentException or
+    NotSupportedException)
+{
+    pathSetupException ??= exception;
+    Console.Error.WriteLine($"WorkLens data-protection directory setup failed: {exception.Message}");
+}
+
+builder.Logging.ClearProviders();
+builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Error);
+builder.Logging.AddConsole();
+builder.Logging.AddLocalFile(paths.LogDirectory);
+builder.Services.Configure<HostOptions>(options =>
+    options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore);
+
+builder.Services.AddRazorComponents()
+    .AddInteractiveServerComponents();
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
+    .SetApplicationName("WorkLens");
+
+builder.Services.AddSingleton(paths);
+builder.Services.AddDbContextFactory<WorkLensDbContext>(options =>
+    options.UseSqlite($"Data Source={paths.DatabasePath}"));
+builder.Services.AddSingleton<DatabaseInitializer>();
+
+builder.Services.AddSingleton<ProcessRunner>();
+builder.Services.AddSingleton<AskBridgeService>();
+builder.Services.AddSingleton<IAiProviderAdapter>(serviceProvider =>
+    serviceProvider.GetRequiredService<AskBridgeService>());
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new GitSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.WindowsGit));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new GitSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.WslGit));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new CodexSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.WindowsCodex));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new CodexSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.WslCodex));
+builder.Services.AddSingleton<SourceRegistry>();
+builder.Services.AddSingleton<SourceOrchestrator>();
+builder.Services.AddSingleton<ReportInvalidationService>();
+
+builder.Services.AddScoped<WorkLogService>();
+builder.Services.AddScoped<SourceConfigurationService>();
+builder.Services.AddScoped<ActivityQueryService>();
+builder.Services.AddScoped<ReportService>();
+builder.Services.AddScoped<AiConfigurationService>();
+builder.Services.AddScoped<BackupService>();
+
+builder.Services.AddHostedService<SourceCollectionHostedService>();
+builder.Services.AddHostedService<ReportScheduleHostedService>();
+
+var app = builder.Build();
+
+if (pathSetupException is not null)
+{
+    app.Logger.LogCritical(pathSetupException, "WorkLens 本機執行目錄初始化失敗；應用程式將繼續啟動並保留錯誤頁。");
+}
+
+try
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    await scope.ServiceProvider.GetRequiredService<DatabaseInitializer>().InitializeAsync();
+}
+catch (Exception exception)
+{
+    app.Logger.LogCritical(
+        exception,
+        "WorkLens 資料庫初始化失敗；應用程式將繼續啟動，請檢查本機資料目錄與權限。");
+}
+
+app.UseExceptionHandler("/error");
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
+
+app.UseStaticFiles();
+app.UseAntiforgery();
+app.MapStaticAssets();
+
+app.MapGet("/reports/{id:guid}/markdown", async (Guid id, IDbContextFactory<WorkLensDbContext> factory) =>
+{
+    await using var db = await factory.CreateDbContextAsync();
+    var report = await db.Reports.AsNoTracking().SingleOrDefaultAsync(x => x.Id == id);
+    return report is null
+        ? Results.NotFound()
+        : Results.Text(report.Body, "text/markdown; charset=utf-8");
+});
+
+app.MapGet("/reports/{id:guid}/csv", async (Guid id, ReportService reports) =>
+{
+    var csv = await reports.ExportCsvAsync(id);
+    return csv is null
+        ? Results.NotFound()
+        : Results.Text(csv, "text/csv; charset=utf-8");
+});
+
+app.MapRazorComponents<App>()
+    .AddInteractiveServerRenderMode();
+
+try
+{
+    app.Run();
+}
+catch (Exception exception)
+{
+    app.Logger.LogCritical(exception, "WorkLens 主機執行失敗；詳細資訊已寫入本機 log。");
+    Environment.ExitCode = 1;
+}
+
+public partial class Program;

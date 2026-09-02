@@ -1,0 +1,53 @@
+# Build output
+bin/
+obj/
+.vs/
+
+# Local IDE and user state
+*.user
+*.suo
+*.userosscache
+*.rsuser
+.idea/
+
+# WorkLens runtime data: database, reports, backups, and local exports
+data/
+backups/
+reports/
+exports/
+.runtime/
+*.db
+*.db-shm
+*.db-wal
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.bak
+logs/
+*.log
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+secrets/
+*.pfx
+*.p12
+*.pem
+*.key
+*.crt
+appsettings.Local.json
+appsettings.*.Local.json
+appsettings.*.json
+!appsettings.json
+
+# Test and coverage output
+.test-build/
+TestResults/
+coverage/
+*.coverage
+
+# OS files
+.DS_Store
+Thumbs.db

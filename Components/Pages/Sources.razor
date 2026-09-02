@@ -1,0 +1,762 @@
+@page "/sources"
+@inject SourceConfigurationService SourceConfig
+@inject SourceOrchestrator Orchestrator
+@implements IAsyncDisposable
+
+<PageTitle>資料來源｜WorkLens</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">Configurable collectors</p>
+        <h1>資料來源</h1>
+        <p>沒有設定就不會自動蒐集。每個來源可以獨立啟用、停用、排程與決定是否提供給 AI。</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert @(isError ? "alert-danger" : "alert-success")">@message</div>
+}
+
+<nav class="source-workspace-tabs" aria-label="資料來源工作區">
+    <button type="button"
+            class="source-workspace-tab @(activeWorkspace == SourceWorkspace.Overview ? "active" : null)"
+            aria-current="@(activeWorkspace == SourceWorkspace.Overview ? "page" : null)"
+            @onclick="() => SelectWorkspace(SourceWorkspace.Overview)">
+        <span>來源總覽</span>
+        <span class="source-workspace-count">@sources.Count</span>
+    </button>
+    <button type="button"
+            class="source-workspace-tab @(activeWorkspace == SourceWorkspace.Setup ? "active" : null)"
+            aria-current="@(activeWorkspace == SourceWorkspace.Setup ? "page" : null)"
+            @onclick="() => SelectWorkspace(SourceWorkspace.Setup)">
+        @(editingSourceId is null ? "新增來源" : "編輯來源")
+    </button>
+    <button type="button"
+            class="source-workspace-tab @(activeWorkspace == SourceWorkspace.Backfill ? "active" : null)"
+            aria-current="@(activeWorkspace == SourceWorkspace.Backfill ? "page" : null)"
+            @onclick="() => SelectWorkspace(SourceWorkspace.Backfill)">
+        資料回補
+    </button>
+</nav>
+
+@if (activeWorkspace == SourceWorkspace.Setup)
+{
+<div class="panel">
+    <div class="panel-heading">
+        <div>
+            <h2>@(editingSourceId is null ? "新增來源" : "編輯來源")</h2>
+            <p>可收集 Windows／WSL 的 Git 與 Codex 會話；WSL 不存在時不會影響其他功能。啟用後仍需先驗證才會加入排程。</p>
+        </div>
+    </div>
+    <div class="form-grid">
+        <div class="field">
+            <label for="sourceName">來源名稱</label>
+            <input id="sourceName" @bind="newName" placeholder="例如：WorkLens Windows repositories" />
+        </div>
+        <div class="field">
+            <label for="sourceType">來源類型</label>
+            <select id="sourceType" @bind="newType">
+                <option value="WindowsGit">Windows Git</option>
+                <option value="WslGit">WSL Git（可選）</option>
+                <option value="WindowsCodex">Windows Codex</option>
+                <option value="WslCodex">WSL Codex（可選）</option>
+            </select>
+        </div>
+        @if (newType is ActivitySourceType.WslGit or ActivitySourceType.WslCodex)
+        {
+            <div class="field">
+                <label for="distro">WSL Linux 環境</label>
+                <input id="distro" @bind="newDistro" placeholder="例如：Ubuntu" />
+                <span class="hint">只有儲存後按「驗證」時才會偵測 WSL。</span>
+            </div>
+        }
+        <div class="field">
+            <label for="project">Project 映射</label>
+            <select id="project" @bind="projectSelection">
+                <option value="">待分類</option>
+                @foreach (var project in projects)
+                {
+                    <option value="@project.Id">@project.Name</option>
+                }
+            </select>
+        </div>
+        @if (IsGitType(newType))
+        {
+        <div class="field full">
+            <label for="repositories">Repository 路徑</label>
+            <div class="pill-editor">
+                @foreach (var path in repositoryPaths)
+                {
+                    <span class="email-pill">
+                        <span title="@path">@path</span>
+                        <button type="button" class="pill-remove" title="移除 @path" aria-label="移除 @path" @onclick="() => RemoveRepositoryPath(path)">×</button>
+                    </span>
+                }
+                <input id="repositories"
+                       value="@repositoryPathInput"
+                       @oninput="HandleRepositoryPathInput"
+                       @onkeydown="HandleRepositoryPathKeyDown"
+                       @onblur="CommitRepositoryPathInput"
+                       placeholder="輸入路徑後按 Enter" />
+            </div>
+            <span class="hint">一個 repository 一個 pill；可貼上多行路徑，或輸入後按 Enter 加入。</span>
+            <span class="hint">路徑與來源設定儲存在本機資料庫，不會寫入 WorkLens repository。</span>
+        </div>
+        <div class="field full">
+            <label for="authorEmailInput">自己的 Git 作者 email（必填，可多組）</label>
+            <div class="pill-editor">
+                @foreach (var email in authorEmails)
+                {
+                    <span class="email-pill">
+                        <span title="@email">@email</span>
+                        <button type="button"
+                                class="pill-remove"
+                                title="移除 @email"
+                                aria-label="移除 @email"
+                                @onclick="() => RemoveAuthorEmail(email)">×</button>
+                    </span>
+                }
+                <input id="authorEmailInput"
+                       value="@authorEmailInput"
+                       @oninput="HandleAuthorEmailInput"
+                       @onkeydown="HandleAuthorEmailKeyDown"
+                       @onblur="CommitAuthorEmailInput"
+                       placeholder="輸入 email 後按 Enter" />
+            </div>
+            <span class="hint">只會納入作者 email 完全符合這些設定的 commit；按 Enter、逗號或分號加入一組 pill。</span>
+        </div>
+        }
+        @if (IsCodexType(newType))
+        {
+            <div class="field full">
+                <label for="codexHome">Codex 資料目錄（選填）</label>
+                <input id="codexHome" @bind="newCodexHome" placeholder="留空即自動偵測 CODEX_HOME 或 ~/.codex" />
+                <span class="hint">Windows 請填 Windows 路徑；WSL 請填該 Linux 環境內的路徑。</span>
+            </div>
+        }
+        <div class="field">
+            <label for="interval">收集間隔（分鐘）</label>
+            <input id="interval" type="number" min="1" max="1440" @bind="newInterval" />
+        </div>
+        <div class="field">
+            <label for="importDays">首次匯入天數</label>
+            <input id="importDays" type="number" min="1" max="90" @bind="newImportDays" />
+        </div>
+        <div class="form-actions">
+            <label class="inline-checkbox"><input type="checkbox" @bind="newEnabled" /> 儲存後啟用</label>
+            <label class="inline-checkbox"><input type="checkbox" @bind="newIncludeInAi" /> 允許提供給 AI</label>
+            <button class="button button-primary" @onclick="SaveSourceAsync">@(editingSourceId is null ? "新增來源" : "儲存來源設定")</button>
+            @if (editingSourceId is not null)
+            {
+                <button class="button button-secondary" @onclick="CancelEdit">取消編輯</button>
+            }
+        </div>
+    </div>
+</div>
+}
+
+@if (activeWorkspace == SourceWorkspace.Backfill)
+{
+<div class="panel">
+    <div class="panel-heading"><div><h2>回補來源資料</h2><p>指定期間重新收集，不會改變正常排程 checkpoint。單次最多 90 天。</p></div></div>
+    <div class="form-grid">
+        <div class="field"><label>起始日期</label><InputDate @bind-Value="backfillStart" /></div>
+        <div class="field"><label>結束日期</label><InputDate @bind-Value="backfillEnd" /></div>
+        <div class="field full"><label>來源</label><select @bind="backfillSourceId"><option value="">全部可用來源</option>@foreach (var source in sources.Where(source => source.Enabled && source.HealthStatus == SourceHealthStatus.Ready)) { <option value="@source.Id">@source.DisplayName</option> }</select></div>
+        <div class="form-actions"><button class="button button-secondary" @onclick="BackfillAsync" disabled="@isBackfilling">@(isBackfilling ? "回補中…" : "重新收集此範圍")</button></div>
+    </div>
+    @if (isBackfilling)
+    {
+        <div class="collection-progress" aria-live="polite">
+            <div><strong>正在回補來源資料…</strong><span>完成前請保持此頁開啟。</span></div>
+            <div class="collection-progress-track"><span></span></div>
+        </div>
+    }
+</div>
+}
+
+@if (activeWorkspace == SourceWorkspace.Overview)
+{
+<div class="panel">
+    <div class="panel-heading">
+        <div>
+            <h2>來源總覽</h2>
+            <p>停用或封存只停止未來收集，不刪除既有工作歷程。</p>
+        </div>
+        <button type="button" class="button button-primary" @onclick="BeginAdd">新增來源</button>
+    </div>
+    @if (sources.Count == 0)
+    {
+        <div class="empty-state">
+            <h3>目前是純人工模式</h3>
+            <p>這是預設狀態。你可以稍後再新增 Windows Git 或 WSL Git 來源。</p>
+            <button type="button" class="button button-primary" @onclick="BeginAdd">新增第一個來源</button>
+        </div>
+    }
+    else
+    {
+        @foreach (var source in sources)
+        {
+            var sourceIsCollecting = collectingSourceIds.Contains(source.Id) || source.HealthStatus == SourceHealthStatus.Running;
+            var sourceIsValidating = validatingSourceIds.Contains(source.Id);
+            var sourceIsBusy = sourceIsCollecting || sourceIsValidating;
+            <div class="source-card">
+                <div>
+                    <div class="source-title">
+                        <h3>@source.DisplayName</h3>
+                        <span class="badge @StatusClass(sourceIsBusy ? SourceHealthStatus.Running : source.HealthStatus)">@(sourceIsValidating ? "驗證中" : sourceIsCollecting ? "收集中" : StatusText(source.HealthStatus))</span>
+                        @if (source.IncludeInAi)
+                        {
+                            <span class="badge badge-provisional">AI</span>
+                        }
+                    </div>
+                    <div class="source-meta">
+                        類型：@SourceTypeText(source.SourceType) · 間隔：@source.CollectionIntervalMinutes 分鐘
+                        @if (source.LastSuccessAt is not null)
+                        {
+                            <span> · 最近成功：@source.LastSuccessAt.Value.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(source.LastError))
+                        {
+                            <span class="text-danger">@source.LastError</span>
+                        }
+                    </div>
+                </div>
+                <div class="source-actions">
+                    <button class="button button-secondary button-small" @onclick="() => BeginEdit(source)" disabled="@sourceIsBusy">編輯</button>
+                    <button class="button button-secondary button-small" @onclick="() => ValidateAsync(source.Id)" disabled="@sourceIsBusy">@(sourceIsValidating ? "驗證中…" : "驗證")</button>
+                    <button class="button button-secondary button-small" @onclick="() => RunNowAsync(source.Id)" disabled="@(source.HealthStatus != SourceHealthStatus.Ready || sourceIsBusy)">@(sourceIsCollecting ? "收集中…" : "立即收集")</button>
+                    <button class="button button-secondary button-small" @onclick="() => ToggleAsync(source)" disabled="@sourceIsBusy">@(source.Enabled ? "停用" : "啟用")</button>
+                    <details class="source-more-actions">
+                        <summary>更多操作</summary>
+                        <div>
+                            <button class="button button-secondary button-small" @onclick="() => ToggleSourceAiAsync(source)" disabled="@sourceIsBusy">@(source.IncludeInAi ? "停止提供給 AI" : "允許提供給 AI")</button>
+                            @if (resetSourceId == source.Id)
+                            {
+                                <button class="button button-danger button-small" @onclick="() => ConfirmResetAsync(source.Id)" disabled="@sourceIsBusy">確認重設 checkpoint</button>
+                                <button class="button button-secondary button-small" @onclick="CancelReset" disabled="@sourceIsBusy">取消</button>
+                            }
+                            else
+                            {
+                                <button class="button button-secondary button-small" @onclick="() => PrepareReset(source.Id)" disabled="@sourceIsBusy">重設 checkpoint</button>
+                            }
+                            <button class="button button-danger button-small" @onclick="() => ArchiveAsync(source.Id)" disabled="@sourceIsBusy">封存</button>
+                        </div>
+                    </details>
+                </div>
+                @if (sourceIsValidating)
+                {
+                    <OperationProgress Title="正在驗證來源…" Detail="正在檢查執行環境、資料目錄與讀取權限。" />
+                }
+                @if (sourceIsCollecting)
+                {
+                    <div class="collection-progress" aria-live="polite">
+                        <div><strong>正在掃描與匯入來源資料…</strong><span>Codex 首次匯入可能需要較長時間；完成後會顯示新增、更新與未變更筆數。</span></div>
+                        <div class="collection-progress-track"><span></span></div>
+                    </div>
+                }
+                @if (resetSourceId == source.Id)
+                {
+                    <div class="alert alert-warning" style="margin-top: 10px">
+                        重設只會讓下一次收集重新套用首次匯入天數；既有證據、rebase 前 commit 與其他資料都會保留，可能再次掃描較多活動。
+                    </div>
+                }
+            </div>
+        }
+    }
+</div>
+}
+
+@code {
+    private SourceWorkspace activeWorkspace = SourceWorkspace.Overview;
+    private IReadOnlyList<ActivitySource> sources = [];
+    private IReadOnlyList<Project> projects = [];
+    private string newName = string.Empty;
+    private ActivitySourceType newType = ActivitySourceType.WindowsGit;
+    private string newDistro = string.Empty;
+    private string newCodexHome = string.Empty;
+    private List<string> repositoryPaths = [];
+    private string repositoryPathInput = string.Empty;
+    private List<string> authorEmails = [];
+    private string authorEmailInput = string.Empty;
+    private string projectSelection = string.Empty;
+    private int newInterval = 10;
+    private int newImportDays = 7;
+    private bool newEnabled;
+    private bool newIncludeInAi;
+    private Guid? editingSourceId;
+    private Guid? resetSourceId;
+    private DateTime backfillStart = DateTime.Today;
+    private DateTime backfillEnd = DateTime.Today;
+    private string backfillSourceId = string.Empty;
+    private bool isBackfilling;
+    private string message = string.Empty;
+    private bool isError;
+    private readonly HashSet<Guid> collectingSourceIds = [];
+    private readonly HashSet<Guid> validatingSourceIds = [];
+    private readonly CancellationTokenSource refreshCancellation = new();
+    private Task? refreshTask;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        refreshTask = RefreshSourceStatusesAsync(refreshCancellation.Token);
+    }
+
+    private async Task SaveSourceAsync()
+    {
+        ClearMessage();
+        if (IsGitType(newType))
+        {
+            CommitAuthorEmailInput();
+            CommitRepositoryPathInput();
+        }
+        var paths = repositoryPaths
+            .Where(path => path.Length > 0)
+            .Where(x => x.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var configuredAuthorEmails = SourceSettingsSerializer.NormalizeAuthorEmails(authorEmails).ToList();
+        if (string.IsNullOrWhiteSpace(newName))
+        {
+            SetError("來源名稱不可空白。");
+            return;
+        }
+
+        if (IsGitType(newType) && paths.Count == 0)
+        {
+            SetError("Git 來源至少需要一個 repository 路徑。");
+            return;
+        }
+
+        if (IsGitType(newType) && configuredAuthorEmails.Count == 0)
+        {
+            SetError("Git 來源至少需要設定一組自己的作者 email。");
+            return;
+        }
+
+        if (IsGitType(newType) && configuredAuthorEmails.Any(email => !SourceSettingsSerializer.IsValidAuthorEmail(email)))
+        {
+            SetError("請修正作者 email 格式；每組 email 都必須包含單一 @ 且不可含空白。");
+            return;
+        }
+
+        if (newType == ActivitySourceType.WslCodex && string.IsNullOrWhiteSpace(newDistro))
+        {
+            SetError("WSL Codex 來源必須指定 Linux 環境名稱，例如 Ubuntu。");
+            return;
+        }
+
+        var existing = editingSourceId is Guid id
+            ? sources.FirstOrDefault(source => source.Id == id)
+            : null;
+        if (editingSourceId is not null && existing is null)
+        {
+            SetError("找不到要編輯的資料來源，請重新整理後再試。");
+            return;
+        }
+
+        Guid? projectId = Guid.TryParse(projectSelection, out var parsedProject) ? parsedProject : null;
+        var source = new ActivitySource
+        {
+            Id = existing?.Id ?? Guid.NewGuid(),
+            DisplayName = newName,
+            SourceType = newType,
+            Enabled = newEnabled,
+            IsArchived = existing?.IsArchived ?? false,
+            ProjectId = projectId,
+            CollectionIntervalMinutes = newInterval,
+            InitialImportDays = newImportDays,
+            IncludeInAi = newIncludeInAi,
+            CreatedAt = existing?.CreatedAt ?? DateTimeOffset.UtcNow,
+            LastSuccessAt = existing?.LastSuccessAt,
+            LastError = existing?.LastError,
+            CheckpointJson = existing?.CheckpointJson ?? "{}",
+            SettingsJson = IsGitType(newType)
+                ? SourceSettingsSerializer.Serialize(new GitSourceSettings
+                {
+                    RepositoryPaths = paths,
+                    AuthorEmails = configuredAuthorEmails,
+                    Distro = newType == ActivitySourceType.WslGit ? newDistro.Trim() : null
+                })
+                : SourceSettingsSerializer.Serialize(new CodexSourceSettings
+                {
+                    CodexHome = string.IsNullOrWhiteSpace(newCodexHome) ? null : newCodexHome.Trim(),
+                    Distro = newType == ActivitySourceType.WslCodex ? newDistro.Trim() : null
+                })
+        };
+        await SourceConfig.SaveAsync(source);
+        message = existing is null
+            ? "來源已新增。請按「驗證」確認環境與資料路徑。"
+            : "來源設定已更新。請重新按「驗證」確認環境與資料路徑。";
+        ResetForm();
+        await ReloadAsync();
+        activeWorkspace = SourceWorkspace.Overview;
+    }
+
+    private void BeginEdit(ActivitySource source)
+    {
+        editingSourceId = source.Id;
+        newName = source.DisplayName;
+        newType = source.SourceType;
+        if (IsGitType(source.SourceType))
+        {
+            var settings = SourceSettingsSerializer.DeserializeGit(source.SettingsJson);
+            newDistro = settings.Distro ?? string.Empty;
+            newCodexHome = string.Empty;
+            repositoryPaths = settings.RepositoryPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            authorEmails = SourceSettingsSerializer.NormalizeAuthorEmails(settings.AuthorEmails).ToList();
+        }
+        else
+        {
+            var settings = SourceSettingsSerializer.DeserializeCodex(source.SettingsJson);
+            newDistro = settings.Distro ?? string.Empty;
+            newCodexHome = settings.CodexHome ?? string.Empty;
+            repositoryPaths.Clear();
+            authorEmails.Clear();
+        }
+        repositoryPathInput = string.Empty;
+        authorEmailInput = string.Empty;
+        projectSelection = source.ProjectId?.ToString() ?? string.Empty;
+        newInterval = source.CollectionIntervalMinutes;
+        newImportDays = source.InitialImportDays;
+        newEnabled = source.Enabled;
+        newIncludeInAi = source.IncludeInAi;
+        activeWorkspace = SourceWorkspace.Setup;
+        message = $"正在編輯「{source.DisplayName}」。儲存後不會清除既有 checkpoint 或歷程。";
+        isError = false;
+    }
+
+    private void BeginAdd()
+    {
+        ResetForm();
+        ClearMessage();
+        activeWorkspace = SourceWorkspace.Setup;
+    }
+
+    private void SelectWorkspace(SourceWorkspace workspace)
+    {
+        activeWorkspace = workspace;
+    }
+
+    private void CancelEdit()
+    {
+        ResetForm();
+        activeWorkspace = SourceWorkspace.Overview;
+        message = "已取消編輯。";
+        isError = false;
+    }
+
+    private async Task BackfillAsync()
+    {
+        isBackfilling = true;
+        ClearMessage();
+        message = "正在回補來源資料…";
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        try
+        {
+            var available = sources.Where(source => source.Enabled && source.HealthStatus == SourceHealthStatus.Ready).Select(source => source.Id);
+            var ids = Guid.TryParse(backfillSourceId, out var sourceId) ? [sourceId] : available.ToArray();
+            var results = await Orchestrator.CollectRangeAsync(ids, DateOnly.FromDateTime(backfillStart), DateOnly.FromDateTime(backfillEnd));
+            message = $"回補完成：新增 {results.Sum(result => result.AddedCount)}、更新 {results.Sum(result => result.UpdatedCount)}、未變更 {results.Sum(result => result.UnchangedCount)}。";
+            isError = results.Any(result => !result.Succeeded);
+            await ReloadAsync();
+        }
+        catch (ArgumentException exception) { SetError(exception.Message); }
+        finally { isBackfilling = false; }
+    }
+
+    private async Task ValidateAsync(Guid id)
+    {
+        if (!validatingSourceIds.Add(id)) return;
+        ClearMessage();
+        message = "正在驗證來源環境與資料路徑…";
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        try
+        {
+            var result = await Orchestrator.ValidateAsync(id);
+            if (result.IsValid)
+            {
+                message = result.Summary;
+            }
+            else
+            {
+                SetError($"{result.Summary} {string.Join(" ", result.Details)}");
+            }
+        }
+        finally
+        {
+            validatingSourceIds.Remove(id);
+            await ReloadAsync();
+        }
+    }
+
+    private async Task RunNowAsync(Guid id)
+    {
+        if (!collectingSourceIds.Add(id))
+        {
+            return;
+        }
+
+        ClearMessage();
+        var sourceName = sources.FirstOrDefault(source => source.Id == id)?.DisplayName ?? "資料來源";
+        message = $"「{sourceName}」正在掃描與匯入資料…";
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        try
+        {
+            var result = await Orchestrator.CollectAsync(id);
+            if (result.Succeeded)
+            {
+                message = $"收集完成：新增 {result.AddedCount}、更新 {result.UpdatedCount}、未變更 {result.UnchangedCount}。";
+                if (result.Warnings.Count > 0)
+                {
+                    message += $" 另有 {result.Warnings.Count} 個警告。";
+                }
+                isError = false;
+            }
+            else
+            {
+                SetError(result.Error ?? string.Join(" ", result.Warnings));
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or IOException)
+        {
+            SetError(exception.Message);
+        }
+        finally
+        {
+            collectingSourceIds.Remove(id);
+            await ReloadAsync();
+        }
+    }
+
+    private async Task ToggleAsync(ActivitySource source)
+    {
+        await SourceConfig.SetEnabledAsync(source.Id, !source.Enabled);
+        message = source.Enabled ? "來源已停用，既有歷程仍保留。" : "來源已啟用。";
+        await ReloadAsync();
+    }
+
+    private async Task ToggleSourceAiAsync(ActivitySource source)
+    {
+        await SourceConfig.SetIncludeInAiAsync(source.Id, !source.IncludeInAi);
+        message = source.IncludeInAi
+            ? "此來源已停止提供給 AI；既有證據仍保留。"
+            : "此來源已允許提供給 AI，仍會受 Project AI 分享設定限制。";
+        isError = false;
+        await ReloadAsync();
+    }
+
+    private async Task ArchiveAsync(Guid id)
+    {
+        await SourceConfig.ArchiveAsync(id);
+        message = "來源已封存，既有歷程仍保留。";
+        await ReloadAsync();
+    }
+
+    private void PrepareReset(Guid id)
+    {
+        resetSourceId = id;
+        message = "請確認 checkpoint 重設的影響範圍。";
+        isError = false;
+    }
+
+    private void CancelReset() => resetSourceId = null;
+
+    private async Task ConfirmResetAsync(Guid id)
+    {
+        await SourceConfig.ResetCheckpointAsync(id);
+        resetSourceId = null;
+        message = "checkpoint 已重設；下次收集會依首次匯入天數重新掃描，既有歷程保留。";
+        isError = false;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        sources = await SourceConfig.GetSourcesAsync();
+        projects = await SourceConfig.GetProjectsAsync();
+    }
+
+    private async Task RefreshSourceStatusesAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                var refreshedSources = await SourceConfig.GetSourcesAsync(cancellationToken: cancellationToken);
+                await InvokeAsync(() =>
+                {
+                    sources = refreshedSources;
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await refreshCancellation.CancelAsync();
+        if (refreshTask is not null)
+        {
+            try
+            {
+                await refreshTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+        refreshCancellation.Dispose();
+    }
+
+    private void HandleAuthorEmailKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            CommitAuthorEmailInput();
+        }
+    }
+
+    private void HandleRepositoryPathKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            CommitRepositoryPathInput();
+        }
+    }
+
+    private void HandleRepositoryPathInput(ChangeEventArgs args)
+    {
+        repositoryPathInput = args.Value?.ToString() ?? string.Empty;
+        if (repositoryPathInput.Contains('\n') || repositoryPathInput.Contains('\r'))
+        {
+            CommitRepositoryPathInput();
+        }
+    }
+
+    private void CommitRepositoryPathInput()
+    {
+        foreach (var path in repositoryPathInput.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!repositoryPaths.Contains(path, StringComparer.OrdinalIgnoreCase))
+            {
+                repositoryPaths.Add(path);
+            }
+        }
+        repositoryPathInput = string.Empty;
+    }
+
+    private void RemoveRepositoryPath(string path) =>
+        repositoryPaths.RemoveAll(value => string.Equals(value, path, StringComparison.OrdinalIgnoreCase));
+
+    private void HandleAuthorEmailInput(ChangeEventArgs args)
+    {
+        authorEmailInput = args.Value?.ToString() ?? string.Empty;
+        if (authorEmailInput.IndexOfAny([',', ';', '\r', '\n']) >= 0)
+        {
+            CommitAuthorEmailInput();
+        }
+    }
+
+    private void CommitAuthorEmailInput()
+    {
+        var pending = authorEmailInput;
+        if (string.IsNullOrWhiteSpace(pending))
+        {
+            authorEmailInput = string.Empty;
+            return;
+        }
+
+        foreach (var email in pending.Split(["\r\n", "\n", ",", ";"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!authorEmails.Contains(email, StringComparer.OrdinalIgnoreCase))
+            {
+                authorEmails.Add(email);
+            }
+        }
+
+        authorEmailInput = string.Empty;
+    }
+
+    private void RemoveAuthorEmail(string email) =>
+        authorEmails.RemoveAll(value => string.Equals(value, email, StringComparison.OrdinalIgnoreCase));
+
+    private void ResetForm()
+    {
+        newName = string.Empty;
+        newType = ActivitySourceType.WindowsGit;
+        newDistro = string.Empty;
+        newCodexHome = string.Empty;
+        repositoryPaths.Clear();
+        repositoryPathInput = string.Empty;
+        authorEmails.Clear();
+        authorEmailInput = string.Empty;
+        projectSelection = string.Empty;
+        newInterval = 10;
+        newImportDays = 7;
+        newEnabled = false;
+        newIncludeInAi = false;
+        editingSourceId = null;
+    }
+
+    private void ClearMessage()
+    {
+        message = string.Empty;
+        isError = false;
+    }
+
+    private void SetError(string value)
+    {
+        message = value;
+        isError = true;
+    }
+
+    private static bool IsGitType(ActivitySourceType type) =>
+        type is ActivitySourceType.WindowsGit or ActivitySourceType.WslGit;
+
+    private static bool IsCodexType(ActivitySourceType type) =>
+        type is ActivitySourceType.WindowsCodex or ActivitySourceType.WslCodex;
+
+    private static string SourceTypeText(ActivitySourceType type) => type switch
+    {
+        ActivitySourceType.WindowsGit => "Windows Git",
+        ActivitySourceType.WslGit => "WSL Git",
+        ActivitySourceType.WindowsCodex => "Windows Codex",
+        ActivitySourceType.WslCodex => "WSL Codex",
+        _ => type.ToString()
+    };
+
+    private enum SourceWorkspace
+    {
+        Overview,
+        Setup,
+        Backfill
+    }
+
+    private static string StatusText(SourceHealthStatus status) => status switch
+    {
+        SourceHealthStatus.Ready => "可用",
+        SourceHealthStatus.Running => "收集中",
+        SourceHealthStatus.Unavailable => "不可用",
+        SourceHealthStatus.Error => "錯誤",
+        _ => "已停用"
+    };
+
+    private static string StatusClass(SourceHealthStatus status) => status switch
+    {
+        SourceHealthStatus.Ready => "badge-ready",
+        SourceHealthStatus.Running => "badge-running",
+        SourceHealthStatus.Unavailable => "badge-unavailable",
+        SourceHealthStatus.Error => "badge-error",
+        _ => "badge-disabled"
+    };
+}

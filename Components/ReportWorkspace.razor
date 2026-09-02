@@ -1,0 +1,242 @@
+@inject ReportService ReportService
+@inject ILogger<ReportWorkspace> Logger
+@inject IJSRuntime JS
+
+@if (isGeneratingAi)
+{
+    <OperationProgress Title="AI 正在整理摘要" Detail="通常會在 90 秒內完成；逾時或取消時會保留原內容。" Overlay="true">
+        <Actions><button class="button button-secondary" type="button" @onclick="CancelAiGeneration">取消整理</button></Actions>
+    </OperationProgress>
+}
+
+<section class="panel report-workspace" aria-label="工作摘要編輯區">
+    <div class="panel-heading">
+        <div>
+            <p class="eyebrow">@KindText 摘要</p>
+            <h2>@PeriodTitle</h2>
+            <p>@StatusText</p>
+        </div>
+        <span class="@StatusClass">@StatusShort</span>
+    </div>
+
+    <p class="report-scope-note">摘要涵蓋完整@(Kind == ReportKind.Daily ? "日期" : "週期")，不受左側歷程篩選影響。</p>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="alert @(isError ? "alert-danger" : "alert-success")">@message</div>
+    }
+
+    <div class="button-row report-primary-actions">
+        <button class="button button-primary" type="button" @onclick="PrepareGenerateAsync" disabled="@IsBusy">@(isGeneratingReport ? "產生中…" : report is null ? "產生摘要" : "重產摘要")</button>
+        @if (report is not null)
+        {
+            <button class="button button-secondary button-small" type="button" @onclick="CopyReportAsync" disabled="@(string.IsNullOrEmpty(report.Body) || IsBusy)">複製內容</button>
+            <a class="button button-secondary button-small" href="/reports/@report.Id/markdown" target="_blank">Markdown</a>
+            <a class="button button-secondary button-small" href="/reports/@report.Id/csv" target="_blank">CSV</a>
+        }
+    </div>
+
+    @if (confirmOverwrite)
+    {
+        <div class="alert alert-warning report-confirmation">重產會覆蓋這份摘要目前的文字。<div class="button-row"><button class="button button-danger button-small" @onclick="GenerateAsync" disabled="@isGeneratingReport">確認覆蓋</button><button class="button button-secondary button-small" @onclick="() => confirmOverwrite = false" disabled="@isGeneratingReport">取消</button></div></div>
+    }
+    @if (isGeneratingReport)
+    {
+        <OperationProgress Title="正在產生摘要…" Detail="正在彙整人工紀錄與來源活動，完成後會開啟最新內容。" />
+    }
+
+    @if (report is null && !isGeneratingReport)
+    {
+        <div class="empty-state report-empty"><p>這個期間尚未產生摘要。</p></div>
+    }
+    else if (report is not null)
+    {
+        <textarea class="report-body" @bind="report.Body" aria-label="工作摘要內容"></textarea>
+        <div class="button-row report-editor-actions"><button class="button button-secondary" @onclick="SaveChangesAsync" disabled="@IsBusy">儲存文字</button><button class="button button-primary" @onclick="PrepareAiAsync" disabled="@IsBusy">@(isGeneratingAi ? "AI 整理中…" : "用 AI 整理")</button></div>
+        @if (confirmAiOverwrite)
+        {
+            <div class="alert alert-warning report-confirmation">AI 整理會覆蓋目前文字。<div class="button-row"><button class="button button-danger button-small" @onclick="GenerateAiAsync">確認覆蓋</button><button class="button button-secondary button-small" @onclick="() => confirmAiOverwrite = false">取消</button></div></div>
+        }
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ReportKind Kind { get; set; }
+    [Parameter, EditorRequired] public DateOnly AnchorDate { get; set; }
+    [Parameter] public EventCallback OnReportChanged { get; set; }
+
+    private ReportDocument? report;
+    private ReportKind loadedKind;
+    private string loadedKey = string.Empty;
+    private string savedBody = string.Empty;
+    private string message = string.Empty;
+    private bool isError;
+    private bool isGeneratingReport;
+    private bool isGeneratingAi;
+    private bool confirmOverwrite;
+    private bool confirmAiOverwrite;
+    private CancellationTokenSource? aiCancellation;
+
+    public bool HasUnsavedChanges => report is not null && report.Body != savedBody;
+    private bool IsBusy => isGeneratingReport || isGeneratingAi;
+    private DateOnly PeriodStart => Kind == ReportKind.Daily ? AnchorDate : StartOfWeek(AnchorDate);
+    private string PeriodKey => Kind == ReportKind.Daily ? AnchorDate.ToString("yyyy-MM-dd") : ReportInvalidationService.GetWeeklyKey(AnchorDate);
+    private string KindText => Kind == ReportKind.Daily ? "每日" : "每週";
+    private string PeriodTitle => Kind == ReportKind.Daily
+        ? AnchorDate.ToString("yyyy/MM/dd")
+        : $"{PeriodStart:yyyy/MM/dd}－{PeriodStart.AddDays(6):MM/dd}";
+    private string StatusShort => report is null ? "未產生" : report.IsStale ? "需重產" : "最新";
+    private string StatusText => report is null ? "尚未建立這個期間的摘要。" : report.IsStale ? "原始資料已有異動，請確認後重產。" : "內容與目前資料同步。";
+    private string StatusClass => $"calendar-report-state {(report is null ? "calendar-report-none" : report.IsStale ? "calendar-report-stale" : "calendar-report-ready")}";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedKind == Kind && loadedKey == PeriodKey) return;
+        loadedKind = Kind;
+        loadedKey = PeriodKey;
+        confirmOverwrite = false;
+        confirmAiOverwrite = false;
+        message = string.Empty;
+        report = await ReportService.GetForPeriodAsync(Kind, PeriodKey);
+        savedBody = report?.Body ?? string.Empty;
+    }
+
+    public void DiscardChanges()
+    {
+        if (report is not null) report.Body = savedBody;
+    }
+
+    public async Task<bool> SaveChangesAsync()
+    {
+        if (report is null || !HasUnsavedChanges) return true;
+        try
+        {
+            await ReportService.UpdateBodyAsync(report.Id, report.Body);
+            savedBody = report.Body;
+            message = "摘要文字已儲存。";
+            isError = false;
+            await OnReportChanged.InvokeAsync();
+            return true;
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "Saving report body failed");
+            message = "摘要文字儲存失敗，請稍後再試。";
+            isError = true;
+            return false;
+        }
+    }
+
+    private async Task PrepareGenerateAsync()
+    {
+        report = await ReportService.GetForPeriodAsync(Kind, PeriodKey);
+        savedBody = report?.Body ?? string.Empty;
+        if (report is not null && !string.IsNullOrWhiteSpace(report.Body))
+        {
+            confirmOverwrite = true;
+            return;
+        }
+        await GenerateAsync();
+    }
+
+    private async Task GenerateAsync()
+    {
+        if (IsBusy) return;
+        confirmOverwrite = false;
+        isGeneratingReport = true;
+        message = string.Empty;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        try
+        {
+            report = Kind == ReportKind.Daily
+                ? await ReportService.GenerateDeterministicAsync(AnchorDate)
+                : await ReportService.GenerateWeeklyAsync(AnchorDate);
+            savedBody = report.Body;
+            message = "摘要已產生。";
+            isError = false;
+            await OnReportChanged.InvokeAsync();
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "Deterministic report generation failed");
+            message = "摘要產生失敗，請稍後再試。";
+            isError = true;
+        }
+        finally
+        {
+            isGeneratingReport = false;
+        }
+    }
+
+    private async Task CopyReportAsync()
+    {
+        if (report is null || string.IsNullOrEmpty(report.Body)) return;
+        try
+        {
+            await JS.InvokeVoidAsync("workLensClipboard.copyText", report.Body);
+            message = "摘要內容已複製到剪貼簿。";
+            isError = false;
+        }
+        catch (JSException exception)
+        {
+            Logger.LogWarning(exception, "Copying report to clipboard failed");
+            message = "無法複製摘要內容，請確認瀏覽器已允許剪貼簿權限。";
+            isError = true;
+        }
+    }
+
+    private Task PrepareAiAsync()
+    {
+        confirmAiOverwrite = !string.IsNullOrWhiteSpace(report?.Body);
+        return confirmAiOverwrite ? Task.CompletedTask : GenerateAiAsync();
+    }
+
+    private async Task GenerateAiAsync()
+    {
+        if (report is null || isGeneratingAi) return;
+        confirmAiOverwrite = false;
+        isGeneratingAi = true;
+        message = string.Empty;
+        aiCancellation = new CancellationTokenSource();
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        try
+        {
+            var result = await ReportService.GenerateWithAiAsync(report.Id, aiCancellation.Token);
+            if (aiCancellation.IsCancellationRequested)
+            {
+                message = "已取消 AI 整理，原內容已保留。";
+                isError = false;
+            }
+            else if (result.Succeeded)
+            {
+                report = await ReportService.GetAsync(report.Id);
+                savedBody = report?.Body ?? string.Empty;
+                message = "AI 整理完成，請確認內容。";
+                isError = false;
+                await OnReportChanged.InvokeAsync();
+            }
+            else
+            {
+                message = result.Error ?? "AI 整理失敗，原內容已保留。";
+                isError = true;
+            }
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "AI report generation failed");
+            message = "AI 整理發生未預期錯誤，原內容已保留。";
+            isError = true;
+        }
+        finally
+        {
+            aiCancellation.Dispose();
+            aiCancellation = null;
+            isGeneratingAi = false;
+        }
+    }
+
+    private void CancelAiGeneration() => aiCancellation?.Cancel();
+    private static DateOnly StartOfWeek(DateOnly day) => day.AddDays(-(int)day.DayOfWeek + (day.DayOfWeek == DayOfWeek.Sunday ? -6 : 1));
+}

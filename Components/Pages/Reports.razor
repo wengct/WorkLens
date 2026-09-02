@@ -1,0 +1,288 @@
+@page "/reports"
+@inject WorkLogService WorkLogs
+@inject ActivityQueryService Activities
+@inject SourceConfigurationService SourceConfig
+@inject SourceOrchestrator Orchestrator
+@inject ReportService ReportService
+@inject NavigationManager Navigation
+
+<PageTitle>工作摘要｜WorkLens</PageTitle>
+
+<div class="page-heading">
+    <div><p class="eyebrow">Review, write, export</p><h1>工作摘要</h1><p>從工作歷程選擇日期或週期，在同一頁完成摘要。</p></div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert @(isError ? "alert-danger" : "alert-success")">@message</div>
+}
+
+@if (pendingKind is not null)
+{
+    <div class="alert alert-warning">
+        目前摘要有未儲存的文字。
+        <div class="button-row report-confirmation-actions"><button class="button button-primary button-small" @onclick="SaveAndChangePeriodAsync">儲存並切換</button><button class="button button-danger button-small" @onclick="DiscardAndChangePeriod">放棄並切換</button><button class="button button-secondary button-small" @onclick="CancelPendingPeriodChange">取消</button></div>
+    </div>
+}
+
+<section class="panel report-period-panel">
+    <div class="panel-heading"><div><h2>選擇摘要期間</h2><p>每日查看單日；每週會彙整週一至週日。</p></div></div>
+    <div class="button-row">
+        <div class="view-switch" aria-label="摘要期間種類">
+            <button type="button" class="@(kind == ReportKind.Daily ? "active" : string.Empty)" @onclick="() => RequestPeriodChangeAsync(ReportKind.Daily, selectedDate)">每日</button>
+            <button type="button" class="@(kind == ReportKind.Weekly ? "active" : string.Empty)" @onclick="() => RequestPeriodChangeAsync(ReportKind.Weekly, selectedDate)">每週</button>
+        </div>
+        <button class="button button-secondary" type="button" @onclick="() => RequestPeriodChangeAsync(kind, selectedDate.AddDays(kind == ReportKind.Daily ? -1 : -7))">← @(kind == ReportKind.Daily ? "前一天" : "前一週")</button>
+        <input class="period-date-picker" type="date" value="@selectedDate.ToString("yyyy-MM-dd")" @onchange="ChangeDateAsync" aria-label="摘要日期" />
+        <button class="button button-secondary" type="button" @onclick="() => RequestPeriodChangeAsync(kind, DateOnly.FromDateTime(DateTime.Today))">@(kind == ReportKind.Daily ? "今天" : "本週")</button>
+        <button class="button button-secondary" type="button" @onclick="() => RequestPeriodChangeAsync(kind, selectedDate.AddDays(kind == ReportKind.Daily ? 1 : 7))">@(kind == ReportKind.Daily ? "後一天" : "後一週") →</button>
+    </div>
+</section>
+
+<details class="panel history-filter-panel">
+    <summary class="history-filter-summary"><span><strong>篩選歷程</strong><small>@FilterSummary()</small></span><span>展開設定</span></summary>
+    <div class="form-grid history-filter-grid">
+        <div class="field"><label>專案</label><select @bind="filterProject"><option value="">全部專案</option>@foreach (var project in projects) { <option value="@project.Id">@(project.IsArchived ? "[已停用] " : string.Empty)@project.Name</option> }</select></div>
+        <div class="field"><label>內容</label><input @bind="filterQuery" placeholder="搜尋工作內容、repository 或 commit message" /></div>
+        <div class="field"><label>資料種類</label><select @bind="filterMode"><option value="all">全部</option><option value="manual">人工紀錄</option><option value="sources">來源活動</option></select></div>
+        <div class="field"><label class="inline-checkbox"><input type="checkbox" @bind="filterCurrentOnly" /> 只看目前有效來源</label></div>
+        <div class="form-actions"><button class="button button-primary" @onclick="ApplyFilters">套用篩選</button></div>
+    </div>
+</details>
+
+<div class="summary-workspace">
+    <div class="summary-history-column">
+        <section class="panel history-calendar-panel">
+            <div class="panel-heading">
+                <div><h2>@CalendarTitle()</h2><p>@(kind == ReportKind.Daily ? "點選日期，查看當日歷程與摘要。" : "點選任一天，查看該週歷程與摘要。")</p></div>
+                <div class="button-row"><button class="button button-secondary button-small" type="button" @onclick="() => MoveCalendarAsync(-1)">← 上個月</button><button class="button button-secondary button-small" type="button" @onclick="GoCurrentMonthAsync">本月</button><button class="button button-secondary button-small" type="button" @onclick="() => MoveCalendarAsync(1)">下個月 →</button></div>
+            </div>
+            <div class="history-calendar-weekdays" aria-hidden="true">@foreach (var weekday in Weekdays) { <span>@weekday</span> }</div>
+            <div class="history-calendar-grid">
+                @foreach (var cell in CalendarCells())
+                {
+                    @if (cell is DateOnly day)
+                    {
+                        var calendarEntries = EntriesFor(day);
+                        var calendarEvidence = EvidenceFor(day);
+                        var calendarReport = ReportFor(day);
+                        <button type="button" class="@CalendarDayClass(day)" @onclick="() => RequestPeriodChangeAsync(kind, day)" aria-pressed="@IsSelected(day)">
+                            <span class="calendar-day-heading"><strong>@day.Day</strong>@if (day == DateOnly.FromDateTime(DateTime.Today)) { <span>今天</span> }</span>
+                            <span class="calendar-hours">@WorkLogService.CalculateHours(calendarEntries).ToString("0.##") 小時</span>
+                            <span class="calendar-counts">人工 @calendarEntries.Count · 來源 @calendarEvidence.Count</span>
+                            <span class="@CalendarReportClass(calendarReport)">@ReportStateShort(calendarReport)</span>
+                        </button>
+                    }
+                    else { <div class="calendar-day calendar-day-empty" aria-hidden="true"></div> }
+                }
+            </div>
+        </section>
+
+        <section class="panel history-day-detail">
+            <div class="panel-heading">
+                <div><h2>@SelectedPeriodTitle 明細</h2><p>@WorkLogService.CalculateHours(DetailEntries).ToString("0.##") 小時 · @DetailEntries.Count 筆人工紀錄 · @DetailEvidence.Count 筆來源活動</p></div>
+                <div class="button-row">
+                    @if (kind == ReportKind.Daily)
+                    {
+                        <a class="button button-secondary button-small" href="/?date=@selectedDate.ToString("yyyy-MM-dd")">開啟並修改</a>
+                    }
+                    <button class="button button-secondary button-small" @onclick="BackfillPeriodAsync" disabled="@isBackfilling">@(isBackfilling ? "收集中…" : "重新收集來源")</button>
+                </div>
+            </div>
+            @if (isBackfilling) { <OperationProgress Title="正在重新收集來源…" Detail="完成後會重新整理歷程與摘要狀態。" /> }
+            @if (DetailEntries.Count == 0 && DetailEvidence.Count == 0)
+            {
+                <div class="empty-state"><p>這個期間沒有符合目前篩選條件的紀錄。</p></div>
+            }
+            else
+            {
+                <div class="history-timeline-scroll"><div class="timeline">
+                    @foreach (var entry in DetailEntries)
+                    {
+                        <div class="timeline-item"><div class="timeline-time">@(kind == ReportKind.Weekly ? $"{entry.WorkDate:MM/dd} · " : string.Empty)人工 · @entry.Hours.ToString("0.##") 小時 · @ProjectName(entry.ProjectId)</div><div class="timeline-detail markdown-source">@entry.WorkContent</div>@if (kind == ReportKind.Weekly) { <a class="timeline-link" href="/?date=@entry.WorkDate.ToString("yyyy-MM-dd")">開啟該日</a> }</div>
+                    }
+                    @foreach (var item in DetailEvidence)
+                    {
+                        <div class="timeline-item"><div class="timeline-time">@(kind == ReportKind.Weekly ? $"{DateOnly.FromDateTime(item.OccurredAt.LocalDateTime):MM/dd} · " : string.Empty)來源 · @item.OccurredAt.ToLocalTime().ToString("HH:mm") · @ProjectName(item.ProjectId)</div><div class="timeline-title">@item.Title</div><div class="timeline-detail">@if (item.Kind == EvidenceKind.CodexSession) { <CodexSessionDetails Evidence="item" /> } else { @item.RepositoryKey @if (!string.IsNullOrWhiteSpace(item.CommitMessage) && item.CommitMessage != item.Title) { <div class="markdown-source">@item.CommitMessage</div> } }</div></div>
+                    }
+                </div></div>
+            }
+        </section>
+    </div>
+
+    <ReportWorkspace @ref="reportWorkspace" Kind="kind" AnchorDate="selectedDate" OnReportChanged="ReloadAsync" />
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "date")] public DateTime? RequestedDate { get; set; }
+    [SupplyParameterFromQuery(Name = "kind")] public string? RequestedKind { get; set; }
+    [SupplyParameterFromQuery(Name = "project")] public string? Project { get; set; }
+    [SupplyParameterFromQuery(Name = "q")] public string? Query { get; set; }
+    [SupplyParameterFromQuery(Name = "mode")] public string? Mode { get; set; }
+    [SupplyParameterFromQuery(Name = "currentOnly")] public bool CurrentOnly { get; set; }
+
+    private DateOnly selectedDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateTime calendarAnchor = DateTime.Today;
+    private ReportKind kind = ReportKind.Daily;
+    private string filterProject = string.Empty;
+    private string filterQuery = string.Empty;
+    private string filterMode = "all";
+    private bool filterCurrentOnly;
+    private IReadOnlyList<Project> projects = [];
+    private IReadOnlyList<WorkEntry> entries = [];
+    private IReadOnlyList<SourceEvidence> evidence = [];
+    private IReadOnlyList<ReportDocument> reports = [];
+    private string message = string.Empty;
+    private bool isError;
+    private bool isBackfilling;
+    private ReportWorkspace? reportWorkspace;
+    private ReportKind? pendingKind;
+    private DateOnly pendingDate;
+    private static readonly string[] Weekdays = ["日", "一", "二", "三", "四", "五", "六"];
+
+    private DateOnly PeriodStart => kind == ReportKind.Daily ? selectedDate : StartOfWeek(selectedDate);
+    private DateOnly PeriodEnd => kind == ReportKind.Daily ? selectedDate : PeriodStart.AddDays(6);
+    private IReadOnlyList<WorkEntry> DetailEntries => entries.Where(entry => entry.WorkDate >= PeriodStart && entry.WorkDate <= PeriodEnd).OrderBy(entry => entry.WorkDate).ThenBy(entry => entry.CreatedAt).ToList();
+    private IReadOnlyList<SourceEvidence> DetailEvidence => evidence.Where(item => DateOnly.FromDateTime(item.OccurredAt.LocalDateTime) >= PeriodStart && DateOnly.FromDateTime(item.OccurredAt.LocalDateTime) <= PeriodEnd).OrderBy(item => item.OccurredAt).ToList();
+    private string SelectedPeriodTitle => kind == ReportKind.Daily ? selectedDate.ToString("yyyy/MM/dd") : $"{PeriodStart:yyyy/MM/dd}－{PeriodEnd:MM/dd}";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        selectedDate = DateOnly.FromDateTime(RequestedDate ?? DateTime.Today);
+        kind = string.Equals(RequestedKind, "Weekly", StringComparison.OrdinalIgnoreCase) ? ReportKind.Weekly : ReportKind.Daily;
+        calendarAnchor = selectedDate.ToDateTime(TimeOnly.MinValue);
+        filterProject = Project ?? string.Empty;
+        filterQuery = Query ?? string.Empty;
+        filterMode = Mode is "manual" or "sources" ? Mode : "all";
+        filterCurrentOnly = CurrentOnly;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        var monthStart = new DateOnly(calendarAnchor.Year, calendarAnchor.Month, 1);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+        var rangeStart = PeriodStart < monthStart ? PeriodStart : monthStart;
+        var rangeEnd = PeriodEnd > monthEnd ? PeriodEnd : monthEnd;
+        var projectId = ParseProject(filterProject);
+        projects = await SourceConfig.GetProjectsAsync(includeArchived: true);
+        entries = filterMode == "sources" ? [] : await WorkLogs.GetRangeAsync(rangeStart, rangeEnd, projectId, filterQuery);
+        evidence = filterMode == "manual" ? [] : await Activities.SearchAsync(rangeStart, rangeEnd, projectId, filterQuery, reachability: filterCurrentOnly ? CommitReachabilityStatus.Current : null);
+        reports = await ReportService.GetRecentAsync(100);
+    }
+
+    private async Task ChangeDateAsync(ChangeEventArgs args)
+    {
+        if (DateOnly.TryParse(args.Value?.ToString(), out var date)) await RequestPeriodChangeAsync(kind, date);
+    }
+
+    private Task RequestPeriodChangeAsync(ReportKind newKind, DateOnly newDate)
+    {
+        if (newKind == kind && IsSamePeriod(newDate, selectedDate, newKind)) return Task.CompletedTask;
+        if (reportWorkspace?.HasUnsavedChanges == true)
+        {
+            pendingKind = newKind;
+            pendingDate = newDate;
+            return Task.CompletedTask;
+        }
+        NavigateToPeriod(newKind, newDate);
+        return Task.CompletedTask;
+    }
+
+    private async Task SaveAndChangePeriodAsync()
+    {
+        if (pendingKind is not ReportKind nextKind || reportWorkspace is null) return;
+        if (!await reportWorkspace.SaveChangesAsync()) return;
+        var nextDate = pendingDate;
+        pendingKind = null;
+        NavigateToPeriod(nextKind, nextDate);
+    }
+
+    private void DiscardAndChangePeriod()
+    {
+        if (pendingKind is not ReportKind nextKind) return;
+        reportWorkspace?.DiscardChanges();
+        var nextDate = pendingDate;
+        pendingKind = null;
+        NavigateToPeriod(nextKind, nextDate);
+    }
+
+    private void CancelPendingPeriodChange() => pendingKind = null;
+    private void NavigateToPeriod(ReportKind newKind, DateOnly newDate)
+    {
+        var query = BuildQuery();
+        query["kind"] = newKind.ToString();
+        query["date"] = newDate.ToString("yyyy-MM-dd");
+        Navigation.NavigateTo(Navigation.GetUriWithQueryParameters("/reports", query));
+    }
+
+    private void ApplyFilters() => Navigation.NavigateTo(Navigation.GetUriWithQueryParameters("/reports", BuildQuery()));
+    private Dictionary<string, object?> BuildQuery()
+    {
+        var query = new Dictionary<string, object?> { ["kind"] = kind.ToString(), ["date"] = selectedDate.ToString("yyyy-MM-dd"), ["mode"] = filterMode, ["currentOnly"] = filterCurrentOnly };
+        if (!string.IsNullOrWhiteSpace(filterProject)) query["project"] = filterProject;
+        if (!string.IsNullOrWhiteSpace(filterQuery)) query["q"] = filterQuery;
+        return query;
+    }
+
+    private async Task MoveCalendarAsync(int offset) { calendarAnchor = calendarAnchor.AddMonths(offset); await ReloadAsync(); }
+    private async Task GoCurrentMonthAsync() { calendarAnchor = DateTime.Today; await ReloadAsync(); }
+    private string CalendarTitle() => $"{calendarAnchor:yyyy 年 M 月}";
+    private string FilterSummary()
+    {
+        var project = string.IsNullOrWhiteSpace(filterProject) ? "全部專案" : ProjectName(ParseProject(filterProject));
+        var mode = filterMode == "manual" ? "人工紀錄" : filterMode == "sources" ? "來源活動" : "全部資料";
+        return string.IsNullOrWhiteSpace(filterQuery) ? $"{project} · {mode}" : $"{project} · {mode} · 關鍵字：{filterQuery}";
+    }
+
+    private IEnumerable<DateOnly> CalendarDays()
+    {
+        var start = new DateOnly(calendarAnchor.Year, calendarAnchor.Month, 1);
+        var end = start.AddMonths(1).AddDays(-1);
+        for (var day = start; day <= end; day = day.AddDays(1)) yield return day;
+    }
+    private IReadOnlyList<DateOnly?> CalendarCells()
+    {
+        var cells = new List<DateOnly?>();
+        var first = CalendarDays().First();
+        for (var index = 0; index < (int)first.DayOfWeek; index++) cells.Add(null);
+        cells.AddRange(CalendarDays().Select(day => (DateOnly?)day));
+        while (cells.Count % 7 != 0) cells.Add(null);
+        return cells;
+    }
+    private List<WorkEntry> EntriesFor(DateOnly day) => filterMode == "sources" ? [] : entries.Where(entry => entry.WorkDate == day).ToList();
+    private List<SourceEvidence> EvidenceFor(DateOnly day) => filterMode == "manual" ? [] : evidence.Where(item => DateOnly.FromDateTime(item.OccurredAt.LocalDateTime) == day).ToList();
+    private ReportDocument? ReportFor(DateOnly day)
+    {
+        var key = kind == ReportKind.Daily ? day.ToString("yyyy-MM-dd") : ReportInvalidationService.GetWeeklyKey(day);
+        return reports.FirstOrDefault(document => document.Kind == kind && document.PeriodKey == key);
+    }
+    private bool IsSelected(DateOnly day) => kind == ReportKind.Daily ? day == selectedDate : StartOfWeek(day) == StartOfWeek(selectedDate);
+    private string CalendarDayClass(DateOnly day) => $"calendar-day{(IsSelected(day) ? " calendar-day-selected" : string.Empty)}{(EntriesFor(day).Count > 0 || EvidenceFor(day).Count > 0 ? " calendar-day-has-content" : string.Empty)}";
+    private static string CalendarReportClass(ReportDocument? document) => $"calendar-report-state {(document is null ? "calendar-report-none" : document.IsStale ? "calendar-report-stale" : "calendar-report-ready")}";
+    private static string ReportStateShort(ReportDocument? document) => document is null ? "未產生" : document.IsStale ? "需重產" : "最新";
+
+    private async Task BackfillPeriodAsync()
+    {
+        isBackfilling = true;
+        message = $"正在重新收集 {SelectedPeriodTitle} 的來源資料…";
+        isError = false;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        try
+        {
+            var sourceIds = (await SourceConfig.GetSourcesAsync()).Where(source => source.Enabled && source.HealthStatus == SourceHealthStatus.Ready).Select(source => source.Id).ToArray();
+            var results = await Orchestrator.CollectRangeAsync(sourceIds, PeriodStart, PeriodEnd);
+            message = $"回補完成：新增 {results.Sum(result => result.AddedCount)}、更新 {results.Sum(result => result.UpdatedCount)}、未變更 {results.Sum(result => result.UnchangedCount)}。";
+            isError = results.Any(result => !result.Succeeded);
+            await ReloadAsync();
+        }
+        catch (Exception exception) { message = exception.Message; isError = true; }
+        finally { isBackfilling = false; }
+    }
+
+    private static DateOnly StartOfWeek(DateOnly day) => day.AddDays(-(int)day.DayOfWeek + (day.DayOfWeek == DayOfWeek.Sunday ? -6 : 1));
+    private static bool IsSamePeriod(DateOnly left, DateOnly right, ReportKind reportKind) => reportKind == ReportKind.Daily ? left == right : StartOfWeek(left) == StartOfWeek(right);
+    private static Guid? ParseProject(string value) => Guid.TryParse(value, out var id) ? id : null;
+    private string ProjectName(Guid? id) => id is Guid projectId ? projects.FirstOrDefault(project => project.Id == projectId)?.Name ?? "已停用專案" : "未分類";
+}

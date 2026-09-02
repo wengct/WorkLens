@@ -1,0 +1,266 @@
+@page "/"
+@page "/today"
+@inject WorkLogService WorkLogs
+@inject ActivityQueryService Activities
+@inject SourceConfigurationService SourceConfig
+@inject ReportService Reports
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>工作填寫｜WorkLens</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">Daily workspace</p>
+        <h1>@selectedDate.ToString("yyyy/MM/dd") 工作台</h1>
+        <p>隨手記下工作；來源活動會自動補充當日脈絡。</p>
+    </div>
+    <div class="button-row">
+        <button class="button button-secondary" @onclick="PreviousDay">← 前一天</button>
+        <button class="button button-secondary" @onclick="GoToday">今天</button>
+        <button class="button button-secondary" @onclick="NextDay">後一天 →</button>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert @(isError ? "alert-danger" : "alert-success")">@message</div>
+}
+@if (!string.IsNullOrWhiteSpace(editorNotice))
+{
+    <div class="alert alert-warning">@editorNotice</div>
+}
+
+<div class="panel">
+    <div class="panel-heading"><div><h2>快速新增</h2><p>日期與專案會保留，方便連續記錄。</p></div></div>
+    <EditForm Model="form" OnValidSubmit="SaveAsync">
+        <div class="form-grid quick-add-grid">
+            <div class="field"><label>日期</label><InputDate @bind-Value="form.WorkDate" @bind-Value:after="SelectFormDateAsync" /></div>
+            <div class="field"><label>時數</label><InputNumber @bind-Value="form.Hours" min="0.25" max="24" step="0.25" /></div>
+            <div class="field"><label>專案（選填）</label><select @bind="form.ProjectId"><option value="">未分類</option>@foreach (var project in projects) { <option value="@project.Id">@project.Name</option> }</select></div>
+            <div class="field full"><label>工作內容</label><textarea id="workContent" @bind="form.WorkContent" class="markdown-input" placeholder="用 Markdown 記下完成事項、問題或下一步…"></textarea><span class="hint">支援離線 Markdown 編輯、預覽與分欄檢視。</span></div>
+            <div class="form-actions"><button class="button button-primary" type="submit">儲存紀錄</button></div>
+        </div>
+    </EditForm>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card"><div class="stat-label">確認工時</div><div class="stat-value">@WorkLogService.CalculateHours(entries).ToString("0.##")</div><div class="stat-note">人工紀錄加總</div></div>
+    <div class="stat-card"><div class="stat-label">工作紀錄</div><div class="stat-value">@entries.Count</div><div class="stat-note">可直接編輯</div></div>
+    <div class="stat-card"><div class="stat-label">來源活動</div><div class="stat-value">@evidence.Count</div><div class="stat-note">自動納入內容</div></div>
+    <div class="stat-card"><div class="stat-label">每日摘要</div><div class="stat-value report-state">@ReportStateText()</div><div class="stat-note"><a href="/reports?kind=Daily&date=@selectedDate.ToString("yyyy-MM-dd")">前往處理</a></div></div>
+</div>
+
+<div class="panel">
+    <div class="panel-heading"><div><h2>人工紀錄</h2><p>修改會讓相關報告標示為需要重產。</p></div></div>
+    @if (entries.Count == 0)
+    {
+        <div class="empty-state"><h3>這天還沒有紀錄</h3><p>可直接補登過去日期的工作內容。</p></div>
+    }
+    else
+    {
+        <div class="timeline">
+            @foreach (var entry in entries)
+            {
+                <div class="timeline-item">
+                    @if (editingId == entry.Id)
+                    {
+                        <div class="form-grid compact-form">
+                            <div class="field"><label>日期</label><InputDate @bind-Value="editForm.WorkDate" /></div>
+                            <div class="field"><label>專案</label><select @bind="editForm.ProjectId"><option value="">未分類</option>@foreach (var project in projects) { <option value="@project.Id">@project.Name</option> }</select></div>
+                            <div class="field"><label>時數</label><InputNumber @bind-Value="editForm.Hours" min="0.25" max="24" step="0.25" /></div>
+                            <div class="field full"><label>工作內容</label><textarea id="editWorkContent" @bind="editForm.WorkContent" class="markdown-input"></textarea></div>
+                            <div class="button-row"><button class="button button-primary button-small" @onclick="() => UpdateAsync(entry.Id)">儲存</button><button class="button button-secondary button-small" @onclick="CancelEditAsync">取消</button></div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="timeline-time">@entry.Hours.ToString("0.##") 小時 · @ProjectName(entry.ProjectId)</div>
+                        <div class="timeline-detail markdown-source">@entry.WorkContent</div>
+                        <div class="button-row" style="margin-top: 8px">
+                            <button class="button button-secondary button-small" @onclick="() => BeginEditAsync(entry)">編輯</button>
+                            <button class="button button-secondary button-small" @onclick="() => CopyAsync(entry)">複製</button>
+                            @if (pendingDeleteId == entry.Id)
+                            {
+                                <button class="button button-danger button-small" @onclick="() => DeleteAsync(entry.Id)">確認刪除</button>
+                                <button class="button button-secondary button-small" @onclick="CancelDelete">取消</button>
+                            }
+                            else
+                            {
+                                <button class="button button-danger button-small" @onclick="() => pendingDeleteId = entry.Id">刪除</button>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<details class="panel evidence-panel">
+    <summary><strong>來源活動（@evidence.Count）</strong> · 唯讀，自動納入當日報告</summary>
+    @if (evidence.Count == 0)
+    {
+        <p class="muted">尚未收集到此日期的來源活動。</p>
+    }
+    else
+    {
+        <div class="timeline">
+            @foreach (var item in evidence)
+            {
+                <div class="timeline-item">
+                    <div class="timeline-time">@item.OccurredAt.ToLocalTime().ToString("HH:mm") · @ProjectName(item.ProjectId)</div>
+                    <div class="timeline-title">@item.Title</div>
+                    <div class="timeline-detail">
+                        @if (item.Kind == EvidenceKind.CodexSession)
+                        {
+                            <CodexSessionDetails Evidence="item" />
+                        }
+                        else
+                        {
+                            @item.RepositoryKey
+                            @if (!string.IsNullOrWhiteSpace(item.CommitMessage) && item.CommitMessage != item.Title)
+                            {
+                                <div class="markdown-source">@item.CommitMessage</div>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</details>
+
+@code {
+    [SupplyParameterFromQuery(Name = "date")] public DateTime? RequestedDate { get; set; }
+    private DateOnly selectedDate;
+    private IReadOnlyList<WorkEntry> entries = [];
+    private IReadOnlyList<SourceEvidence> evidence = [];
+    private IReadOnlyList<Project> projects = [];
+    private ReportDocument? report;
+    private readonly WorkForm form = new();
+    private readonly WorkForm editForm = new();
+    private Guid? editingId;
+    private Guid? pendingDeleteId;
+    private string message = string.Empty;
+    private bool isError;
+    private bool quickEditorInitialized;
+    private bool editEditorInitialized;
+    private bool initializeEditEditor;
+    private string editorNotice = string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        selectedDate = DateOnly.FromDateTime(RequestedDate ?? DateTime.Today);
+        form.WorkDate = selectedDate.ToDateTime(TimeOnly.MinValue);
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        projects = await SourceConfig.GetProjectsAsync();
+        entries = await WorkLogs.GetForDateAsync(selectedDate);
+        var start = new DateTimeOffset(DateTime.SpecifyKind(selectedDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Local));
+        evidence = await Activities.GetForRangeAsync(start, start.AddDays(1));
+        report = await Reports.GetForPeriodAsync(ReportKind.Daily, selectedDate.ToString("yyyy-MM-dd"));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            quickEditorInitialized = await InitializeEditorAsync("workContent");
+        }
+
+        if (initializeEditEditor)
+        {
+            initializeEditEditor = false;
+            editEditorInitialized = await InitializeEditorAsync("editWorkContent");
+        }
+    }
+
+    private Task PreviousDay() => NavigateAsync(selectedDate.AddDays(-1));
+    private Task NextDay() => NavigateAsync(selectedDate.AddDays(1));
+    private Task GoToday() => NavigateAsync(DateOnly.FromDateTime(DateTime.Today));
+    private Task NavigateAsync(DateOnly date) { Navigation.NavigateTo($"/?date={date:yyyy-MM-dd}"); return Task.CompletedTask; }
+    private Task SelectFormDateAsync() => NavigateAsync(DateOnly.FromDateTime(form.WorkDate));
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            form.WorkContent = await GetEditorValueAsync("workContent", quickEditorInitialized, form.WorkContent);
+            await WorkLogs.AddAsync(DateOnly.FromDateTime(form.WorkDate), form.Hours ?? 0, form.WorkContent, ParseProject(form.ProjectId));
+            message = "工作紀錄已儲存。"; isError = false;
+            form.Hours = null; form.WorkContent = string.Empty;
+            await SetEditorValueAsync("workContent", quickEditorInitialized, string.Empty);
+            await ReloadAsync();
+        }
+        catch (ArgumentException exception) { message = exception.Message; isError = true; }
+    }
+
+    private Task BeginEditAsync(WorkEntry entry)
+    {
+        editingId = entry.Id;
+        editForm.WorkDate = entry.WorkDate.ToDateTime(TimeOnly.MinValue);
+        editForm.Hours = entry.Hours;
+        editForm.WorkContent = entry.WorkContent;
+        editForm.ProjectId = entry.ProjectId?.ToString() ?? string.Empty;
+        initializeEditEditor = true;
+        return Task.CompletedTask;
+    }
+    private async Task CancelEditAsync()
+    {
+        await DisposeEditorAsync("editWorkContent", editEditorInitialized);
+        editEditorInitialized = false;
+        editingId = null;
+    }
+    private async Task UpdateAsync(Guid id)
+    {
+        try
+        {
+            editForm.WorkContent = await GetEditorValueAsync("editWorkContent", editEditorInitialized, editForm.WorkContent);
+            await WorkLogs.UpdateAsync(id, DateOnly.FromDateTime(editForm.WorkDate), editForm.Hours ?? 0, editForm.WorkContent, ParseProject(editForm.ProjectId));
+            await DisposeEditorAsync("editWorkContent", editEditorInitialized);
+            editEditorInitialized = false;
+            editingId = null; message = "工作紀錄已更新。"; isError = false; await ReloadAsync();
+        }
+        catch (ArgumentException exception) { message = exception.Message; isError = true; }
+    }
+    private async Task CopyAsync(WorkEntry entry) { form.WorkDate = entry.WorkDate.ToDateTime(TimeOnly.MinValue); form.ProjectId = entry.ProjectId?.ToString() ?? string.Empty; form.Hours = entry.Hours; form.WorkContent = entry.WorkContent; await SetEditorValueAsync("workContent", quickEditorInitialized, form.WorkContent); }
+    private async Task DeleteAsync(Guid id) { await WorkLogs.DeleteAsync(id); pendingDeleteId = null; message = "工作紀錄已刪除。"; isError = false; await ReloadAsync(); }
+    private void CancelDelete() => pendingDeleteId = null;
+    private static Guid? ParseProject(string value) => Guid.TryParse(value, out var id) ? id : null;
+    private string ProjectName(Guid? id) => id is Guid projectId ? projects.FirstOrDefault(x => x.Id == projectId)?.Name ?? "已停用專案" : "未分類";
+    private string ReportStateText() => report is null ? "未產生" : report.IsStale ? "需重產" : "最新";
+    private async Task<bool> InitializeEditorAsync(string id)
+    {
+        try { await JS.InvokeVoidAsync("workLensEasyMde.initialize", id); return true; }
+        catch (JSException) { editorNotice = "Markdown 編輯器無法載入，已切換為一般文字輸入。"; await InvokeAsync(StateHasChanged); return false; }
+    }
+    private async Task<string> GetEditorValueAsync(string id, bool initialized, string fallback)
+    {
+        if (!initialized) return fallback;
+        try { return await JS.InvokeAsync<string>("workLensEasyMde.getValue", id); }
+        catch (JSException) { editorNotice = "Markdown 編輯器連線中斷，已使用目前文字內容。"; return fallback; }
+    }
+    private async Task SetEditorValueAsync(string id, bool initialized, string value)
+    {
+        if (!initialized) return;
+        try { await JS.InvokeVoidAsync("workLensEasyMde.setValue", id, value); }
+        catch (JSException) { editorNotice = "Markdown 編輯器連線中斷。"; }
+    }
+    private async Task DisposeEditorAsync(string id, bool initialized)
+    {
+        if (!initialized) return;
+        try { await JS.InvokeVoidAsync("workLensEasyMde.dispose", id); }
+        catch (JSException) { }
+    }
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeEditorAsync("workContent", quickEditorInitialized);
+        await DisposeEditorAsync("editWorkContent", editEditorInitialized);
+    }
+    private sealed class WorkForm { public DateTime WorkDate { get; set; } = DateTime.Today; public double? Hours { get; set; } public string ProjectId { get; set; } = string.Empty; public string WorkContent { get; set; } = string.Empty; }
+}

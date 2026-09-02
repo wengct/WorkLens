@@ -1,0 +1,136 @@
+@page "/ai"
+@inject AiConfigurationService AiConfig
+@inject AskBridgeService AskBridge
+
+<PageTitle>AI 整理｜WorkLens</PageTitle>
+
+<div class="page-heading"><div><p class="eyebrow">Settings</p><h1>AI 整理</h1><p>自訂整理偏好；工時、紀錄 ID 與 JSON 輸出契約仍由系統固定驗證。</p></div></div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert @(isError ? "alert-danger" : "alert-success")">@message</div>
+}
+
+@if (activeOperation is not null)
+{
+    <OperationProgress Title="@ActiveOperationTitle()" Detail="@ActiveOperationDetail()" />
+}
+
+<div class="panel">
+    <div class="panel-heading"><div><h2>Provider</h2><p>設定與偵測 AI 執行環境。</p></div><span class="badge @StatusClass(configuration.Status)">@StatusText(configuration.Status)</span></div>
+    <div class="form-grid">
+        <div class="field"><label>Provider</label><select @bind="configuration.Provider"><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option><option value="claude">Claude</option></select></div>
+        <div class="field"><label>ask-bridge 路徑（選填）</label><input @bind="configuration.ExecutablePath" placeholder="留白則自動尋找" /></div>
+        <div class="field full"><label class="inline-checkbox"><input type="checkbox" @bind="configuration.Enabled" /> 啟用 AI 報告整理</label></div>
+        <div class="field full"><label class="inline-checkbox"><input type="checkbox" @bind="configuration.UseHeadless" /> 背景執行瀏覽器（--headless=true）</label><span class="hint">登入流程固定顯示瀏覽器；測試或整理報告時會依此設定切換模式。ask-bridge 專用瀏覽器會在作業完成後自動關閉。</span></div>
+        <div class="form-actions"><button class="button button-secondary" @onclick="SaveAsync" disabled="@IsBusy">儲存設定</button><button class="button button-primary" @onclick="DetectAsync" disabled="@IsBusy">@(activeOperation == "detect" ? "偵測中…" : "重新偵測")</button><button class="button button-secondary" @onclick="LoginAsync" disabled="@(detection?.Validation.IsValid != true || IsBusy)">開啟登入</button><button class="button button-secondary" @onclick="TestConnectionAsync" disabled="@(detection?.Validation.IsValid != true || IsBusy)">@(activeOperation == "connection" ? "測試中…" : "測試連線")</button></div>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-heading"><div><h2>整理 Prompt</h2><p>只有整理偏好可調整；固定契約會要求 JSON、正確工時及所有工作紀錄 ID。</p></div></div>
+    <div class="form-grid">
+        <div class="field full"><label>通用整理指令</label><InputTextArea @bind-Value="configuration.GeneralReportPrompt" class="prompt-input" /><span class="hint">必填，適用於沒有個別覆寫的報告。</span></div>
+        <div class="field"><label>每日報告覆寫（選填）</label><InputTextArea @bind-Value="configuration.DailyReportPromptOverride" class="prompt-input" placeholder="留白時使用通用指令" /></div>
+        <div class="field"><label>每週報告覆寫（選填）</label><InputTextArea @bind-Value="configuration.WeeklyReportPromptOverride" class="prompt-input" placeholder="留白時使用通用指令" /></div>
+        <div class="field full"><label>每日實際採用</label><div class="prompt-preview">@ReportService.ResolvePrompt(configuration, ReportKind.Daily)</div></div>
+        <div class="field full"><label>每週實際採用</label><div class="prompt-preview">@ReportService.ResolvePrompt(configuration, ReportKind.Weekly)</div></div>
+        <div class="form-actions"><button class="button button-secondary" @onclick="RestoreDefaults" disabled="@IsBusy">恢復預設值</button><button class="button button-secondary" @onclick="TestPromptAsync" disabled="@IsBusy">@(activeOperation == "prompt" ? "測試 Prompt 中…" : "使用範例資料測試 Prompt")</button><button class="button button-primary" @onclick="SaveAsync" disabled="@IsBusy">儲存 Prompt</button></div>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(promptResult)) { <div class="report-body" style="min-height: 100px; margin-top: 16px">@promptResult</div> }
+</div>
+
+@if (detection is not null)
+{
+    <div class="panel"><div class="panel-heading"><div><h2>環境診斷</h2><p>@detection.Validation.Summary</p></div></div><div class="form-grid"><div class="field"><label>執行檔</label><div class="hint">@(detection.ExecutablePath ?? "未找到")</div></div><div class="field"><label>版本</label><div class="hint">@(detection.Version ?? "未取得")</div></div><div class="field"><label>Node.js</label><div class="hint">@(detection.NodeAvailable ? "可用" : "不可用")</div></div><div class="field"><label>Chrome</label><div class="hint">@(detection.ChromeAvailable ? "可用" : "不可用")</div></div></div></div>
+}
+
+@code {
+    private AiProviderConfiguration configuration = new();
+    private AiDetectionResult? detection;
+    private string message = string.Empty;
+    private string promptResult = string.Empty;
+    private bool isError;
+    private string? activeOperation;
+    private bool IsBusy => activeOperation is not null;
+    protected override async Task OnInitializedAsync() => configuration = await AiConfig.GetAsync();
+    private async Task SaveAsync() { try { await AiConfig.SaveAsync(configuration); message = "AI 設定與 Prompt 已儲存。"; isError = false; } catch (ArgumentException exception) { message = exception.Message; isError = true; } }
+    private async Task DetectAsync()
+    {
+        if (!BeginOperation("detect")) return;
+        try
+        {
+            detection = await AskBridge.DetectAsync(configuration);
+            configuration.Status = detection.Validation.Status;
+            configuration.DetectedVersion = detection.Version;
+            configuration.ExecutablePath = detection.ExecutablePath ?? configuration.ExecutablePath;
+            configuration.LastError = detection.Validation.IsValid ? null : detection.Validation.Summary;
+            configuration.LastCheckedAt = DateTimeOffset.UtcNow;
+            await AiConfig.SaveAsync(configuration);
+            message = detection.Validation.Summary;
+            isError = !detection.Validation.IsValid;
+        }
+        finally { activeOperation = null; }
+    }
+    private async Task LoginAsync()
+    {
+        if (!BeginOperation("login")) return;
+        try
+        {
+            var succeeded = await AskBridge.StartLoginAsync(configuration);
+            message = succeeded ? "登入流程已完成，瀏覽器已關閉。" : "登入流程未完成。";
+            isError = !succeeded;
+        }
+        finally { activeOperation = null; }
+    }
+    private async Task TestConnectionAsync()
+    {
+        if (!BeginOperation("connection")) return;
+        try
+        {
+            var result = await AskBridge.TestConnectionAsync(configuration);
+            message = result.Succeeded ? "連線測試成功。" : result.Error ?? "連線測試失敗。";
+            isError = !result.Succeeded;
+        }
+        finally { activeOperation = null; }
+    }
+    private void RestoreDefaults() { configuration.GeneralReportPrompt = AiPromptDefaults.GeneralReportPrompt; configuration.DailyReportPromptOverride = string.Empty; configuration.WeeklyReportPromptOverride = string.Empty; promptResult = string.Empty; }
+    private async Task TestPromptAsync()
+    {
+        if (!BeginOperation("prompt")) return;
+        promptResult = string.Empty;
+        try
+        {
+            var result = await AskBridge.TestPromptAsync(configuration, ReportService.ResolvePrompt(configuration, ReportKind.Daily));
+            promptResult = result.Succeeded ? result.Body ?? "範例 Prompt 未產生內容。" : result.Error ?? "範例 Prompt 測試失敗。";
+            isError = !result.Succeeded;
+        }
+        finally { activeOperation = null; }
+    }
+    private bool BeginOperation(string operation)
+    {
+        if (IsBusy) return false;
+        activeOperation = operation;
+        message = string.Empty;
+        _ = InvokeAsync(StateHasChanged);
+        return true;
+    }
+    private string ActiveOperationTitle() => activeOperation switch
+    {
+        "detect" => "正在偵測 AI 執行環境…",
+        "login" => "正在等待 Provider 登入…",
+        "connection" => "正在測試 AI 連線…",
+        "prompt" => "正在使用範例資料測試 Prompt…",
+        _ => "正在處理…"
+    };
+    private string ActiveOperationDetail() => activeOperation switch
+    {
+        "detect" => "正在檢查 ask-bridge、Node.js、瀏覽器與登入狀態。",
+        "login" => "請在瀏覽器完成登入；偵測成功後會自動關閉 ask-bridge 專用瀏覽器。",
+        "connection" => "正在等待 Provider 回應測試請求。",
+        "prompt" => "正在等待 AI 產生範例報告，完成前請保持此頁開啟。",
+        _ => "完成後會自動顯示結果。"
+    };
+    private static string StatusText(string status) => status switch { "Ready" => "可用", "NotInstalled" => "未安裝", "MissingPrerequisite" => "缺少必要條件", "IncompatibleVersion" => "版本不相容", "LoginRequired" => "需要登入", "Error" => "錯誤", _ => "未設定" };
+    private static string StatusClass(string status) => status switch { "Ready" => "badge-ready", "NotInstalled" or "MissingPrerequisite" => "badge-unavailable", "IncompatibleVersion" or "Error" => "badge-error", "LoginRequired" => "badge-running", _ => "badge-disabled" };
+}

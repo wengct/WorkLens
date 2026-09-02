@@ -1,0 +1,38 @@
+@if (Overlay)
+{
+    <div class="processing-overlay" role="status" aria-live="polite">
+        <div class="processing-card">
+            <div class="operation-progress-copy">
+                <strong>@Title</strong>
+                @if (!string.IsNullOrWhiteSpace(Detail))
+                {
+                    <span>@Detail</span>
+                }
+            </div>
+            <div class="operation-progress-track" aria-hidden="true"><span></span></div>
+            @Actions
+        </div>
+    </div>
+}
+else
+{
+    <div class="operation-progress" role="status" aria-live="polite">
+        <div class="operation-progress-copy">
+            <strong>@Title</strong>
+            @if (!string.IsNullOrWhiteSpace(Detail))
+            {
+                <span>@Detail</span>
+            }
+        </div>
+        <div class="operation-progress-track" aria-hidden="true"><span></span></div>
+        @Actions
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string Detail { get; set; } = string.Empty;
+    [Parameter] public bool Overlay { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+}
