@@ -165,6 +165,7 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
 
             foreach (var session in sessions.Values.OrderBy(item => item.OccurredAt))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var userContext = string.Join(
                     Environment.NewLine + Environment.NewLine,
                     session.Messages

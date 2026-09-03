@@ -48,7 +48,6 @@
             <div class="field"><label>日期</label><InputDate @bind-Value="form.WorkDate" @bind-Value:after="SelectFormDateAsync" /></div>
             <div class="field"><label>時數</label><InputNumber @bind-Value="form.Hours" min="0.25" max="24" step="0.25" /></div>
             <div class="field"><label>專案（選填）</label><select @bind="form.ProjectId"><option value="">未分類</option>@foreach (var project in projects) { <option value="@project.Id">@project.Name</option> }</select></div>
-            <div class="field full"><label>標題（選填）</label><input @bind="form.Title" maxlength="100" placeholder="未填時會取工作內容第一行" /></div>
             <div class="field full"><label>工作內容</label><textarea id="workContent" @bind="form.WorkContent" class="markdown-input" placeholder="用 Markdown 記下完成事項、問題或下一步…"></textarea><span class="hint">支援離線 Markdown 編輯、預覽與分欄檢視。</span></div>
             <div class="form-actions"><button class="button button-primary" type="submit">儲存紀錄</button></div>
         </div>
@@ -265,9 +264,9 @@
         try
         {
             form.WorkContent = await GetEditorValueAsync("workContent", quickEditorInitialized, form.WorkContent);
-            await WorkLogs.AddAsync(DateOnly.FromDateTime(form.WorkDate), form.Hours ?? 0, form.WorkContent, ParseProject(form.ProjectId), form.Title);
+            await WorkLogs.AddAsync(DateOnly.FromDateTime(form.WorkDate), form.Hours ?? 0, form.WorkContent, ParseProject(form.ProjectId));
             Toasts.Success("工作紀錄已儲存。");
-            form.Hours = null; form.Title = string.Empty; form.WorkContent = string.Empty;
+            form.Hours = null; form.WorkContent = string.Empty;
             await SetEditorValueAsync("workContent", quickEditorInitialized, string.Empty);
             await ReloadAsync();
         }
@@ -398,7 +397,7 @@
         }
         catch (ArgumentException exception) { Toasts.Error(exception.Message); }
     }
-    private async Task CopyAsync(WorkEntry entry) { form.WorkDate = entry.WorkDate.ToDateTime(TimeOnly.MinValue); form.ProjectId = entry.ProjectId?.ToString() ?? string.Empty; form.Hours = entry.Hours; form.Title = entry.Title; form.WorkContent = entry.WorkContent; await SetEditorValueAsync("workContent", quickEditorInitialized, form.WorkContent); }
+    private async Task CopyAsync(WorkEntry entry) { form.WorkDate = entry.WorkDate.ToDateTime(TimeOnly.MinValue); form.ProjectId = entry.ProjectId?.ToString() ?? string.Empty; form.Hours = entry.Hours; form.WorkContent = entry.WorkContent; await SetEditorValueAsync("workContent", quickEditorInitialized, form.WorkContent); }
     private async Task DeleteAsync(Guid id) { await WorkLogs.DeleteAsync(id); pendingDeleteId = null; Toasts.Success("工作紀錄已刪除。"); await ReloadAsync(); }
     private void CancelDelete() => pendingDeleteId = null;
     private static Guid? ParseProject(string value) => Guid.TryParse(value, out var id) ? id : null;

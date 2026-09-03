@@ -21,13 +21,14 @@ body { margin: 0; min-width: 320px; background: #f4f6fb; }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 a { color: inherit; }
+h1[tabindex="-1"]:focus { outline: none; }
 select { min-height: 40px; padding: 9px 35px 9px 11px; color: var(--ink); background-color: #fbfcff; background-image: linear-gradient(45deg, transparent 50%, #697791 50%), linear-gradient(135deg, #697791 50%, transparent 50%); background-position: calc(100% - 15px) 17px, calc(100% - 10px) 17px; background-repeat: no-repeat; background-size: 5px 5px, 5px 5px; border: 1px solid #d6ddea; border-radius: 8px; outline: none; appearance: none; }
 select:focus { border-color: #8794ec; box-shadow: 0 0 0 3px #eef0ff; }
 
 .app-shell { min-height: 100vh; display: flex; }
 .sidebar { width: 248px; position: fixed; inset: 0 auto 0 0; display: flex; flex-direction: column; padding: 26px 18px 18px; background: #18243d; color: #dce4ff; }
 .brand { display: flex; align-items: center; gap: 11px; padding: 0 10px 30px; }
-.brand-mark { display: grid; place-items: center; width: 35px; height: 35px; border-radius: 11px; background: #7f8cff; color: white; font-weight: 800; font-size: 19px; }
+.brand-mark { display: block; flex: 0 0 35px; width: 35px; height: 35px; object-fit: contain; }
 .brand strong { display: block; color: white; font-size: 17px; letter-spacing: .02em; }
 .brand small { display: block; margin-top: 3px; color: #8d9abb; font-size: 11px; }
 .nav-menu { display: flex; flex-direction: column; gap: 4px; }
@@ -186,11 +187,14 @@ p { color: var(--muted); line-height: 1.65; }
 .badge-running, .badge-provisional { color: #4c5dbd; background: #eef0ff; }
 .badge-error, .badge-superseded { color: #9b424a; background: #fff0f1; }
 .badge-unavailable { color: #875c11; background: #fff6df; }
-.source-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 17px 0; border-top: 1px solid var(--line); }
+.source-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 14px 18px; padding: 17px 0; border-top: 1px solid var(--line); }
 .source-card:first-of-type { border-top: 0; padding-top: 0; }
 .source-title { display: flex; align-items: center; gap: 9px; }
 .source-meta { margin: 7px 0 0; color: var(--muted); font-size: 12px; white-space: pre-line; }
 .source-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.source-card > .collection-progress,
+.source-card > .operation-progress,
+.source-card > .alert { grid-column: 1 / -1; }
 .source-more-actions { position: relative; }
 .source-more-actions > summary { display: inline-flex; align-items: center; justify-content: center; min-height: 31px; padding: 0 10px; color: #4f5d75; background: white; border: 1px solid #d3dbea; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 650; list-style: none; }
 .source-more-actions > summary::-webkit-details-marker { display: none; }
@@ -345,7 +349,8 @@ button.calendar-day:hover { border-color: #aeb8dc; transform: translateY(-1px); 
     .form-grid .full { grid-column: auto; }
     .form-actions { grid-column: auto; justify-content: stretch; }
     .form-actions .button { flex: 1; }
-    .source-card, .report-row, .inbox-row { align-items: flex-start; flex-direction: column; }
+    .source-card { grid-template-columns: 1fr; }
+    .report-row, .inbox-row { align-items: flex-start; flex-direction: column; }
     .summary-workspace { gap: 14px; }
     .report-workspace { padding: 18px; }
     .source-actions { justify-content: flex-start; width: 100%; }
@@ -422,13 +427,13 @@ button.calendar-day:hover { border-color: #aeb8dc; transform: translateY(-1px); 
 
 .collection-progress {
     display: grid;
-    gap: 9px;
+    gap: 10px;
     width: 100%;
-    margin-top: 12px;
-    padding: 11px 13px;
-    border: 1px solid rgba(109, 124, 255, 0.3);
-    border-radius: 8px;
-    background: rgba(109, 124, 255, 0.07);
+    margin-top: 0;
+    padding: 12px 14px;
+    border: 1px solid #dbe0ff;
+    border-radius: 10px;
+    background: #f8f9ff;
 }
 
 .collection-progress > div:first-child {
@@ -440,7 +445,7 @@ button.calendar-day:hover { border-color: #aeb8dc; transform: translateY(-1px); 
 
 .collection-progress > div:first-child span {
     color: var(--muted, #697386);
-    font-size: 0.88rem;
+    font-size: 0.82rem;
 }
 
 .collection-progress-track {
@@ -455,7 +460,7 @@ button.calendar-day:hover { border-color: #aeb8dc; transform: translateY(-1px); 
     width: 42%;
     height: 100%;
     border-radius: inherit;
-    background: #6d7cff;
+    background: linear-gradient(90deg, #6d7cff, #8d96ff);
     animation: collection-progress-slide 1.1s ease-in-out infinite alternate;
 }
 

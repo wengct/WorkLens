@@ -135,6 +135,7 @@ public sealed class GitSourceAdapter(ProcessRunner processRunner, ActivitySource
 
         foreach (var configuredPath in settings.RepositoryPaths.Distinct(StringComparer.OrdinalIgnoreCase))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
                 var rootResult = await RunGitAsync(
@@ -177,6 +178,7 @@ public sealed class GitSourceAdapter(ProcessRunner processRunner, ActivitySource
                                  .Where(commit => authorEmails.Contains(commit.Email))
                                  .Take(MaxCommitsPerRepository))
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
                         var patchId = await GetPatchIdAsync(request.Source, root, commit.Hash, cancellationToken);
                         var commitMessage = await GetCommitMessageAsync(request.Source, root, commit.Hash, cancellationToken);
                         batch.Evidence.Add(new SourceEvidence
@@ -251,6 +253,7 @@ public sealed class GitSourceAdapter(ProcessRunner processRunner, ActivitySource
         CollectionBatch batch,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var result = await RunGitAsync(
             request.Source,
             root,
@@ -264,6 +267,7 @@ public sealed class GitSourceAdapter(ProcessRunner processRunner, ActivitySource
 
         foreach (var item in result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var fields = item.TrimEnd('\r').Split('\u001f');
             if (fields.Length < 4 || !DateTimeOffset.TryParse(fields[3], out var occurredAt))
             {

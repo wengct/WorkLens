@@ -162,7 +162,16 @@
         <div class="field"><label>起始日期</label><InputDate @bind-Value="backfillStart" /></div>
         <div class="field"><label>結束日期</label><InputDate @bind-Value="backfillEnd" /></div>
         <div class="field full"><label>來源</label><select @bind="backfillSourceId"><option value="">全部可用來源</option>@foreach (var source in sources.Where(source => source.Enabled && source.HealthStatus == SourceHealthStatus.Ready)) { <option value="@source.Id">@source.DisplayName</option> }</select></div>
-        <div class="form-actions"><button class="button button-secondary" @onclick="BackfillAsync" disabled="@isBackfilling">@(isBackfilling ? "回補中…" : "重新收集此範圍")</button></div>
+        <div class="form-actions">
+            @if (isBackfilling)
+            {
+                <button class="button button-danger" @onclick="StopBackfill" disabled="@IsStoppingBackfill">@(IsStoppingBackfill ? "正在停止…" : "停止回補")</button>
+            }
+            else
+            {
+                <button class="button button-secondary" @onclick="BackfillAsync">重新收集此範圍</button>
+            }
+        </div>
     </div>
     @if (isBackfilling)
     {
@@ -198,12 +207,13 @@
         {
             var sourceIsCollecting = collectingSourceIds.Contains(source.Id) || source.HealthStatus == SourceHealthStatus.Running;
             var sourceIsValidating = validatingSourceIds.Contains(source.Id);
+            var sourceIsStopping = stoppingSourceIds.Contains(source.Id);
             var sourceIsBusy = sourceIsCollecting || sourceIsValidating;
             <div class="source-card">
                 <div>
                     <div class="source-title">
                         <h3>@source.DisplayName</h3>
-                        <span class="badge @StatusClass(sourceIsBusy ? SourceHealthStatus.Running : source.HealthStatus)">@(sourceIsValidating ? "驗證中" : sourceIsCollecting ? "收集中" : StatusText(source.HealthStatus))</span>
+                        <span class="badge @StatusClass(sourceIsBusy ? SourceHealthStatus.Running : source.HealthStatus)">@(sourceIsValidating ? "驗證中" : sourceIsStopping ? "停止中" : sourceIsCollecting ? "收集中" : StatusText(source.HealthStatus))</span>
                         @if (source.IncludeInAi)
                         {
                             <span class="badge badge-provisional">AI</span>
@@ -224,7 +234,14 @@
                 <div class="source-actions">
                     <button class="button button-secondary button-small" @onclick="() => BeginEdit(source)" disabled="@sourceIsBusy">編輯</button>
                     <button class="button button-secondary button-small" @onclick="() => ValidateAsync(source.Id)" disabled="@sourceIsBusy">@(sourceIsValidating ? "驗證中…" : "驗證")</button>
-                    <button class="button button-secondary button-small" @onclick="() => RunNowAsync(source.Id)" disabled="@(source.HealthStatus != SourceHealthStatus.Ready || sourceIsBusy)">@(sourceIsCollecting ? "收集中…" : "立即收集")</button>
+                    @if (sourceIsCollecting)
+                    {
+                        <button class="button button-danger button-small" @onclick="() => StopCollectionAsync(source.Id)" disabled="@sourceIsStopping">@(sourceIsStopping ? "正在停止…" : "停止收集")</button>
+                    }
+                    else
+                    {
+                        <button class="button button-secondary button-small" @onclick="() => RunNowAsync(source.Id)" disabled="@(source.HealthStatus != SourceHealthStatus.Ready || sourceIsBusy)">立即收集</button>
+                    }
                     <button class="button button-secondary button-small" @onclick="() => ToggleAsync(source)" disabled="@sourceIsBusy">@(source.Enabled ? "停用" : "啟用")</button>
                     <details class="source-more-actions">
                         <summary>更多操作</summary>
@@ -250,7 +267,7 @@
                 @if (sourceIsCollecting)
                 {
                     <div class="collection-progress" aria-live="polite">
-                        <div><strong>正在掃描與匯入來源資料…</strong><span>Codex 首次匯入可能需要較長時間；完成後會顯示新增、更新與未變更筆數。</span></div>
+                        <div><strong>@(sourceIsStopping ? "正在安全停止收集…" : "正在掃描與匯入來源資料…")</strong><span>@(sourceIsStopping ? "正在結束目前的檔案或程序，已完成的資料不會寫入。" : "Codex 首次匯入可能需要較長時間；完成後會顯示新增、更新與未變更筆數。")</span></div>
                         <div class="collection-progress-track"><span></span></div>
                     </div>
                 }
@@ -290,7 +307,9 @@
     private string backfillSourceId = string.Empty;
     private bool isBackfilling;
     private readonly HashSet<Guid> collectingSourceIds = [];
+    private readonly HashSet<Guid> stoppingSourceIds = [];
     private readonly HashSet<Guid> validatingSourceIds = [];
+    private CancellationTokenSource? backfillCancellation;
     private readonly CancellationTokenSource refreshCancellation = new();
     private Task? refreshTask;
 
@@ -442,6 +461,13 @@
 
     private async Task BackfillAsync()
     {
+        if (isBackfilling)
+        {
+            return;
+        }
+
+        using var cancellation = new CancellationTokenSource();
+        backfillCancellation = cancellation;
         isBackfilling = true;
         Toasts.Info("正在回補來源資料…");
         await InvokeAsync(StateHasChanged);
@@ -450,14 +476,37 @@
         {
             var available = sources.Where(source => source.Enabled && source.HealthStatus == SourceHealthStatus.Ready).Select(source => source.Id);
             var ids = Guid.TryParse(backfillSourceId, out var sourceId) ? [sourceId] : available.ToArray();
-            var results = await Orchestrator.CollectRangeAsync(ids, DateOnly.FromDateTime(backfillStart), DateOnly.FromDateTime(backfillEnd));
+            var results = await Orchestrator.CollectRangeAsync(ids, DateOnly.FromDateTime(backfillStart), DateOnly.FromDateTime(backfillEnd), cancellation.Token);
+            if (results.Any(result => result.Canceled))
+            {
+                Toasts.Info("資料回補已停止，未完成的來源不會寫入變更。");
+                return;
+            }
             var resultMessage = $"回補完成：新增 {results.Sum(result => result.AddedCount)}、更新 {results.Sum(result => result.UpdatedCount)}、未變更 {results.Sum(result => result.UnchangedCount)}。";
             if (results.Any(result => !result.Succeeded)) Toasts.Error(resultMessage);
             else Toasts.Success(resultMessage);
             await ReloadAsync();
         }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { Toasts.Info("資料回補已停止。"); }
         catch (ArgumentException exception) { SetError(exception.Message); }
-        finally { isBackfilling = false; }
+        finally
+        {
+            backfillCancellation = null;
+            isBackfilling = false;
+        }
+    }
+
+    private bool IsStoppingBackfill => backfillCancellation?.IsCancellationRequested == true;
+
+    private void StopBackfill()
+    {
+        if (backfillCancellation is null || backfillCancellation.IsCancellationRequested)
+        {
+            return;
+        }
+
+        Toasts.Info("正在停止資料回補…");
+        backfillCancellation.Cancel();
     }
 
     private async Task ValidateAsync(Guid id)
@@ -499,6 +548,11 @@
         try
         {
             var result = await Orchestrator.CollectAsync(id);
+            if (result.Canceled)
+            {
+                Toasts.Info($"「{sourceName}」收集已停止，未完成的變更未寫入。");
+                return;
+            }
             if (result.Succeeded)
             {
                 var resultMessage = $"收集完成：新增 {result.AddedCount}、更新 {result.UpdatedCount}、未變更 {result.UnchangedCount}。";
@@ -520,8 +574,26 @@
         finally
         {
             collectingSourceIds.Remove(id);
+            stoppingSourceIds.Remove(id);
             await ReloadAsync();
         }
+    }
+
+    private async Task StopCollectionAsync(Guid id)
+    {
+        if (!stoppingSourceIds.Add(id))
+        {
+            return;
+        }
+
+        if (await Orchestrator.StopCollectionAsync(id))
+        {
+            Toasts.Info("正在停止來源收集…");
+            return;
+        }
+
+        stoppingSourceIds.Remove(id);
+        Toasts.Info("此來源目前沒有可停止的收集工作。");
     }
 
     private async Task ToggleAsync(ActivitySource source)
@@ -580,6 +652,8 @@
                 await InvokeAsync(() =>
                 {
                     sources = refreshedSources;
+                    stoppingSourceIds.RemoveWhere(id => refreshedSources.All(source =>
+                        source.Id != id || source.HealthStatus != SourceHealthStatus.Running));
                     StateHasChanged();
                 });
             }
@@ -591,6 +665,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        backfillCancellation?.Cancel();
         await refreshCancellation.CancelAsync();
         if (refreshTask is not null)
         {

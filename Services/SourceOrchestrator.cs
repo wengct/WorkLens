@@ -12,7 +12,8 @@ public sealed record CollectionRunResult(
     string? Error = null,
     int AddedCount = 0,
     int UpdatedCount = 0,
-    int UnchangedCount = 0);
+    int UnchangedCount = 0,
+    bool Canceled = false);
 
 public sealed class SourceOrchestrator(
     IDbContextFactory<WorkLensDbContext> factory,
@@ -21,6 +22,42 @@ public sealed class SourceOrchestrator(
     ILogger<SourceOrchestrator> logger)
 {
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> locks = new();
+    private readonly ConcurrentDictionary<Guid, CancellationTokenSource> activeCollections = new();
+
+    public async Task<bool> StopCollectionAsync(
+        Guid sourceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (activeCollections.TryGetValue(sourceId, out var cancellation))
+        {
+            try
+            {
+                cancellation.Cancel();
+                return true;
+            }
+            catch (ObjectDisposedException)
+            {
+                // The collection completed between lookup and cancellation. Check the durable
+                // status below in case this is an interrupted run from a previous process.
+            }
+        }
+
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        var source = await db.ActivitySources.SingleOrDefaultAsync(
+            item => item.Id == sourceId && !item.IsArchived,
+            cancellationToken);
+        if (source?.HealthStatus != SourceHealthStatus.Running)
+        {
+            return false;
+        }
+
+        source.HealthStatus = source.Enabled ? SourceHealthStatus.Ready : SourceHealthStatus.Disabled;
+        source.LastError = null;
+        source.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("已復原沒有活動收集工作的 Running 來源 {SourceId}", sourceId);
+        return true;
+    }
 
     public async Task<SourceValidationResult> ValidateAsync(
         Guid sourceId,
@@ -62,7 +99,12 @@ public sealed class SourceOrchestrator(
         var results = new List<CollectionRunResult>();
         foreach (var sourceId in sourceIds.Distinct())
         {
-            results.Add(await CollectCoreAsync(sourceId, start, end, false, cancellationToken));
+            var result = await CollectCoreAsync(sourceId, start, end, false, cancellationToken);
+            results.Add(result);
+            if (result.Canceled)
+            {
+                break;
+            }
         }
         return results;
     }
@@ -76,11 +118,14 @@ public sealed class SourceOrchestrator(
     {
         var gate = locks.GetOrAdd(sourceId, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken);
+        using var collectionCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        activeCollections[sourceId] = collectionCancellation;
+        var collectionToken = collectionCancellation.Token;
         try
         {
-            await using var readDb = await factory.CreateDbContextAsync(cancellationToken);
+            await using var readDb = await factory.CreateDbContextAsync(collectionToken);
             var source = await readDb.ActivitySources.AsNoTracking()
-                .SingleOrDefaultAsync(x => x.Id == sourceId && !x.IsArchived, cancellationToken);
+                .SingleOrDefaultAsync(x => x.Id == sourceId && !x.IsArchived, collectionToken);
             if (source is null || !source.Enabled)
             {
                 return new CollectionRunResult(false, 0, [], "來源未啟用。");
@@ -96,19 +141,20 @@ public sealed class SourceOrchestrator(
                 : source.LastSuccessAt.Value.AddMinutes(-2));
             var adapter = registry.Get(source.SourceType);
 
-            await SetRunningAsync(sourceId, cancellationToken);
+            await SetRunningAsync(sourceId, collectionToken);
             var batch = await adapter.CollectAsync(
-                new CollectionRequest(source, since, requestedEnd, updateCheckpoint, cancellationToken),
-                cancellationToken);
+                new CollectionRequest(source, since, requestedEnd, updateCheckpoint, collectionToken),
+                collectionToken);
+            collectionToken.ThrowIfCancellationRequested();
 
-            await using var db = await factory.CreateDbContextAsync(cancellationToken);
-            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-            var trackedSource = await db.ActivitySources.SingleAsync(x => x.Id == sourceId, cancellationToken);
+            await using var db = await factory.CreateDbContextAsync(collectionToken);
+            await using var transaction = await db.Database.BeginTransactionAsync(collectionToken);
+            var trackedSource = await db.ActivitySources.SingleAsync(x => x.Id == sourceId, collectionToken);
 
-            var changes = await UpsertEvidenceAsync(db, batch.Evidence, cancellationToken);
-            await UpdateCurrentStatusAsync(db, batch, cancellationToken);
-            await ReconcileLineageAsync(db, sourceId, batch, cancellationToken);
-            await ReconcileRebaseSessionsAsync(db, sourceId, batch, cancellationToken);
+            var changes = await UpsertEvidenceAsync(db, batch.Evidence, collectionToken);
+            await UpdateCurrentStatusAsync(db, batch, collectionToken);
+            await ReconcileLineageAsync(db, sourceId, batch, collectionToken);
+            await ReconcileRebaseSessionsAsync(db, sourceId, batch, collectionToken);
 
             if (updateCheckpoint)
             {
@@ -122,12 +168,14 @@ public sealed class SourceOrchestrator(
                 ? null
                 : string.Join(Environment.NewLine, batch.Warnings.Take(10));
             trackedSource.UpdatedAt = DateTimeOffset.UtcNow;
-            await db.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            await db.SaveChangesAsync(collectionToken);
+            await transaction.CommitAsync(collectionToken);
 
             if (changes.ChangedDates.Count > 0)
             {
-                await invalidation.MarkStaleAsync(changes.ChangedDates, cancellationToken);
+                // The collection transaction is already committed. Finish its bookkeeping even if
+                // cancellation arrives during this final, non-collecting step.
+                await invalidation.MarkStaleAsync(changes.ChangedDates, CancellationToken.None);
             }
 
             return new CollectionRunResult(
@@ -139,6 +187,12 @@ public sealed class SourceOrchestrator(
                 changes.Updated,
                 changes.Unchanged);
         }
+        catch (OperationCanceledException) when (collectionToken.IsCancellationRequested)
+        {
+            logger.LogInformation("資料來源 {SourceId} 收集已由使用者或主機取消", sourceId);
+            await RestoreReadyAfterCancellationAsync(sourceId);
+            return new CollectionRunResult(false, 0, [], "收集已停止。", Canceled: true);
+        }
         catch (Exception exception) when (exception is InvalidOperationException or IOException or DbUpdateException)
         {
             logger.LogWarning(exception, "資料來源 {SourceId} 收集失敗", sourceId);
@@ -147,7 +201,30 @@ public sealed class SourceOrchestrator(
         }
         finally
         {
+            activeCollections.TryRemove(sourceId, out _);
             gate.Release();
+        }
+    }
+
+    private async Task RestoreReadyAfterCancellationAsync(Guid sourceId)
+    {
+        try
+        {
+            await using var db = await factory.CreateDbContextAsync(CancellationToken.None);
+            var source = await db.ActivitySources.SingleOrDefaultAsync(x => x.Id == sourceId, CancellationToken.None);
+            if (source is null)
+            {
+                return;
+            }
+
+            source.HealthStatus = source.Enabled ? SourceHealthStatus.Ready : SourceHealthStatus.Disabled;
+            source.LastError = null;
+            source.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or DbUpdateException)
+        {
+            logger.LogWarning(exception, "無法還原已取消來源的狀態 {SourceId}", sourceId);
         }
     }
 

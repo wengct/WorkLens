@@ -15,5 +15,9 @@ public sealed class SourceCollectionProgressTests
         Assert.Contains("collectingSourceIds.Contains(source.Id)", razor, StringComparison.Ordinal);
         Assert.Contains("PeriodicTimer", razor, StringComparison.Ordinal);
         Assert.Contains("aria-live=\"polite\"", razor, StringComparison.Ordinal);
+        Assert.Contains("停止收集", razor, StringComparison.Ordinal);
+        Assert.Contains("StopCollectionAsync(source.Id)", razor, StringComparison.Ordinal);
+        Assert.Contains("停止回補", razor, StringComparison.Ordinal);
+        Assert.Contains("cancellation.Token", razor, StringComparison.Ordinal);
     }
 }

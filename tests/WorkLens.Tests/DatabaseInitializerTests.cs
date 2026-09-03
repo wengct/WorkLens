@@ -121,6 +121,31 @@ public sealed class DatabaseInitializerTests
         Assert.Equal("舊紀錄標題", (await verify.WorkEntries.SingleAsync()).Title);
     }
 
+    [Fact]
+    public async Task Initialize_recovers_source_collection_interrupted_by_a_previous_process()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
+        await using (var setup = new WorkLensDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            setup.ActivitySources.Add(new ActivitySource
+            {
+                DisplayName = "Interrupted source",
+                SourceType = ActivitySourceType.WindowsCodex,
+                Enabled = true,
+                HealthStatus = SourceHealthStatus.Running
+            });
+            await setup.SaveChangesAsync();
+        }
+
+        await new DatabaseInitializer(new Factory(options)).InitializeAsync();
+
+        await using var verify = new WorkLensDbContext(options);
+        Assert.Equal(SourceHealthStatus.Ready, (await verify.ActivitySources.SingleAsync()).HealthStatus);
+    }
+
     private sealed class Factory(DbContextOptions<WorkLensDbContext> options)
         : IDbContextFactory<WorkLensDbContext>
     {
