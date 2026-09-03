@@ -10,8 +10,9 @@ obj/
 *.rsuser
 .idea/
 
-# WorkLens runtime data: database, reports, backups, and local exports
-data/
+# WorkLens runtime data: database, reports, backups, and local exports.
+# Do not ignore a generic data/ directory: Git's case-insensitive matching on
+# Windows would also hide the application's Data/ source directory.
 backups/
 reports/
 exports/
