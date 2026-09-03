@@ -54,7 +54,11 @@ if [[ -f "$agent_plist" ]] && grep -Fq "$install_dir" "$agent_plist"; then had_a
 
 mkdir -p "$versions_dir" "$bin_dir"
 staging_dir="${versions_dir}/.staging-$$"
-cleanup() { [[ -d "$staging_dir" ]] && rm -rf "$staging_dir"; }
+cleanup() {
+  if [[ -d "$staging_dir" ]]; then
+    rm -rf "$staging_dir"
+  fi
+}
 trap cleanup EXIT
 
 if [[ "$previous_version" != "$version" || ! -d "$version_dir" ]]; then
