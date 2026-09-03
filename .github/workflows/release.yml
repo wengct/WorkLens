@@ -92,7 +92,7 @@ jobs:
           cp README.md LICENSE "$package/"
           printf '%s\n' "$version" > "$package/VERSION"
           chmod +x "$package/WorkLens" "$package/scripts/"*.sh
-          ./scripts/test-install.sh "$package"
+          bash ./scripts/test-install.sh "$package"
           tar -czf "$RUNNER_TEMP/$artifact" -C "$package" .
           echo "ARTIFACT_PATH=$RUNNER_TEMP/$artifact" >> "$GITHUB_ENV"
           echo "ARTIFACT_NAME=$artifact" >> "$GITHUB_ENV"
