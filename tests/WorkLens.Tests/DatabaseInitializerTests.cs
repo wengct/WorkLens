@@ -47,6 +47,36 @@ public sealed class DatabaseInitializerTests
         var configuration = await db.AiProviders.SingleAsync();
         Assert.True(configuration.UseHeadless);
         Assert.Equal("整理", configuration.GeneralReportPrompt);
+        Assert.Equal("整理", (await db.PromptTemplates.SingleAsync()).Content);
+        Assert.Equal(4, await db.ScheduleDefinitions.CountAsync());
+    }
+
+    [Fact]
+    public async Task Initialize_migrates_legacy_prompt_overrides_to_report_schedules()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
+        await using (var setup = new WorkLensDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            setup.AiProviders.Add(new AiProviderConfiguration
+            {
+                GeneralReportPrompt = "General",
+                DailyReportPromptOverride = "Daily custom",
+                WeeklyReportPromptOverride = "Weekly custom"
+            });
+            await setup.SaveChangesAsync();
+        }
+
+        await new DatabaseInitializer(new Factory(options)).InitializeAsync();
+
+        await using var verify = new WorkLensDbContext(options);
+        var dailySchedule = await verify.ScheduleDefinitions.SingleAsync(x => x.Kind == ScheduleKind.DailyReport);
+        var weeklySchedule = await verify.ScheduleDefinitions.SingleAsync(x => x.Kind == ScheduleKind.WeeklyReport);
+        Assert.Equal("Daily custom", (await verify.PromptTemplates.SingleAsync(x => x.Id == dailySchedule.PromptTemplateId)).Content);
+        Assert.Equal("Weekly custom", (await verify.PromptTemplates.SingleAsync(x => x.Id == weeklySchedule.PromptTemplateId)).Content);
+        Assert.Equal("General", (await verify.PromptTemplates.SingleAsync(x => x.IsDefault)).Content);
     }
 
     [Fact]

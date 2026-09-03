@@ -76,12 +76,16 @@ builder.Services.AddDataProtection()
     .SetApplicationName("WorkLens");
 
 builder.Services.AddSingleton(paths);
+builder.Services.AddSingleton<RuntimeSettingsService>();
+builder.Services.AddSingleton<FolderPickerService>();
 builder.Services.AddSingleton(startupHealth);
 builder.Services.AddDbContextFactory<WorkLensDbContext>(options =>
     options.UseSqlite($"Data Source={paths.DatabasePath}"));
 builder.Services.AddSingleton<DatabaseInitializer>();
 
 builder.Services.AddSingleton<ProcessRunner>();
+builder.Services.AddSingleton<IProcessRunner>(serviceProvider =>
+    serviceProvider.GetRequiredService<ProcessRunner>());
 builder.Services.AddSingleton<AskBridgeService>();
 builder.Services.AddSingleton<IAiProviderAdapter>(serviceProvider =>
     serviceProvider.GetRequiredService<AskBridgeService>());
@@ -120,6 +124,9 @@ builder.Services.AddScoped<ManualSourceService>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<AiConfigurationService>();
 builder.Services.AddScoped<BackupService>();
+builder.Services.AddScoped<PromptTemplateService>();
+builder.Services.AddScoped<ScheduleRunner>();
+builder.Services.AddScoped<ScheduleService>();
 builder.Services.AddScoped<ToastService>();
 
 builder.Services.AddHostedService<SourceCollectionHostedService>();

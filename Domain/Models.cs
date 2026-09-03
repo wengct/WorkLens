@@ -59,6 +59,14 @@ public enum ReportKind
     Weekly
 }
 
+public enum ScheduleKind
+{
+    DailyReport,
+    WeeklyReport,
+    DailyBackup,
+    WeeklyBackup
+}
+
 public sealed class Project
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -177,6 +185,9 @@ public sealed class AiJob
     public DateTimeOffset? CompletedAt { get; set; }
     public string? RawResponse { get; set; }
     public string? Error { get; set; }
+    public Guid? PromptTemplateId { get; set; }
+    public string PromptNameSnapshot { get; set; } = string.Empty;
+    public string PromptTextSnapshot { get; set; } = string.Empty;
 }
 
 public sealed class AiProviderConfiguration
@@ -198,6 +209,48 @@ public sealed class AiProviderConfiguration
 public static class AiPromptDefaults
 {
     public const string GeneralReportPrompt = "請將資料整理成清楚、可直接交付的工作回報，並依據工作內容自動歸類，按以下固定分類拆分章節：專案管理、UIUX相關、需求評估、功能開發、功能測試、BUG處理、文件相關、客服、其他。分類名稱、文字與順序不可更動；只建立有內容的章節。同一筆工作若涉及多個分類，歸入最主要的分類，避免重複。保留具體成果與處理過程；以繁體中文撰寫，內容精簡但不可遺漏重要脈絡。";
+}
+
+public sealed class PromptTemplate
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public bool IsDefault { get; set; }
+    public bool IsArchived { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class ScheduleDefinition
+{
+    public Guid Id { get; set; }
+    public ScheduleKind Kind { get; set; }
+    public bool Enabled { get; set; } = true;
+    public int DaysOfWeekMask { get; set; }
+    public int Hour { get; set; }
+    public int Minute { get; set; }
+    public Guid? PromptTemplateId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class ScheduleExecution
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ScheduleId { get; set; }
+    public string PeriodKey { get; set; } = string.Empty;
+    public bool IsManual { get; set; }
+    public string Status { get; set; } = "Running";
+    public string DeterministicStatus { get; set; } = "NotApplicable";
+    public string AiStatus { get; set; } = "NotApplicable";
+    public string BackupStatus { get; set; } = "NotApplicable";
+    public Guid? PromptTemplateId { get; set; }
+    public string PromptNameSnapshot { get; set; } = string.Empty;
+    public string PromptTextSnapshot { get; set; } = string.Empty;
+    public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? CompletedAt { get; set; }
+    public string? Error { get; set; }
 }
 
 public sealed class BackupRecord

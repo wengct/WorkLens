@@ -72,15 +72,7 @@
                     <div class="button-row" style="margin-top: 8px">
                         <button class="button button-secondary button-small" @onclick="() => BeginEditAsync(entry)">編輯</button>
                         <button class="button button-secondary button-small" @onclick="() => CopyAsync(entry)">複製</button>
-                        @if (pendingDeleteId == entry.Id)
-                        {
-                            <button class="button button-danger button-small" @onclick="() => DeleteAsync(entry.Id)">確認刪除</button>
-                            <button class="button button-secondary button-small" @onclick="CancelDelete">取消</button>
-                        }
-                        else
-                        {
-                            <button class="button button-danger button-small" @onclick="() => pendingDeleteId = entry.Id">刪除</button>
-                        }
+                        <button class="button button-danger button-small" @onclick="() => pendingDeleteId = entry.Id">刪除</button>
                     </div>
                 </div>
             }
@@ -119,15 +111,7 @@
                             {
                                 <div class="button-row" style="margin-top: 8px">
                                     <button class="button button-secondary button-small" @onclick="() => BeginManualSourceEditAsync(item)">編輯</button>
-                                    @if (pendingManualDeleteId == item.Id)
-                                    {
-                                        <button class="button button-danger button-small" @onclick="() => DeleteManualSourceAsync(item.Id)">確認刪除</button>
-                                        <button class="button button-secondary button-small" @onclick="() => pendingManualDeleteId = null">取消</button>
-                                    }
-                                    else
-                                    {
-                                        <button class="button button-danger button-small" @onclick="() => pendingManualDeleteId = item.Id">刪除</button>
-                                    }
+                                    <button class="button button-danger button-small" @onclick="() => pendingManualDeleteId = item.Id">刪除</button>
                                 </div>
                                 }
                             }
@@ -186,6 +170,24 @@
     </div>
 }
 
+<ConfirmDialog Open="pendingDeleteId is not null"
+               Title="刪除這筆工作紀錄？"
+               Message="刪除後，相關摘要會標示為需要重產；這筆工作紀錄無法復原。"
+               ConfirmText="確認刪除"
+               BusyText="刪除中…"
+               IsBusy="isDeleting"
+               OnConfirm="ConfirmDeleteAsync"
+               OnCancel="CancelDelete" />
+
+<ConfirmDialog Open="pendingManualDeleteId is not null"
+               Title="刪除這筆人工來源？"
+               Message="刪除後，相關摘要會標示為需要重產；這筆來源內容無法復原。"
+               ConfirmText="確認刪除"
+               BusyText="刪除中…"
+               IsBusy="isDeleting"
+               OnConfirm="ConfirmManualSourceDeleteAsync"
+               OnCancel="CancelManualSourceDelete" />
+
 @code {
     [SupplyParameterFromQuery(Name = "date")] public DateTime? RequestedDate { get; set; }
     private DateOnly selectedDate;
@@ -201,6 +203,7 @@
     private Guid? editingManualId;
     private Guid? pendingDeleteId;
     private Guid? pendingManualDeleteId;
+    private bool isDeleting;
     private bool quickEditorInitialized;
     private bool editEditorInitialized;
     private bool manualCreateEditorInitialized;
@@ -295,10 +298,19 @@
 
     private async Task DeleteManualSourceAsync(Guid id)
     {
-        await ManualSources.DeleteAsync(id);
-        pendingManualDeleteId = null;
-        Toasts.Success("人工來源已刪除。");
-        await ReloadAsync();
+        if (isDeleting) return;
+        isDeleting = true;
+        try
+        {
+            await ManualSources.DeleteAsync(id);
+            pendingManualDeleteId = null;
+            Toasts.Success("人工來源已刪除。");
+            await ReloadAsync();
+        }
+        finally
+        {
+            isDeleting = false;
+        }
     }
 
     private Task OpenManualSourceCreateAsync()
@@ -398,8 +410,26 @@
         catch (ArgumentException exception) { Toasts.Error(exception.Message); }
     }
     private async Task CopyAsync(WorkEntry entry) { form.WorkDate = entry.WorkDate.ToDateTime(TimeOnly.MinValue); form.ProjectId = entry.ProjectId?.ToString() ?? string.Empty; form.Hours = entry.Hours; form.WorkContent = entry.WorkContent; await SetEditorValueAsync("workContent", quickEditorInitialized, form.WorkContent); }
-    private async Task DeleteAsync(Guid id) { await WorkLogs.DeleteAsync(id); pendingDeleteId = null; Toasts.Success("工作紀錄已刪除。"); await ReloadAsync(); }
+    private async Task DeleteAsync(Guid id)
+    {
+        if (isDeleting) return;
+        isDeleting = true;
+        try
+        {
+            await WorkLogs.DeleteAsync(id);
+            pendingDeleteId = null;
+            Toasts.Success("工作紀錄已刪除。");
+            await ReloadAsync();
+        }
+        finally
+        {
+            isDeleting = false;
+        }
+    }
+    private Task ConfirmDeleteAsync() => pendingDeleteId is Guid id ? DeleteAsync(id) : Task.CompletedTask;
+    private Task ConfirmManualSourceDeleteAsync() => pendingManualDeleteId is Guid id ? DeleteManualSourceAsync(id) : Task.CompletedTask;
     private void CancelDelete() => pendingDeleteId = null;
+    private void CancelManualSourceDelete() => pendingManualDeleteId = null;
     private static Guid? ParseProject(string value) => Guid.TryParse(value, out var id) ? id : null;
     private string ProjectName(Guid? id) => id is Guid projectId ? projects.FirstOrDefault(x => x.Id == projectId)?.Name ?? "已停用專案" : "未分類";
     private string ReportStateText() => report is null ? "未產生" : report.IsStale ? "需重產" : "最新";

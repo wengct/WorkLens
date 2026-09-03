@@ -1,0 +1,158 @@
+@page "/prompts"
+@inject PromptTemplateService PromptTemplates
+@inject AiConfigurationService AiConfig
+@inject AskBridgeService AskBridge
+@inject ToastService Toasts
+
+<PageTitle>Prompt 範本｜WorkLens</PageTitle>
+
+<div class="page-heading"><div><p class="eyebrow">Settings</p><h1>Prompt 範本</h1><p>管理可重用的 AI 整理指令；封存後仍保留歷史追溯。</p></div><button class="button button-primary" @onclick="CreateNew" disabled="@IsBusy">新增 Prompt</button></div>
+
+@if (activeOperation == "test")
+{
+    <OperationProgress Title="正在測試 Prompt…" Detail="正在等待 AI 使用範例資料產生報告。" />
+}
+
+<div class="settings-split">
+    <section class="panel prompt-library">
+        <div class="panel-heading"><div><h2>範本清單</h2><p>系統同一時間只會有一個預設 Prompt。</p></div></div>
+        @foreach (var item in templates)
+        {
+            <button type="button" class="prompt-list-item @(editing.Id == item.Id ? "selected" : string.Empty)" @onclick="() => Edit(item)">
+                <span><strong>@item.Name</strong><small>更新於 @item.UpdatedAt.LocalDateTime.ToString("yyyy/MM/dd HH:mm")</small></span>
+                <span class="button-row">
+                    @if (item.IsDefault) { <span class="badge badge-ready">預設</span> }
+                    @if (item.IsArchived) { <span class="badge badge-disabled">已封存</span> }
+                </span>
+            </button>
+        }
+    </section>
+
+    <section class="panel">
+        <div class="panel-heading"><div><h2>@(isNew ? "新增 Prompt" : "編輯 Prompt")</h2><p>固定 JSON 與工時驗證契約不會被範本內容取代。</p></div></div>
+        <div class="form-grid">
+            <div class="field full"><label for="prompt-name">名稱</label><input id="prompt-name" @bind="editing.Name" /></div>
+            <div class="field full"><label for="prompt-content">Prompt 內容</label><textarea id="prompt-content" class="prompt-input prompt-library-editor" @bind="editing.Content" @bind:event="oninput"></textarea></div>
+            <div class="form-actions">
+                <button class="button button-primary" @onclick="SaveAsync" disabled="@IsBusy">儲存範本</button>
+                @if (!isNew)
+                {
+                    <button class="button button-secondary" @onclick="Clone" disabled="@IsBusy">複製</button>
+                    <button class="button button-secondary" @onclick="TestAsync" disabled="@IsBusy">測試</button>
+                    @if (!editing.IsDefault && !editing.IsArchived) { <button class="button button-secondary" @onclick="SetDefaultAsync" disabled="@IsBusy">設為預設</button> }
+                    @if (!editing.IsDefault) { <button class="button button-secondary" @onclick="ToggleArchiveAsync" disabled="@IsBusy">@(editing.IsArchived ? "取消封存" : "封存")</button> }
+                }
+            </div>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(promptResult))
+        {
+            <div class="prompt-test-result"><strong>測試結果</strong><div class="report-body">@promptResult</div></div>
+        }
+    </section>
+</div>
+
+@code {
+    private IReadOnlyList<PromptTemplate> templates = [];
+    private PromptTemplate editing = new();
+    private bool isNew = true;
+    private string? activeOperation;
+    private string promptResult = string.Empty;
+    private bool IsBusy => activeOperation is not null;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private async Task ReloadAsync(Guid? selectId = null)
+    {
+        templates = await PromptTemplates.GetAllAsync();
+        var selected = selectId is Guid id ? templates.FirstOrDefault(x => x.Id == id) : templates.FirstOrDefault();
+        if (selected is not null) Edit(selected); else CreateNew();
+    }
+
+    private void CreateNew()
+    {
+        editing = new PromptTemplate();
+        isNew = true;
+        promptResult = string.Empty;
+    }
+
+    private void Edit(PromptTemplate source)
+    {
+        editing = Copy(source);
+        isNew = false;
+        promptResult = string.Empty;
+    }
+
+    private void Clone()
+    {
+        editing = new PromptTemplate { Name = editing.Name + "（副本）", Content = editing.Content };
+        isNew = true;
+        promptResult = string.Empty;
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            activeOperation = "save";
+            var saved = await PromptTemplates.SaveAsync(editing);
+            Toasts.Success("Prompt 範本已儲存。");
+            await ReloadAsync(saved.Id);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            Toasts.Error(exception.Message);
+        }
+        finally { activeOperation = null; }
+    }
+
+    private async Task SetDefaultAsync()
+    {
+        try
+        {
+            await PromptTemplates.SetDefaultAsync(editing.Id);
+            Toasts.Success("預設 Prompt 已更新。");
+            await ReloadAsync(editing.Id);
+        }
+        catch (InvalidOperationException exception) { Toasts.Error(exception.Message); }
+    }
+
+    private async Task ToggleArchiveAsync()
+    {
+        try
+        {
+            await PromptTemplates.SetArchivedAsync(editing.Id, !editing.IsArchived);
+            Toasts.Success(editing.IsArchived ? "Prompt 已取消封存。" : "Prompt 已封存。");
+            await ReloadAsync(editing.Id);
+        }
+        catch (InvalidOperationException exception) { Toasts.Error(exception.Message); }
+    }
+
+    private async Task TestAsync()
+    {
+        activeOperation = "test";
+        promptResult = string.Empty;
+        try
+        {
+            var configuration = await AiConfig.GetAsync();
+            var result = await AskBridge.TestPromptAsync(configuration, editing.Content);
+            if (result.Succeeded)
+            {
+                promptResult = result.Body ?? "範例 Prompt 未產生內容。";
+                Toasts.Success("Prompt 測試完成。");
+            }
+            else Toasts.Error(result.Error ?? "Prompt 測試失敗。");
+        }
+        finally { activeOperation = null; }
+    }
+
+    private static PromptTemplate Copy(PromptTemplate source) => new()
+    {
+        Id = source.Id,
+        Name = source.Name,
+        Content = source.Content,
+        IsDefault = source.IsDefault,
+        IsArchived = source.IsArchived,
+        CreatedAt = source.CreatedAt,
+        UpdatedAt = source.UpdatedAt
+    };
+}

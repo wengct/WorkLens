@@ -13,14 +13,6 @@
     <div><p class="eyebrow">Review, write, export</p><h1>工作摘要</h1><p>從工作歷程選擇日期或週期，在同一頁完成摘要。</p></div>
 </div>
 
-@if (pendingKind is not null)
-{
-    <div class="alert alert-warning">
-        目前摘要有未儲存的文字。
-        <div class="button-row report-confirmation-actions"><button class="button button-primary button-small" @onclick="SaveAndChangePeriodAsync">儲存並切換</button><button class="button button-danger button-small" @onclick="DiscardAndChangePeriod">放棄並切換</button><button class="button button-secondary button-small" @onclick="CancelPendingPeriodChange">取消</button></div>
-    </div>
-}
-
 <section class="panel report-period-panel">
     <div class="panel-heading"><div><h2>選擇摘要期間</h2><p>每日查看單日；每週會彙整週一至週日。</p></div></div>
     <div class="button-row">
@@ -115,6 +107,19 @@
     <ReportWorkspace @ref="reportWorkspace" Kind="kind" AnchorDate="selectedDate" OnReportChanged="ReloadAsync" />
 </div>
 
+<ConfirmDialog Open="pendingKind is not null"
+               Title="切換摘要期間？"
+               Message="目前摘要有尚未儲存的文字。你可以先儲存再切換，或放棄這次修改。"
+               ConfirmText="放棄並切換"
+               BusyText="切換中…"
+               IsBusy="isChangingPeriod"
+               OnConfirm="DiscardAndChangePeriod"
+               OnCancel="CancelPendingPeriodChange">
+    <AdditionalActions>
+        <button class="button button-primary" type="button" @onclick="SaveAndChangePeriodAsync" disabled="@isChangingPeriod">儲存並切換</button>
+    </AdditionalActions>
+</ConfirmDialog>
+
 @code {
     [SupplyParameterFromQuery(Name = "date")] public DateTime? RequestedDate { get; set; }
     [SupplyParameterFromQuery(Name = "kind")] public string? RequestedKind { get; set; }
@@ -140,6 +145,7 @@
     private ReportWorkspace? reportWorkspace;
     private ReportKind? pendingKind;
     private DateOnly pendingDate;
+    private bool isChangingPeriod;
     private static readonly string[] MonthWeekdays = ["日", "一", "二", "三", "四", "五", "六"];
     private static readonly string[] WeekWeekdays = ["一", "二", "三", "四", "五", "六", "日"];
     private IReadOnlyList<string> CalendarWeekdays => calendarView == "week" ? WeekWeekdays : MonthWeekdays;
@@ -195,11 +201,19 @@
 
     private async Task SaveAndChangePeriodAsync()
     {
-        if (pendingKind is not ReportKind nextKind || reportWorkspace is null) return;
-        if (!await reportWorkspace.SaveChangesAsync()) return;
-        var nextDate = pendingDate;
-        pendingKind = null;
-        NavigateToPeriod(nextKind, nextDate);
+        if (isChangingPeriod || pendingKind is not ReportKind nextKind || reportWorkspace is null) return;
+        isChangingPeriod = true;
+        try
+        {
+            if (!await reportWorkspace.SaveChangesAsync()) return;
+            var nextDate = pendingDate;
+            pendingKind = null;
+            NavigateToPeriod(nextKind, nextDate);
+        }
+        finally
+        {
+            isChangingPeriod = false;
+        }
     }
 
     private void DiscardAndChangePeriod()

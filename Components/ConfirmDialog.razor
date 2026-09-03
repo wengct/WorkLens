@@ -1,0 +1,79 @@
+@using Microsoft.AspNetCore.Components.Web
+
+@if (Open)
+{
+    <div class="modal-backdrop confirm-dialog-backdrop" role="presentation" @onclick="CancelAsync" @onkeydown="HandleKeyDownAsync">
+        <span class="focus-sentinel" tabindex="0" aria-hidden="true" @onfocus="FocusConfirmAsync"></span>
+        <section class="modal-dialog confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="@titleId" aria-describedby="@descriptionId" @onclick:stopPropagation>
+            <div class="modal-heading">
+                <div><p class="eyebrow">請確認</p><h2 id="@titleId">@Title</h2></div>
+                <button class="modal-close" type="button" aria-label="關閉" @onclick="CancelAsync" disabled="@IsBusy">×</button>
+            </div>
+            <p id="@descriptionId" class="confirm-dialog-message">@Message</p>
+            <div class="modal-actions">
+                @AdditionalActions
+                <button @ref="cancelButton" class="button button-secondary" type="button" @onclick="CancelAsync" disabled="@IsBusy">@CancelText</button>
+                <button @ref="confirmButton" class="button @ConfirmButtonClass" type="button" @onclick="ConfirmAsync" disabled="@IsBusy">@(IsBusy ? BusyText : ConfirmText)</button>
+            </div>
+        </section>
+        <span class="focus-sentinel" tabindex="0" aria-hidden="true" @onfocus="FocusCancelAsync"></span>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Message { get; set; } = string.Empty;
+    [Parameter] public string ConfirmText { get; set; } = "確認";
+    [Parameter] public string CancelText { get; set; } = "取消";
+    [Parameter] public string BusyText { get; set; } = "處理中…";
+    [Parameter] public string ConfirmButtonClass { get; set; } = "button-danger";
+    [Parameter] public bool IsBusy { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public RenderFragment? AdditionalActions { get; set; }
+
+    private readonly string titleId = $"confirm-title-{Guid.NewGuid():N}";
+    private readonly string descriptionId = $"confirm-description-{Guid.NewGuid():N}";
+    private ElementReference cancelButton;
+    private ElementReference confirmButton;
+    private bool focusPending;
+    private bool wasOpen;
+
+    protected override void OnParametersSet()
+    {
+        if (Open && !wasOpen)
+        {
+            focusPending = true;
+        }
+        else if (!Open)
+        {
+            focusPending = false;
+        }
+
+        wasOpen = Open;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!Open || !focusPending) return;
+        focusPending = false;
+        await cancelButton.FocusAsync();
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (!IsBusy) await OnConfirm.InvokeAsync();
+    }
+
+    private async Task CancelAsync()
+    {
+        if (!IsBusy) await OnCancel.InvokeAsync();
+    }
+
+    private Task HandleKeyDownAsync(KeyboardEventArgs args) =>
+        args.Key == "Escape" ? CancelAsync() : Task.CompletedTask;
+
+    private async Task FocusCancelAsync() => await cancelButton.FocusAsync();
+    private async Task FocusConfirmAsync() => await confirmButton.FocusAsync();
+}

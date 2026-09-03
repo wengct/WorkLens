@@ -9,6 +9,7 @@ namespace WorkLens.Services;
 public sealed class ReportService(
     IDbContextFactory<WorkLensDbContext> factory,
     AskBridgeService askBridge,
+    PromptTemplateService promptTemplates,
     ILogger<ReportService> logger)
 {
     public async Task<IReadOnlyList<ReportDocument>> GetRecentAsync(int take = 20, CancellationToken cancellationToken = default)
@@ -133,8 +134,14 @@ public sealed class ReportService(
         return report;
     }
 
+    public Task<AiReportResult> GenerateWithAiAsync(
+        Guid reportId,
+        CancellationToken cancellationToken = default) =>
+        GenerateWithAiAsync(reportId, null, cancellationToken);
+
     public async Task<AiReportResult> GenerateWithAiAsync(
         Guid reportId,
+        Guid? promptTemplateId,
         CancellationToken cancellationToken = default)
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
@@ -186,12 +193,25 @@ public sealed class ReportService(
             .ToList();
 
         var input = BuildAiInput(report, entries, evidence);
-        var effectivePrompt = ResolvePrompt(configuration, report.Kind);
+        PromptTemplate? promptTemplate = null;
+        try
+        {
+            promptTemplate = await promptTemplates.GetEffectiveAsync(promptTemplateId, cancellationToken);
+        }
+        catch (InvalidOperationException)
+        {
+            // Existing databases are upgraded at startup. This fallback keeps direct
+            // service tests and recovery scenarios compatible during that transition.
+        }
+        var effectivePrompt = promptTemplate?.Content ?? ResolvePrompt(configuration, report.Kind);
         var job = new AiJob
         {
             Provider = configuration.Provider,
             Status = "Running",
-            StartedAt = DateTimeOffset.UtcNow
+            StartedAt = DateTimeOffset.UtcNow,
+            PromptTemplateId = promptTemplate?.Id,
+            PromptNameSnapshot = promptTemplate?.Name ?? "舊版 Prompt",
+            PromptTextSnapshot = effectivePrompt
         };
         db.AiJobs.Add(job);
         await db.SaveChangesAsync(cancellationToken);

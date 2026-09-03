@@ -96,28 +96,7 @@ public sealed class ReportScheduleHostedService(
     private async Task RunSchedulesAsync(CancellationToken cancellationToken)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
-        var reports = scope.ServiceProvider.GetRequiredService<ReportService>();
-        var backups = scope.ServiceProvider.GetRequiredService<BackupService>();
-        var localNow = DateTime.Now;
-        var today = DateOnly.FromDateTime(localNow);
-        var isWeekday = localNow.DayOfWeek is not DayOfWeek.Saturday and not DayOfWeek.Sunday;
-        if (isWeekday && localNow.Hour == 17 && localNow.Minute >= 30)
-        {
-            await reports.GenerateDeterministicAsync(today, cancellationToken);
-        }
-
-        if (isWeekday && localNow.Hour == 17 && localNow.Minute >= 45)
-        {
-            await backups.CreateAsync("Daily", today.ToString("yyyy-MM-dd"), cancellationToken);
-        }
-
-        if (localNow.DayOfWeek == DayOfWeek.Friday && localNow.Hour >= 18)
-        {
-            await reports.GenerateWeeklyAsync(today, cancellationToken);
-            await backups.CreateAsync(
-                "Weekly",
-                $"{today:yyyy}-W{System.Globalization.ISOWeek.GetWeekOfYear(today.ToDateTime(TimeOnly.MinValue)):00}",
-                cancellationToken);
-        }
+        var runner = scope.ServiceProvider.GetRequiredService<ScheduleRunner>();
+        await runner.RunDueAsync(DateTime.Now, cancellationToken);
     }
 }

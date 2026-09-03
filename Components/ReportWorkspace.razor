@@ -1,4 +1,5 @@
 @inject ReportService ReportService
+@inject PromptTemplateService PromptTemplates
 @inject ILogger<ReportWorkspace> Logger
 @inject IJSRuntime JS
 @inject ToastService Toasts
@@ -23,7 +24,7 @@
     <p class="report-scope-note">摘要涵蓋完整@(Kind == ReportKind.Daily ? "日期" : "週期")，不受左側歷程篩選影響。</p>
 
     <div class="button-row report-primary-actions">
-        <button class="button button-primary" type="button" @onclick="PrepareGenerateAsync" disabled="@IsBusy">@(isGeneratingReport ? "產生中…" : report is null ? "產生摘要" : "重產摘要")</button>
+        <button class="button button-primary" type="button" @onclick="PrepareGenerateAsync" disabled="@IsBusy">@(isGeneratingReport ? "產生中…" : report is null ? "產生摘要" : "重產制式摘要")</button>
         @if (report is not null)
         {
             <button class="button button-secondary button-small" type="button" @onclick="CopyReportAsync" disabled="@(string.IsNullOrEmpty(report.Body) || IsBusy)">複製內容</button>
@@ -32,10 +33,6 @@
         }
     </div>
 
-    @if (confirmOverwrite)
-    {
-        <div class="alert alert-warning report-confirmation">重產會覆蓋這份摘要目前的文字。<div class="button-row"><button class="button button-danger button-small" @onclick="GenerateAsync" disabled="@isGeneratingReport">確認覆蓋</button><button class="button button-secondary button-small" @onclick="() => confirmOverwrite = false" disabled="@isGeneratingReport">取消</button></div></div>
-    }
     @if (isGeneratingReport)
     {
         <OperationProgress Title="正在產生摘要…" Detail="正在彙整人工紀錄與來源活動，完成後會開啟最新內容。" />
@@ -48,13 +45,30 @@
     else if (report is not null)
     {
         <textarea class="report-body" @bind="report.Body" aria-label="工作摘要內容"></textarea>
-        <div class="button-row report-editor-actions"><button class="button button-secondary" @onclick="SaveChangesAsync" disabled="@IsBusy">儲存文字</button><button class="button button-primary" @onclick="PrepareAiAsync" disabled="@IsBusy">@(isGeneratingAi ? "AI 整理中…" : "用 AI 整理")</button></div>
-        @if (confirmAiOverwrite)
-        {
-            <div class="alert alert-warning report-confirmation">AI 整理會覆蓋目前文字。<div class="button-row"><button class="button button-danger button-small" @onclick="GenerateAiAsync">確認覆蓋</button><button class="button button-secondary button-small" @onclick="() => confirmAiOverwrite = false">取消</button></div></div>
-        }
+        <div class="report-ai-controls">
+            <div class="field"><label for="manual-report-prompt">AI Prompt</label><select id="manual-report-prompt" value="@SelectedPromptValue" @onchange="SetSelectedPrompt" disabled="@IsBusy"><option value="">使用系統預設</option>@foreach (var prompt in promptOptions) { <option value="@prompt.Id">@prompt.Name</option> }</select></div>
+            <div class="button-row report-editor-actions"><button class="button button-primary" @onclick="PrepareAiAsync" disabled="@IsBusy">@(isGeneratingAi ? "AI 整理中…" : "用 AI 整理")</button><button class="button button-secondary" @onclick="SaveChangesAsync" disabled="@IsBusy">儲存文字</button></div>
+        </div>
     }
 </section>
+
+<ConfirmDialog Open="confirmOverwrite"
+               Title="覆蓋目前摘要？"
+               Message="重產制式摘要會覆蓋目前的文字，這項操作無法復原。"
+               ConfirmText="確認覆蓋"
+               BusyText="產生中…"
+               IsBusy="isGeneratingReport"
+               OnConfirm="GenerateAsync"
+               OnCancel="CancelOverwrite" />
+
+<ConfirmDialog Open="confirmAiOverwrite"
+               Title="讓 AI 覆蓋目前摘要？"
+               Message="AI 整理會以新內容覆蓋目前文字，這項操作無法復原。"
+               ConfirmText="確認覆蓋"
+               BusyText="整理中…"
+               IsBusy="isGeneratingAi"
+               OnConfirm="GenerateAiAsync"
+               OnCancel="CancelAiOverwrite" />
 
 @code {
     [Parameter, EditorRequired] public ReportKind Kind { get; set; }
@@ -70,6 +84,9 @@
     private bool confirmOverwrite;
     private bool confirmAiOverwrite;
     private CancellationTokenSource? aiCancellation;
+    private IReadOnlyList<PromptTemplate> promptOptions = [];
+    private Guid? selectedPromptId;
+    private string SelectedPromptValue => selectedPromptId?.ToString() ?? string.Empty;
 
     public bool HasUnsavedChanges => report is not null && report.Body != savedBody;
     private bool IsBusy => isGeneratingReport || isGeneratingAi;
@@ -85,6 +102,7 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        if (promptOptions.Count == 0) promptOptions = await PromptTemplates.GetAllAsync(includeArchived: false);
         if (loadedKind == Kind && loadedKey == PeriodKey) return;
         loadedKind = Kind;
         loadedKey = PeriodKey;
@@ -188,7 +206,7 @@
         await Task.Yield();
         try
         {
-            var result = await ReportService.GenerateWithAiAsync(report.Id, aiCancellation.Token);
+            var result = await ReportService.GenerateWithAiAsync(report.Id, selectedPromptId, aiCancellation.Token);
             if (aiCancellation.IsCancellationRequested)
             {
                 Toasts.Info("已取消 AI 整理，原內容已保留。");
@@ -197,7 +215,7 @@
             {
                 report = await ReportService.GetAsync(report.Id);
                 savedBody = report?.Body ?? string.Empty;
-                Toasts.Success("AI 整理完成，請確認內容。");
+                Toasts.Success("AI 整理完成並已儲存，請確認內容。");
                 await OnReportChanged.InvokeAsync();
             }
             else
@@ -219,5 +237,8 @@
     }
 
     private void CancelAiGeneration() => aiCancellation?.Cancel();
+    private void SetSelectedPrompt(ChangeEventArgs args) => selectedPromptId = Guid.TryParse(args.Value?.ToString(), out var id) ? id : null;
+    private void CancelOverwrite() => confirmOverwrite = false;
+    private void CancelAiOverwrite() => confirmAiOverwrite = false;
     private static DateOnly StartOfWeek(DateOnly day) => day.AddDays(-(int)day.DayOfWeek + (day.DayOfWeek == DayOfWeek.Sunday ? -6 : 1));
 }

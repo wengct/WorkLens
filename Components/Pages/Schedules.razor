@@ -1,0 +1,153 @@
+@page "/schedules"
+@inject ScheduleService ScheduleManager
+@inject PromptTemplateService PromptTemplates
+@inject RuntimeSettingsService RuntimeSettings
+@inject FolderPickerService FolderPicker
+@inject ToastService Toasts
+
+<PageTitle>排程設定｜WorkLens</PageTitle>
+
+<div class="page-heading"><div><p class="eyebrow">Settings</p><h1>排程設定</h1><p>所有時間均使用主機本機時區：@TimeZoneInfo.Local.DisplayName</p></div></div>
+
+<section class="panel">
+    <div class="panel-heading"><div><h2>備份位置</h2><p>修改後會先驗證寫入權限，再立即套用；既有備份不會搬移。</p></div></div>
+    <div class="form-grid">
+        <div class="field full"><label for="backup-path">備份資料夾</label><div class="path-picker"><input id="backup-path" @bind="backupPath" /><button type="button" class="button button-secondary" @onclick="PickBackupPathAsync" disabled="@IsBusy">@(selectingBackupPath ? "選擇中…" : "選擇資料夾…")</button></div><span class="hint">目前生效：@RuntimeSettings.GetBackupPath()</span></div>
+        <div class="form-actions"><button class="button button-primary" @onclick="SaveBackupPathAsync" disabled="@IsBusy">驗證並套用</button></div>
+    </div>
+</section>
+
+<div class="schedule-grid">
+    @foreach (var overview in overviews)
+    {
+        var schedule = overview.Definition;
+        <section class="panel schedule-card">
+            <div class="panel-heading">
+                <div><p class="eyebrow">@KindCategory(schedule.Kind)</p><h2>@KindName(schedule.Kind)</h2><p>@ExecutionSummary(overview.LastExecution)</p></div>
+                <span class="badge @StatusClass(overview.LastExecution)">@StatusText(overview.LastExecution)</span>
+            </div>
+            <div class="form-grid">
+                <div class="field full"><label class="inline-checkbox"><input type="checkbox" @bind="schedule.Enabled" /> 啟用此排程</label></div>
+                <div class="field full"><label>執行日</label><div class="weekday-picker">
+                    @foreach (var day in Days)
+                    {
+                        <label><input type="checkbox" checked="@SchedulePlanner.IncludesDay(schedule.DaysOfWeekMask, day.Value)" @onchange="args => SetDay(schedule, day.Value, args)" /> @day.Label</label>
+                    }
+                </div></div>
+                <div class="field"><label>執行時間</label><input type="time" value="@TimeValue(schedule)" @onchange="args => SetTime(schedule, args)" /></div>
+                @if (IsReport(schedule.Kind))
+                {
+                    <div class="field"><label>Prompt</label><select value="@PromptValue(schedule)" @onchange="args => SetPrompt(schedule, args)"><option value="">跟隨系統預設</option>@foreach (var prompt in prompts.Where(x => !x.IsArchived || x.Id == schedule.PromptTemplateId)) { <option value="@prompt.Id">@prompt.Name@(prompt.IsArchived ? "（已封存）" : string.Empty)</option> }</select></div>
+                }
+                <div class="field full"><span class="hint">下次執行：@(overview.NextRun?.ToString("yyyy/MM/dd HH:mm") ?? "未排定")</span></div>
+                @if (!string.IsNullOrWhiteSpace(overview.LastExecution?.Error)) { <div class="alert alert-warning full">@overview.LastExecution.Error</div> }
+                <div class="form-actions"><button class="button button-secondary" @onclick="() => SaveScheduleAsync(schedule)" disabled="@IsBusy">儲存設定</button><button class="button button-primary" @onclick="() => RunNowAsync(schedule.Id)" disabled="@IsBusy">立即執行</button></div>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<ScheduleOverview> overviews = [];
+    private IReadOnlyList<PromptTemplate> prompts = [];
+    private string backupPath = string.Empty;
+    private Guid? busySchedule;
+    private bool savingBackupPath;
+    private bool selectingBackupPath;
+    private bool IsBusy => busySchedule is not null || savingBackupPath || selectingBackupPath;
+    private static readonly (DayOfWeek Value, string Label)[] Days =
+    [
+        (DayOfWeek.Monday, "一"), (DayOfWeek.Tuesday, "二"), (DayOfWeek.Wednesday, "三"),
+        (DayOfWeek.Thursday, "四"), (DayOfWeek.Friday, "五"), (DayOfWeek.Saturday, "六"), (DayOfWeek.Sunday, "日")
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        backupPath = RuntimeSettings.GetBackupPath();
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        prompts = await PromptTemplates.GetAllAsync();
+        overviews = await ScheduleManager.GetAsync();
+    }
+
+    private async Task SaveBackupPathAsync()
+    {
+        savingBackupPath = true;
+        try
+        {
+            backupPath = await RuntimeSettings.SaveBackupPathAsync(backupPath);
+            Toasts.Success("備份路徑已驗證並立即套用。");
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            Toasts.Error($"備份路徑無法使用：{exception.Message}");
+        }
+        finally { savingBackupPath = false; }
+    }
+
+    private async Task PickBackupPathAsync()
+    {
+        selectingBackupPath = true;
+        try
+        {
+            var result = await FolderPicker.PickAsync(backupPath);
+            if (result.Selected) backupPath = result.Path!;
+            else if (!string.IsNullOrWhiteSpace(result.Error)) Toasts.Error(result.Error);
+        }
+        finally { selectingBackupPath = false; }
+    }
+
+    private async Task SaveScheduleAsync(ScheduleDefinition schedule)
+    {
+        busySchedule = schedule.Id;
+        try
+        {
+            await ScheduleManager.SaveAsync(schedule);
+            Toasts.Success($"{KindName(schedule.Kind)}排程已儲存。");
+            await ReloadAsync();
+        }
+        catch (ArgumentException exception) { Toasts.Error(exception.Message); }
+        finally { busySchedule = null; }
+    }
+
+    private async Task RunNowAsync(Guid id)
+    {
+        busySchedule = id;
+        try
+        {
+            var result = await ScheduleManager.RunNowAsync(id);
+            if (result is null) Toasts.Info("此排程正在執行，未重複啟動。");
+            else if (result.Status == "Succeeded") Toasts.Success("排程已執行完成。");
+            else Toasts.Error(result.Error ?? "排程執行失敗。");
+            await ReloadAsync();
+        }
+        finally { busySchedule = null; }
+    }
+
+    private static void SetDay(ScheduleDefinition schedule, DayOfWeek day, ChangeEventArgs args)
+    {
+        var bit = 1 << (int)day;
+        if (args.Value is bool enabled && enabled) schedule.DaysOfWeekMask |= bit;
+        else schedule.DaysOfWeekMask &= ~bit;
+    }
+
+    private static void SetTime(ScheduleDefinition schedule, ChangeEventArgs args)
+    {
+        if (TimeOnly.TryParse(args.Value?.ToString(), out var time)) { schedule.Hour = time.Hour; schedule.Minute = time.Minute; }
+    }
+
+    private static void SetPrompt(ScheduleDefinition schedule, ChangeEventArgs args) =>
+        schedule.PromptTemplateId = Guid.TryParse(args.Value?.ToString(), out var id) ? id : null;
+
+    private static string PromptValue(ScheduleDefinition schedule) => schedule.PromptTemplateId?.ToString() ?? string.Empty;
+    private static string TimeValue(ScheduleDefinition schedule) => $"{schedule.Hour:00}:{schedule.Minute:00}";
+    private static bool IsReport(ScheduleKind kind) => kind is ScheduleKind.DailyReport or ScheduleKind.WeeklyReport;
+    private static string KindCategory(ScheduleKind kind) => IsReport(kind) ? "REPORT" : "BACKUP";
+    private static string KindName(ScheduleKind kind) => kind switch { ScheduleKind.DailyReport => "日報", ScheduleKind.WeeklyReport => "週報", ScheduleKind.DailyBackup => "每日備份", _ => "每週備份" };
+    private static string StatusText(ScheduleExecution? execution) => execution?.Status switch { "Succeeded" => "成功", "Failed" => "失敗", "Running" => "執行中", "Cancelled" => "已取消", "Interrupted" => "已中斷", _ => "尚未執行" };
+    private static string StatusClass(ScheduleExecution? execution) => execution?.Status switch { "Succeeded" => "badge-ready", "Failed" or "Interrupted" => "badge-error", "Running" => "badge-running", _ => "badge-disabled" };
+    private static string ExecutionSummary(ScheduleExecution? execution) => execution is null ? "尚無執行紀錄" : $"上次執行：{execution.StartedAt.LocalDateTime:yyyy/MM/dd HH:mm}｜規則式 {execution.DeterministicStatus}｜AI {execution.AiStatus}｜備份 {execution.BackupStatus}";
+}

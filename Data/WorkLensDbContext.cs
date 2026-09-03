@@ -15,6 +15,9 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
     public DbSet<AiJob> AiJobs => Set<AiJob>();
     public DbSet<AiProviderConfiguration> AiProviders => Set<AiProviderConfiguration>();
     public DbSet<BackupRecord> BackupRecords => Set<BackupRecord>();
+    public DbSet<PromptTemplate> PromptTemplates => Set<PromptTemplate>();
+    public DbSet<ScheduleDefinition> ScheduleDefinitions => Set<ScheduleDefinition>();
+    public DbSet<ScheduleExecution> ScheduleExecutions => Set<ScheduleExecution>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -24,6 +27,7 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
         modelBuilder.Entity<SourceEvidence>().Property(x => x.ReachabilityStatus).HasConversion<string>();
         modelBuilder.Entity<CommitLineage>().Property(x => x.Relation).HasConversion<string>();
         modelBuilder.Entity<ReportDocument>().Property(x => x.Kind).HasConversion<string>();
+        modelBuilder.Entity<ScheduleDefinition>().Property(x => x.Kind).HasConversion<string>();
 
         modelBuilder.Entity<ActivitySource>()
             .HasIndex(x => new { x.DisplayName, x.IsArchived });
@@ -52,5 +56,21 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
 
         modelBuilder.Entity<AiProviderConfiguration>()
             .HasKey(x => x.Id);
+
+        modelBuilder.Entity<PromptTemplate>()
+            .HasIndex(x => x.Name);
+
+        modelBuilder.Entity<PromptTemplate>()
+            .HasIndex(x => x.IsDefault)
+            .IsUnique()
+            .HasFilter("\"IsDefault\" = 1");
+
+        modelBuilder.Entity<ScheduleDefinition>()
+            .HasIndex(x => x.Kind)
+            .IsUnique();
+
+        modelBuilder.Entity<ScheduleExecution>()
+            .HasIndex(x => new { x.ScheduleId, x.PeriodKey })
+            .IsUnique();
     }
 }

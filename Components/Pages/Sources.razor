@@ -247,15 +247,7 @@
                         <summary>更多操作</summary>
                         <div>
                             <button class="button button-secondary button-small" @onclick="() => ToggleSourceAiAsync(source)" disabled="@sourceIsBusy">@(source.IncludeInAi ? "停止提供給 AI" : "允許提供給 AI")</button>
-                            @if (resetSourceId == source.Id)
-                            {
-                                <button class="button button-danger button-small" @onclick="() => ConfirmResetAsync(source.Id)" disabled="@sourceIsBusy">確認重設 checkpoint</button>
-                                <button class="button button-secondary button-small" @onclick="CancelReset" disabled="@sourceIsBusy">取消</button>
-                            }
-                            else
-                            {
-                                <button class="button button-secondary button-small" @onclick="() => PrepareReset(source.Id)" disabled="@sourceIsBusy">重設 checkpoint</button>
-                            }
+                            <button class="button button-secondary button-small" @onclick="() => PrepareReset(source.Id)" disabled="@sourceIsBusy">重設 checkpoint</button>
                             <button class="button button-danger button-small" @onclick="() => ArchiveAsync(source.Id)" disabled="@sourceIsBusy">封存</button>
                         </div>
                     </details>
@@ -271,17 +263,20 @@
                         <div class="collection-progress-track"><span></span></div>
                     </div>
                 }
-                @if (resetSourceId == source.Id)
-                {
-                    <div class="alert alert-warning" style="margin-top: 10px">
-                        重設只會讓下一次收集重新套用首次匯入天數；既有證據、rebase 前 commit 與其他資料都會保留，可能再次掃描較多活動。
-                    </div>
-                }
             </div>
         }
     }
 </div>
 }
+
+<ConfirmDialog Open="resetSourceId is not null"
+               Title="重設這個來源的 checkpoint？"
+               Message="下次收集會重新套用首次匯入天數，可能再次掃描較多活動；既有證據、rebase 前 commit 與其他資料都會保留。"
+               ConfirmText="確認重設"
+               BusyText="重設中…"
+               IsBusy="isResettingCheckpoint"
+               OnConfirm="ConfirmPendingResetAsync"
+               OnCancel="CancelReset" />
 
 @code {
     private SourceWorkspace activeWorkspace = SourceWorkspace.Overview;
@@ -302,6 +297,7 @@
     private bool newIncludeInAi;
     private Guid? editingSourceId;
     private Guid? resetSourceId;
+    private bool isResettingCheckpoint;
     private DateTime backfillStart = DateTime.Today;
     private DateTime backfillEnd = DateTime.Today;
     private string backfillSourceId = string.Empty;
@@ -622,18 +618,30 @@
     private void PrepareReset(Guid id)
     {
         resetSourceId = id;
-        Toasts.Info("請確認 checkpoint 重設的影響範圍。");
     }
 
     private void CancelReset() => resetSourceId = null;
 
     private async Task ConfirmResetAsync(Guid id)
     {
-        await SourceConfig.ResetCheckpointAsync(id);
-        resetSourceId = null;
-        Toasts.Success("checkpoint 已重設；下次收集會依首次匯入天數重新掃描，既有歷程保留。");
-        await ReloadAsync();
+        if (isResettingCheckpoint) return;
+        isResettingCheckpoint = true;
+        try
+        {
+            await SourceConfig.ResetCheckpointAsync(id);
+            resetSourceId = null;
+            Toasts.Success("checkpoint 已重設；下次收集會依首次匯入天數重新掃描，既有歷程保留。");
+            await ReloadAsync();
+        }
+        finally
+        {
+            isResettingCheckpoint = false;
+        }
     }
+
+    private Task ConfirmPendingResetAsync() => resetSourceId is Guid id
+        ? ConfirmResetAsync(id)
+        : Task.CompletedTask;
 
     private async Task ReloadAsync()
     {

@@ -10,6 +10,7 @@ namespace WorkLens.Services;
 public sealed class BackupService(
     IDbContextFactory<WorkLensDbContext> factory,
     AppPaths paths,
+    RuntimeSettingsService runtimeSettings,
     ILogger<BackupService> logger)
 {
     public async Task<BackupRecord?> CreateAsync(
@@ -38,10 +39,11 @@ public sealed class BackupService(
             return null;
         }
 
-        Directory.CreateDirectory(paths.BackupPath);
+        var backupPath = runtimeSettings.GetBackupPath();
+        Directory.CreateDirectory(backupPath);
         var safeKind = string.Concat(kind.Where(char.IsLetterOrDigit)).ToLowerInvariant();
         var safePeriod = string.Concat(periodKey.Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '-'));
-        var databaseBackup = Path.Combine(paths.BackupPath, $"worklens-{safeKind}-{safePeriod}.db");
+        var databaseBackup = Path.Combine(backupPath, $"worklens-{safeKind}-{safePeriod}.db");
         var manifestPath = databaseBackup + ".manifest.json";
 
         try
