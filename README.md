@@ -2,6 +2,63 @@
 
 WorkLens 是一個以本機優先為設計的個人工作歷程與工時回報網站。
 
+## 一鍵安裝
+
+GitHub Release 提供不需預先安裝 .NET 的 self-contained 版本。安裝完成後 WorkLens 會立即在本機啟動、開啟一次瀏覽器，並設定成目前使用者登入後自動在背景執行。
+
+Windows PowerShell：
+
+```powershell
+irm https://raw.githubusercontent.com/wengct/WorkLens/main/scripts/get.ps1 | iex
+```
+
+macOS（自動選擇 Apple Silicon 或 Intel 版本）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wengct/WorkLens/main/scripts/get.sh | bash
+```
+
+安裝器會從公開 GitHub Release 下載套件並核對 `SHA256SUMS`。Windows 程式預設安裝在 `%LOCALAPPDATA%\Programs\WorkLens`，macOS 安裝在 `~/.local/share/worklens`；程式版本與執行資料分開保存。
+
+目前的 Release 未經 Windows code signing 或 Apple notarization。作業系統可能在第一次執行時顯示 SmartScreen 或 Gatekeeper 警告；安裝腳本不會關閉或繞過任何系統安全功能。
+
+### 管理、更新與移除
+
+Windows：
+
+```powershell
+& "$HOME\bin\worklens.cmd" status
+& "$HOME\bin\worklens.cmd" open
+& "$HOME\bin\worklens.cmd" restart
+& "$HOME\bin\worklens.cmd" stop
+& "$HOME\bin\worklens.cmd" uninstall
+```
+
+macOS：
+
+```bash
+~/.local/bin/worklens status
+~/.local/bin/worklens open
+~/.local/bin/worklens restart
+~/.local/bin/worklens stop
+~/.local/bin/worklens uninstall
+```
+
+重新執行一鍵安裝命令即可升級。安裝器會保留上一版；新版無法通過健康檢查時會自動回復。預設解除安裝只移除程式與登入排程，不刪除工作資料；若確定要永久刪除資料，使用 `uninstall --purge-data` 並依提示輸入 `DELETE`。
+
+如需停用登入自動啟動或安裝後不要開啟瀏覽器，可先下載腳本再帶參數：
+
+```powershell
+$installer = irm https://raw.githubusercontent.com/wengct/WorkLens/main/scripts/get.ps1
+& ([scriptblock]::Create($installer)) -NoAutostart -NoOpenBrowser
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/wengct/WorkLens/main/scripts/get.sh | bash -s -- --no-autostart --no-open-browser
+```
+
+`Git`、Node.js、Chrome 與 `ask-bridge` 不會由安裝器自動安裝。它們是資料來源或 AI 功能的選用相依項，WorkLens 會在設定頁個別偵測。
+
 ## 隱私與版控邊界
 
 此 repository 僅包含程式碼與安全的預設設定。執行期間的資料會儲存在 repository 外部，預設位置為：
@@ -30,6 +87,15 @@ dotnet run
 ```
 
 開啟 `http://127.0.0.1:5077`。應用程式只會繫結至 loopback 位址。請從網頁介面設定資料來源與 AI；第一次啟動時不會自動收集任何來源。
+
+## 維護者發行
+
+推送符合 `vX.Y.Z` 的 tag 後，GitHub Actions 會執行測試、安裝煙霧測試，建立 `win-x64`、`osx-x64`、`osx-arm64` 三個 self-contained 套件及 SHA-256 checksum，最後建立公開 Release：
+
+```shell
+git tag v1.0.0
+git push origin v1.0.0
+```
 
 ## 日常操作
 

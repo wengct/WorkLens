@@ -1,0 +1,66 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$ReleaseDir
+)
+
+$ErrorActionPreference = "Stop"
+$ReleaseDir = [IO.Path]::GetFullPath($ReleaseDir)
+$TestRoot = Join-Path ([IO.Path]::GetTempPath()) ("worklens-install-test-" + [Guid]::NewGuid().ToString("N"))
+$InstallDir = Join-Path $TestRoot "Install Path 中文"
+$BinDir = Join-Path $TestRoot "bin path"
+$RuntimeDir = Join-Path $TestRoot "runtime data"
+$Port = Get-Random -Minimum 18000 -Maximum 28000
+$InstallScript = Join-Path $ReleaseDir "scripts\install.ps1"
+$PreviousEnvironment = @{
+    Connection = $env:ConnectionStrings__WorkLens
+    Backup = $env:WorkLens__BackupPath
+    Log = $env:WorkLens__LogPath
+}
+
+try {
+    New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
+    $env:ConnectionStrings__WorkLens = "Data Source=$(Join-Path $RuntimeDir 'worklens.db')"
+    $env:WorkLens__BackupPath = Join-Path $RuntimeDir "backups"
+    $env:WorkLens__LogPath = Join-Path $RuntimeDir "logs"
+
+    & $InstallScript -InstallDir $InstallDir -BinDir $BinDir -Port $Port -NoAutostart -NoOpenBrowser
+    $Health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec 5
+    if ($Health.status -ne "Healthy") { throw "Installed WorkLens did not report healthy." }
+    $Asset = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/app.css" -UseBasicParsing -TimeoutSec 5
+    if ($Asset.StatusCode -ne 200 -or $Asset.RawContentLength -eq 0) { throw "Installed WorkLens did not serve app.css." }
+    if (!(Test-Path -LiteralPath (Join-Path $RuntimeDir "worklens.db"))) { throw "WorkLens did not create its SQLite database." }
+
+    # Reinstalling the same version must be safe and must preserve the database.
+    & $InstallScript -InstallDir $InstallDir -BinDir $BinDir -Port $Port -NoAutostart -NoOpenBrowser
+    if (!(Test-Path -LiteralPath (Join-Path $RuntimeDir "worklens.db"))) { throw "Reinstalling removed the SQLite database." }
+
+    # A package whose declared version does not match the running assembly must roll back.
+    $BadRelease = Join-Path $TestRoot "bad release"
+    Copy-Item -LiteralPath $ReleaseDir -Destination $BadRelease -Recurse
+    Set-Content -LiteralPath (Join-Path $BadRelease "VERSION") -Value "0.0.0-broken" -Encoding ASCII
+    $BadInstallFailed = $false
+    try {
+        & (Join-Path $BadRelease "scripts\install.ps1") -InstallDir $InstallDir -BinDir $BinDir -Port $Port -NoAutostart -NoOpenBrowser
+    } catch {
+        $BadInstallFailed = $true
+    }
+    if (!$BadInstallFailed) { throw "A mismatched package version unexpectedly installed successfully." }
+    $ExpectedVersion = (Get-Content -LiteralPath (Join-Path $ReleaseDir "VERSION") -Raw).Trim().TrimStart('v')
+    $CurrentVersion = (Get-Content -LiteralPath (Join-Path $InstallDir "current.txt") -Raw).Trim()
+    if ($CurrentVersion -ne $ExpectedVersion) { throw "The failed update did not restore the previous version." }
+    $HealthAfterRollback = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec 5
+    if ($HealthAfterRollback.version -ne $ExpectedVersion) { throw "WorkLens was not healthy on the previous version after rollback." }
+
+    & (Join-Path $InstallDir "scripts\manage.ps1") uninstall -InstallDir $InstallDir
+    if (!(Test-Path -LiteralPath (Join-Path $RuntimeDir "worklens.db"))) { throw "Default uninstall removed the SQLite database." }
+    Write-Host "Windows installation smoke test passed."
+} finally {
+    if (Test-Path -LiteralPath (Join-Path $InstallDir "scripts\manage.ps1")) {
+        & (Join-Path $InstallDir "scripts\manage.ps1") stop -InstallDir $InstallDir -ErrorAction SilentlyContinue
+    }
+    $env:ConnectionStrings__WorkLens = $PreviousEnvironment.Connection
+    $env:WorkLens__BackupPath = $PreviousEnvironment.Backup
+    $env:WorkLens__LogPath = $PreviousEnvironment.Log
+    Remove-Item -LiteralPath $TestRoot -Recurse -Force -ErrorAction SilentlyContinue
+}

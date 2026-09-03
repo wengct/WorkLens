@@ -9,6 +9,7 @@ using WorkLens.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseStaticWebAssets();
+var startupHealth = new StartupHealth();
 if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]))
 {
     builder.WebHost.UseUrls("http://127.0.0.1:5077");
@@ -75,6 +76,7 @@ builder.Services.AddDataProtection()
     .SetApplicationName("WorkLens");
 
 builder.Services.AddSingleton(paths);
+builder.Services.AddSingleton(startupHealth);
 builder.Services.AddDbContextFactory<WorkLensDbContext>(options =>
     options.UseSqlite($"Data Source={paths.DatabasePath}"));
 builder.Services.AddSingleton<DatabaseInitializer>();
@@ -134,9 +136,14 @@ try
 {
     await using var scope = app.Services.CreateAsyncScope();
     await scope.ServiceProvider.GetRequiredService<DatabaseInitializer>().InitializeAsync();
+    if (pathSetupException is null)
+    {
+        startupHealth.MarkHealthy();
+    }
 }
 catch (Exception exception)
 {
+    startupHealth.MarkUnhealthy();
     app.Logger.LogCritical(
         exception,
         "WorkLens 資料庫初始化失敗；應用程式將繼續啟動，請檢查本機資料目錄與權限。");
@@ -151,6 +158,12 @@ if (!app.Environment.IsDevelopment())
 app.UseStaticFiles();
 app.UseAntiforgery();
 app.MapStaticAssets();
+
+app.MapGet("/healthz", (StartupHealth health) =>
+{
+    var payload = new { status = health.IsHealthy ? "Healthy" : "Unhealthy", version = health.Version };
+    return Results.Json(payload, statusCode: health.IsHealthy ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable);
+});
 
 app.MapGet("/reports/{id:guid}/markdown", async (Guid id, IDbContextFactory<WorkLensDbContext> factory) =>
 {

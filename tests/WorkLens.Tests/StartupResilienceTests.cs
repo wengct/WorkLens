@@ -21,6 +21,19 @@ public sealed class StartupResilienceTests : IClassFixture<BrokenDatabaseApplica
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
+
+    [Fact]
+    public async Task Database_initialization_failure_reports_unhealthy_without_internal_details()
+    {
+        using var response = await client.GetAsync("/healthz");
+        var body = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Contains("\"status\":\"Unhealthy\"", body, StringComparison.Ordinal);
+        Assert.Contains("\"version\":", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("not-a-database", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("exception", body, StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 public sealed class BrokenDatabaseApplicationFactory : WebApplicationFactory<Program>

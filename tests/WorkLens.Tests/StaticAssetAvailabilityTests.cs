@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -23,6 +24,18 @@ public sealed class StaticAssetAvailabilityTests : IClassFixture<WorkLensApplica
         Assert.Equal(
             "text/javascript",
             response.Content.Headers.ContentType?.MediaType);
+    }
+
+    [Fact]
+    public async Task Health_endpoint_reports_ready_and_the_assembly_version()
+    {
+        using var response = await client.GetAsync("/healthz");
+        var payload = await response.Content.ReadFromJsonAsync<HealthPayload>();
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(payload);
+        Assert.Equal("Healthy", payload.Status);
+        Assert.False(string.IsNullOrWhiteSpace(payload.Version));
     }
 
     [Theory]
@@ -57,6 +70,8 @@ public sealed class StaticAssetAvailabilityTests : IClassFixture<WorkLensApplica
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }
+
+public sealed record HealthPayload(string Status, string Version);
 
 public sealed class WorkLensApplicationFactory : WebApplicationFactory<Program>
 {

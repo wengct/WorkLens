@@ -1,0 +1,126 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.rid }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            archive: zip
+          - os: macos-15-intel
+            rid: osx-x64
+            archive: tar.gz
+          - os: macos-15
+            rid: osx-arm64
+            archive: tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Validate release tag
+        shell: bash
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]] || {
+            echo "Release tags must use vX.Y.Z semantic versioning." >&2
+            exit 1
+          }
+
+      - name: Test
+        run: dotnet test tests/WorkLens.Tests/WorkLens.Tests.csproj --configuration Release
+
+      - name: Validate PowerShell scripts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem ./scripts/*.ps1 | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $failed = $true
+              $errors | ForEach-Object { Write-Error $_.Message }
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Validate shell scripts
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash -n scripts/*.sh
+
+      - name: Publish and package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          $package = Join-Path $env:RUNNER_TEMP "package"
+          $artifact = "worklens-$($env:GITHUB_REF_NAME)-${{ matrix.rid }}.zip"
+          dotnet publish WorkLens.csproj --configuration Release --runtime "${{ matrix.rid }}" --self-contained true -p:Version=$version -p:InformationalVersion=$version --output $package
+          Copy-Item scripts $package -Recurse
+          Copy-Item README.md, LICENSE $package
+          Set-Content -LiteralPath (Join-Path $package "VERSION") -Value $version -Encoding ASCII
+          & ./scripts/test-install.ps1 -ReleaseDir $package
+          Compress-Archive -Path (Join-Path $package "*") -DestinationPath (Join-Path $env:RUNNER_TEMP $artifact) -CompressionLevel Optimal
+          "ARTIFACT_PATH=$(Join-Path $env:RUNNER_TEMP $artifact)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "ARTIFACT_NAME=$artifact" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Publish and package macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          package="$RUNNER_TEMP/package"
+          artifact="worklens-${GITHUB_REF_NAME}-${{ matrix.rid }}.tar.gz"
+          dotnet publish WorkLens.csproj --configuration Release --runtime "${{ matrix.rid }}" --self-contained true -p:Version="$version" -p:InformationalVersion="$version" --output "$package"
+          cp -R scripts "$package/scripts"
+          cp README.md LICENSE "$package/"
+          printf '%s\n' "$version" > "$package/VERSION"
+          chmod +x "$package/WorkLens" "$package/scripts/"*.sh
+          ./scripts/test-install.sh "$package"
+          tar -czf "$RUNNER_TEMP/$artifact" -C "$package" .
+          echo "ARTIFACT_PATH=$RUNNER_TEMP/$artifact" >> "$GITHUB_ENV"
+          echo "ARTIFACT_NAME=$artifact" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: ${{ env.ARTIFACT_PATH }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create checksums
+        working-directory: release-assets
+        run: sha256sum worklens-* > SHA256SUMS
+
+      - name: Create release
+        working-directory: release-assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" worklens-* SHA256SUMS --verify-tag --generate-notes --title "WorkLens $GITHUB_REF_NAME"
