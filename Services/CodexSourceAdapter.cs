@@ -31,6 +31,21 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
         ActivitySource source,
         CancellationToken cancellationToken)
     {
+        if (sourceType == ActivitySourceType.MacOsCodex && OperatingSystem.IsWindows())
+        {
+            return SourceValidationResult.Invalid(SourceHealthStatus.Unavailable, "macOS Codex 來源只能在 macOS 上執行。");
+        }
+
+        if (sourceType == ActivitySourceType.WindowsCodex && OperatingSystem.IsMacOS())
+        {
+            return SourceValidationResult.Invalid(SourceHealthStatus.Unavailable, "Windows Codex 來源只能在 Windows 上執行。");
+        }
+
+        if (sourceType == ActivitySourceType.WslCodex && !OperatingSystem.IsWindows())
+        {
+            return SourceValidationResult.Invalid(SourceHealthStatus.Unavailable, "WSL Codex 來源只能在 Windows 上執行。");
+        }
+
         var resolution = await ResolveHomeAsync(source, cancellationToken);
         if (!resolution.Succeeded || resolution.Path is null)
         {
@@ -65,7 +80,7 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
                 resolution.Path,
                 sourceType == ActivitySourceType.WslCodex
                     ? $"WSL 環境：{SourceSettingsSerializer.DeserializeCodex(source.SettingsJson).Distro}"
-                    : "Windows");
+                    : sourceType == ActivitySourceType.MacOsCodex ? "macOS" : "Windows");
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
         {
@@ -616,7 +631,7 @@ public sealed class CodexHomeResolver(IProcessRunner processRunner) : ICodexHome
         CancellationToken cancellationToken)
     {
         var settings = SourceSettingsSerializer.DeserializeCodex(source.SettingsJson);
-        if (sourceType == ActivitySourceType.WindowsCodex)
+        if (sourceType is ActivitySourceType.WindowsCodex or ActivitySourceType.MacOsCodex)
         {
             var configured = settings.CodexHome;
             var value = string.IsNullOrWhiteSpace(configured)
@@ -624,7 +639,7 @@ public sealed class CodexHomeResolver(IProcessRunner processRunner) : ICodexHome
                 : configured;
             value = string.IsNullOrWhiteSpace(value)
                 ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex")
-                : ExpandWindowsHome(value);
+                : ExpandLocalHome(value);
             try
             {
                 return CodexHomeResolution.Success(Path.GetFullPath(value));
@@ -658,7 +673,7 @@ public sealed class CodexHomeResolver(IProcessRunner processRunner) : ICodexHome
         return CodexHomeResolution.Success(result.StandardOutput.Trim());
     }
 
-    private static string ExpandWindowsHome(string value)
+    private static string ExpandLocalHome(string value)
     {
         var expanded = Environment.ExpandEnvironmentVariables(value.Trim());
         if (expanded == "~")

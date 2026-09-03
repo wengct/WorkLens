@@ -1,6 +1,7 @@
 @inject ReportService ReportService
 @inject ILogger<ReportWorkspace> Logger
 @inject IJSRuntime JS
+@inject ToastService Toasts
 
 @if (isGeneratingAi)
 {
@@ -20,11 +21,6 @@
     </div>
 
     <p class="report-scope-note">摘要涵蓋完整@(Kind == ReportKind.Daily ? "日期" : "週期")，不受左側歷程篩選影響。</p>
-
-    @if (!string.IsNullOrWhiteSpace(message))
-    {
-        <div class="alert @(isError ? "alert-danger" : "alert-success")">@message</div>
-    }
 
     <div class="button-row report-primary-actions">
         <button class="button button-primary" type="button" @onclick="PrepareGenerateAsync" disabled="@IsBusy">@(isGeneratingReport ? "產生中…" : report is null ? "產生摘要" : "重產摘要")</button>
@@ -69,8 +65,6 @@
     private ReportKind loadedKind;
     private string loadedKey = string.Empty;
     private string savedBody = string.Empty;
-    private string message = string.Empty;
-    private bool isError;
     private bool isGeneratingReport;
     private bool isGeneratingAi;
     private bool confirmOverwrite;
@@ -96,7 +90,6 @@
         loadedKey = PeriodKey;
         confirmOverwrite = false;
         confirmAiOverwrite = false;
-        message = string.Empty;
         report = await ReportService.GetForPeriodAsync(Kind, PeriodKey);
         savedBody = report?.Body ?? string.Empty;
     }
@@ -113,16 +106,14 @@
         {
             await ReportService.UpdateBodyAsync(report.Id, report.Body);
             savedBody = report.Body;
-            message = "摘要文字已儲存。";
-            isError = false;
+            Toasts.Success("摘要文字已儲存。");
             await OnReportChanged.InvokeAsync();
             return true;
         }
         catch (Exception exception)
         {
             Logger.LogError(exception, "Saving report body failed");
-            message = "摘要文字儲存失敗，請稍後再試。";
-            isError = true;
+            Toasts.Error("摘要文字儲存失敗，請稍後再試。");
             return false;
         }
     }
@@ -144,7 +135,6 @@
         if (IsBusy) return;
         confirmOverwrite = false;
         isGeneratingReport = true;
-        message = string.Empty;
         await InvokeAsync(StateHasChanged);
         await Task.Yield();
         try
@@ -153,15 +143,13 @@
                 ? await ReportService.GenerateDeterministicAsync(AnchorDate)
                 : await ReportService.GenerateWeeklyAsync(AnchorDate);
             savedBody = report.Body;
-            message = "摘要已產生。";
-            isError = false;
+            Toasts.Success("摘要已產生。");
             await OnReportChanged.InvokeAsync();
         }
         catch (Exception exception)
         {
             Logger.LogError(exception, "Deterministic report generation failed");
-            message = "摘要產生失敗，請稍後再試。";
-            isError = true;
+            Toasts.Error("摘要產生失敗，請稍後再試。");
         }
         finally
         {
@@ -175,14 +163,12 @@
         try
         {
             await JS.InvokeVoidAsync("workLensClipboard.copyText", report.Body);
-            message = "摘要內容已複製到剪貼簿。";
-            isError = false;
+            Toasts.Success("摘要內容已複製到剪貼簿。");
         }
         catch (JSException exception)
         {
             Logger.LogWarning(exception, "Copying report to clipboard failed");
-            message = "無法複製摘要內容，請確認瀏覽器已允許剪貼簿權限。";
-            isError = true;
+            Toasts.Error("無法複製摘要內容，請確認瀏覽器已允許剪貼簿權限。");
         }
     }
 
@@ -197,7 +183,6 @@
         if (report is null || isGeneratingAi) return;
         confirmAiOverwrite = false;
         isGeneratingAi = true;
-        message = string.Empty;
         aiCancellation = new CancellationTokenSource();
         await InvokeAsync(StateHasChanged);
         await Task.Yield();
@@ -206,28 +191,24 @@
             var result = await ReportService.GenerateWithAiAsync(report.Id, aiCancellation.Token);
             if (aiCancellation.IsCancellationRequested)
             {
-                message = "已取消 AI 整理，原內容已保留。";
-                isError = false;
+                Toasts.Info("已取消 AI 整理，原內容已保留。");
             }
             else if (result.Succeeded)
             {
                 report = await ReportService.GetAsync(report.Id);
                 savedBody = report?.Body ?? string.Empty;
-                message = "AI 整理完成，請確認內容。";
-                isError = false;
+                Toasts.Success("AI 整理完成，請確認內容。");
                 await OnReportChanged.InvokeAsync();
             }
             else
             {
-                message = result.Error ?? "AI 整理失敗，原內容已保留。";
-                isError = true;
+                Toasts.Error(result.Error ?? "AI 整理失敗，原內容已保留。");
             }
         }
         catch (Exception exception)
         {
             Logger.LogError(exception, "AI report generation failed");
-            message = "AI 整理發生未預期錯誤，原內容已保留。";
-            isError = true;
+            Toasts.Error("AI 整理發生未預期錯誤，原內容已保留。");
         }
         finally
         {

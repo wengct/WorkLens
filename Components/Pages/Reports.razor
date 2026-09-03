@@ -5,17 +5,13 @@
 @inject SourceOrchestrator Orchestrator
 @inject ReportService ReportService
 @inject NavigationManager Navigation
+@inject ToastService Toasts
 
 <PageTitle>工作摘要｜WorkLens</PageTitle>
 
 <div class="page-heading">
     <div><p class="eyebrow">Review, write, export</p><h1>工作摘要</h1><p>從工作歷程選擇日期或週期，在同一頁完成摘要。</p></div>
 </div>
-
-@if (!string.IsNullOrWhiteSpace(message))
-{
-    <div class="alert @(isError ? "alert-danger" : "alert-success")">@message</div>
-}
 
 @if (pendingKind is not null)
 {
@@ -55,10 +51,16 @@
         <section class="panel history-calendar-panel">
             <div class="panel-heading">
                 <div><h2>@CalendarTitle()</h2><p>@(kind == ReportKind.Daily ? "點選日期，查看當日歷程與摘要。" : "點選任一天，查看該週歷程與摘要。")</p></div>
-                <div class="button-row"><button class="button button-secondary button-small" type="button" @onclick="() => MoveCalendarAsync(-1)">← 上個月</button><button class="button button-secondary button-small" type="button" @onclick="GoCurrentMonthAsync">本月</button><button class="button button-secondary button-small" type="button" @onclick="() => MoveCalendarAsync(1)">下個月 →</button></div>
+                <div class="calendar-toolbar">
+                    <div class="view-switch" aria-label="行事曆檢視">
+                        <button type="button" class="@(calendarView == "week" ? "active" : string.Empty)" @onclick='() => SetCalendarViewAsync("week")'>週</button>
+                        <button type="button" class="@(calendarView == "month" ? "active" : string.Empty)" @onclick='() => SetCalendarViewAsync("month")'>月</button>
+                    </div>
+                    <div class="button-row"><button class="button button-secondary button-small" type="button" @onclick="() => MoveCalendarAsync(-1)">← @(calendarView == "week" ? "前一週" : "上個月")</button><button class="button button-secondary button-small" type="button" @onclick="GoCurrentCalendarPeriodAsync">@(calendarView == "week" ? "本週" : "本月")</button><button class="button button-secondary button-small" type="button" @onclick="() => MoveCalendarAsync(1)">@(calendarView == "week" ? "後一週" : "下個月") →</button></div>
+                </div>
             </div>
-            <div class="history-calendar-weekdays" aria-hidden="true">@foreach (var weekday in Weekdays) { <span>@weekday</span> }</div>
-            <div class="history-calendar-grid">
+            <div class="history-calendar-weekdays" aria-hidden="true">@foreach (var weekday in CalendarWeekdays) { <span>@weekday</span> }</div>
+            <div class="history-calendar-grid @(calendarView == "week" ? "history-calendar-grid-week" : "history-calendar-grid-month")">
                 @foreach (var cell in CalendarCells())
                 {
                     @if (cell is DateOnly day)
@@ -99,7 +101,7 @@
                 <div class="history-timeline-scroll"><div class="timeline">
                     @foreach (var entry in DetailEntries)
                     {
-                        <div class="timeline-item"><div class="timeline-time">@(kind == ReportKind.Weekly ? $"{entry.WorkDate:MM/dd} · " : string.Empty)人工 · @entry.Hours.ToString("0.##") 小時 · @ProjectName(entry.ProjectId)</div><div class="timeline-detail markdown-source">@entry.WorkContent</div>@if (kind == ReportKind.Weekly) { <a class="timeline-link" href="/?date=@entry.WorkDate.ToString("yyyy-MM-dd")">開啟該日</a> }</div>
+                        <div class="timeline-item"><div class="timeline-time">@(kind == ReportKind.Weekly ? $"{entry.WorkDate:MM/dd} · " : string.Empty)人工 · @entry.Hours.ToString("0.##") 小時 · @ProjectName(entry.ProjectId)</div><div class="timeline-title">@entry.Title</div><div class="timeline-detail markdown-source">@entry.WorkContent</div>@if (kind == ReportKind.Weekly) { <a class="timeline-link" href="/?date=@entry.WorkDate.ToString("yyyy-MM-dd")">開啟該日</a> }</div>
                     }
                     @foreach (var item in DetailEvidence)
                     {
@@ -120,6 +122,7 @@
     [SupplyParameterFromQuery(Name = "q")] public string? Query { get; set; }
     [SupplyParameterFromQuery(Name = "mode")] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "currentOnly")] public bool CurrentOnly { get; set; }
+    [SupplyParameterFromQuery(Name = "calendar")] public string? Calendar { get; set; }
 
     private DateOnly selectedDate = DateOnly.FromDateTime(DateTime.Today);
     private DateTime calendarAnchor = DateTime.Today;
@@ -127,18 +130,19 @@
     private string filterProject = string.Empty;
     private string filterQuery = string.Empty;
     private string filterMode = "all";
+    private string calendarView = "week";
     private bool filterCurrentOnly;
     private IReadOnlyList<Project> projects = [];
     private IReadOnlyList<WorkEntry> entries = [];
     private IReadOnlyList<SourceEvidence> evidence = [];
     private IReadOnlyList<ReportDocument> reports = [];
-    private string message = string.Empty;
-    private bool isError;
     private bool isBackfilling;
     private ReportWorkspace? reportWorkspace;
     private ReportKind? pendingKind;
     private DateOnly pendingDate;
-    private static readonly string[] Weekdays = ["日", "一", "二", "三", "四", "五", "六"];
+    private static readonly string[] MonthWeekdays = ["日", "一", "二", "三", "四", "五", "六"];
+    private static readonly string[] WeekWeekdays = ["一", "二", "三", "四", "五", "六", "日"];
+    private IReadOnlyList<string> CalendarWeekdays => calendarView == "week" ? WeekWeekdays : MonthWeekdays;
 
     private DateOnly PeriodStart => kind == ReportKind.Daily ? selectedDate : StartOfWeek(selectedDate);
     private DateOnly PeriodEnd => kind == ReportKind.Daily ? selectedDate : PeriodStart.AddDays(6);
@@ -155,15 +159,15 @@
         filterQuery = Query ?? string.Empty;
         filterMode = Mode is "manual" or "sources" ? Mode : "all";
         filterCurrentOnly = CurrentOnly;
+        calendarView = string.Equals(Calendar, "month", StringComparison.OrdinalIgnoreCase) ? "month" : "week";
         await ReloadAsync();
     }
 
     private async Task ReloadAsync()
     {
-        var monthStart = new DateOnly(calendarAnchor.Year, calendarAnchor.Month, 1);
-        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
-        var rangeStart = PeriodStart < monthStart ? PeriodStart : monthStart;
-        var rangeEnd = PeriodEnd > monthEnd ? PeriodEnd : monthEnd;
+        var (calendarStart, calendarEnd) = CalendarRange();
+        var rangeStart = PeriodStart < calendarStart ? PeriodStart : calendarStart;
+        var rangeEnd = PeriodEnd > calendarEnd ? PeriodEnd : calendarEnd;
         var projectId = ParseProject(filterProject);
         projects = await SourceConfig.GetProjectsAsync(includeArchived: true);
         entries = filterMode == "sources" ? [] : await WorkLogs.GetRangeAsync(rangeStart, rangeEnd, projectId, filterQuery);
@@ -219,15 +223,30 @@
     private void ApplyFilters() => Navigation.NavigateTo(Navigation.GetUriWithQueryParameters("/reports", BuildQuery()));
     private Dictionary<string, object?> BuildQuery()
     {
-        var query = new Dictionary<string, object?> { ["kind"] = kind.ToString(), ["date"] = selectedDate.ToString("yyyy-MM-dd"), ["mode"] = filterMode, ["currentOnly"] = filterCurrentOnly };
+        var query = new Dictionary<string, object?> { ["kind"] = kind.ToString(), ["date"] = selectedDate.ToString("yyyy-MM-dd"), ["mode"] = filterMode, ["currentOnly"] = filterCurrentOnly, ["calendar"] = calendarView };
         if (!string.IsNullOrWhiteSpace(filterProject)) query["project"] = filterProject;
         if (!string.IsNullOrWhiteSpace(filterQuery)) query["q"] = filterQuery;
         return query;
     }
 
-    private async Task MoveCalendarAsync(int offset) { calendarAnchor = calendarAnchor.AddMonths(offset); await ReloadAsync(); }
-    private async Task GoCurrentMonthAsync() { calendarAnchor = DateTime.Today; await ReloadAsync(); }
-    private string CalendarTitle() => $"{calendarAnchor:yyyy 年 M 月}";
+    private async Task SetCalendarViewAsync(string view)
+    {
+        calendarView = view == "week" ? "week" : "month";
+        calendarAnchor = selectedDate.ToDateTime(TimeOnly.MinValue);
+        await ReloadAsync();
+    }
+    private async Task MoveCalendarAsync(int offset)
+    {
+        calendarAnchor = calendarView == "week" ? calendarAnchor.AddDays(offset * 7) : calendarAnchor.AddMonths(offset);
+        await ReloadAsync();
+    }
+    private async Task GoCurrentCalendarPeriodAsync() { calendarAnchor = DateTime.Today; await ReloadAsync(); }
+    private string CalendarTitle()
+    {
+        if (calendarView == "month") return $"{calendarAnchor:yyyy 年 M 月}";
+        var (start, end) = CalendarRange();
+        return $"{start:yyyy/MM/dd}－{end:MM/dd}";
+    }
     private string FilterSummary()
     {
         var project = string.IsNullOrWhiteSpace(filterProject) ? "全部專案" : ProjectName(ParseProject(filterProject));
@@ -243,12 +262,27 @@
     }
     private IReadOnlyList<DateOnly?> CalendarCells()
     {
+        if (calendarView == "week")
+        {
+            var start = StartOfWeek(DateOnly.FromDateTime(calendarAnchor));
+            return Enumerable.Range(0, 7).Select(offset => (DateOnly?)start.AddDays(offset)).ToList();
+        }
         var cells = new List<DateOnly?>();
         var first = CalendarDays().First();
         for (var index = 0; index < (int)first.DayOfWeek; index++) cells.Add(null);
         cells.AddRange(CalendarDays().Select(day => (DateOnly?)day));
         while (cells.Count % 7 != 0) cells.Add(null);
         return cells;
+    }
+    private (DateOnly Start, DateOnly End) CalendarRange()
+    {
+        if (calendarView == "week")
+        {
+            var start = StartOfWeek(DateOnly.FromDateTime(calendarAnchor));
+            return (start, start.AddDays(6));
+        }
+        var monthStart = new DateOnly(calendarAnchor.Year, calendarAnchor.Month, 1);
+        return (monthStart, monthStart.AddMonths(1).AddDays(-1));
     }
     private List<WorkEntry> EntriesFor(DateOnly day) => filterMode == "sources" ? [] : entries.Where(entry => entry.WorkDate == day).ToList();
     private List<SourceEvidence> EvidenceFor(DateOnly day) => filterMode == "manual" ? [] : evidence.Where(item => DateOnly.FromDateTime(item.OccurredAt.LocalDateTime) == day).ToList();
@@ -265,19 +299,19 @@
     private async Task BackfillPeriodAsync()
     {
         isBackfilling = true;
-        message = $"正在重新收集 {SelectedPeriodTitle} 的來源資料…";
-        isError = false;
+        Toasts.Info($"正在重新收集 {SelectedPeriodTitle} 的來源資料…");
         await InvokeAsync(StateHasChanged);
         await Task.Yield();
         try
         {
             var sourceIds = (await SourceConfig.GetSourcesAsync()).Where(source => source.Enabled && source.HealthStatus == SourceHealthStatus.Ready).Select(source => source.Id).ToArray();
             var results = await Orchestrator.CollectRangeAsync(sourceIds, PeriodStart, PeriodEnd);
-            message = $"回補完成：新增 {results.Sum(result => result.AddedCount)}、更新 {results.Sum(result => result.UpdatedCount)}、未變更 {results.Sum(result => result.UnchangedCount)}。";
-            isError = results.Any(result => !result.Succeeded);
+            var resultMessage = $"回補完成：新增 {results.Sum(result => result.AddedCount)}、更新 {results.Sum(result => result.UpdatedCount)}、未變更 {results.Sum(result => result.UnchangedCount)}。";
+            if (results.Any(result => !result.Succeeded)) Toasts.Error(resultMessage);
+            else Toasts.Success(resultMessage);
             await ReloadAsync();
         }
-        catch (Exception exception) { message = exception.Message; isError = true; }
+        catch (Exception exception) { Toasts.Error(exception.Message); }
         finally { isBackfilling = false; }
     }
 

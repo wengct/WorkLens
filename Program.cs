@@ -9,20 +9,26 @@ using WorkLens.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseStaticWebAssets();
-builder.WebHost.UseUrls("http://127.0.0.1:5077");
+if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]))
+{
+    builder.WebHost.UseUrls("http://127.0.0.1:5077");
+}
 
-var configuredConnection = builder.Configuration.GetConnectionString("WorkLens")
-    ?? "%LOCALAPPDATA%\\WorkLens\\data\\worklens.db";
+var defaultRoot = AppPaths.GetDefaultRoot();
+var configuredConnection = builder.Configuration.GetConnectionString("WorkLens");
+configuredConnection = string.IsNullOrWhiteSpace(configuredConnection)
+    ? $"Data Source={Path.Combine(defaultRoot, "data", "worklens.db")}"
+    : configuredConnection;
 var configuredDatabasePath = configuredConnection.StartsWith("Data Source=", StringComparison.OrdinalIgnoreCase)
     ? configuredConnection["Data Source=".Length..]
     : configuredConnection;
 var databasePath = AppPaths.ExpandPath(configuredDatabasePath);
 var backupPath = AppPaths.ExpandPath(
     builder.Configuration["WorkLens:BackupPath"]
-    ?? "%LOCALAPPDATA%\\WorkLens\\backups");
+    ?? Path.Combine(defaultRoot, "backups"));
 var logPath = AppPaths.ExpandPath(
     builder.Configuration["WorkLens:LogPath"]
-    ?? "%LOCALAPPDATA%\\WorkLens\\logs");
+    ?? Path.Combine(defaultRoot, "logs"));
 
 var paths = new AppPaths(databasePath, backupPath, logPath);
 Exception? pathSetupException = null;
@@ -86,6 +92,10 @@ builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
         serviceProvider.GetRequiredService<ProcessRunner>(),
         ActivitySourceType.WslGit));
 builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new GitSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.MacOsGit));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
     new CodexSourceAdapter(
         serviceProvider.GetRequiredService<ProcessRunner>(),
         ActivitySourceType.WindowsCodex));
@@ -93,6 +103,10 @@ builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
     new CodexSourceAdapter(
         serviceProvider.GetRequiredService<ProcessRunner>(),
         ActivitySourceType.WslCodex));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new CodexSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.MacOsCodex));
 builder.Services.AddSingleton<SourceRegistry>();
 builder.Services.AddSingleton<SourceOrchestrator>();
 builder.Services.AddSingleton<ReportInvalidationService>();
@@ -100,9 +114,11 @@ builder.Services.AddSingleton<ReportInvalidationService>();
 builder.Services.AddScoped<WorkLogService>();
 builder.Services.AddScoped<SourceConfigurationService>();
 builder.Services.AddScoped<ActivityQueryService>();
+builder.Services.AddScoped<ManualSourceService>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<AiConfigurationService>();
 builder.Services.AddScoped<BackupService>();
+builder.Services.AddScoped<ToastService>();
 
 builder.Services.AddHostedService<SourceCollectionHostedService>();
 builder.Services.AddHostedService<ReportScheduleHostedService>();

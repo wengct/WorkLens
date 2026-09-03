@@ -2,7 +2,7 @@
     const editors = new Map();
 
     window.workLensEasyMde = {
-        initialize: function (elementId) {
+        initialize: function (elementId, minHeight) {
             const element = document.getElementById(elementId);
             if (!element) {
                 throw new Error(`找不到 Markdown 編輯器元素：${elementId}`);
@@ -23,7 +23,7 @@
                 uploadImage: false,
                 toolbarGuideIcon: false,
                 status: false,
-                minHeight: "260px",
+                minHeight: minHeight || "260px",
                 placeholder: "使用 Markdown 記錄今天做過的事…",
                 toolbar: [
                     "bold", "italic", "heading", "|",

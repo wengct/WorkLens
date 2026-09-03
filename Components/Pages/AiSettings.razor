@@ -1,15 +1,11 @@
 @page "/ai"
 @inject AiConfigurationService AiConfig
 @inject AskBridgeService AskBridge
+@inject ToastService Toasts
 
 <PageTitle>AI 整理｜WorkLens</PageTitle>
 
 <div class="page-heading"><div><p class="eyebrow">Settings</p><h1>AI 整理</h1><p>自訂整理偏好；工時、紀錄 ID 與 JSON 輸出契約仍由系統固定驗證。</p></div></div>
-
-@if (!string.IsNullOrWhiteSpace(message))
-{
-    <div class="alert @(isError ? "alert-danger" : "alert-success")">@message</div>
-}
 
 @if (activeOperation is not null)
 {
@@ -48,13 +44,11 @@
 @code {
     private AiProviderConfiguration configuration = new();
     private AiDetectionResult? detection;
-    private string message = string.Empty;
     private string promptResult = string.Empty;
-    private bool isError;
     private string? activeOperation;
     private bool IsBusy => activeOperation is not null;
     protected override async Task OnInitializedAsync() => configuration = await AiConfig.GetAsync();
-    private async Task SaveAsync() { try { await AiConfig.SaveAsync(configuration); message = "AI 設定與 Prompt 已儲存。"; isError = false; } catch (ArgumentException exception) { message = exception.Message; isError = true; } }
+    private async Task SaveAsync() { try { await AiConfig.SaveAsync(configuration); Toasts.Success("AI 設定與 Prompt 已儲存。"); } catch (ArgumentException exception) { Toasts.Error(exception.Message); } }
     private async Task DetectAsync()
     {
         if (!BeginOperation("detect")) return;
@@ -67,8 +61,8 @@
             configuration.LastError = detection.Validation.IsValid ? null : detection.Validation.Summary;
             configuration.LastCheckedAt = DateTimeOffset.UtcNow;
             await AiConfig.SaveAsync(configuration);
-            message = detection.Validation.Summary;
-            isError = !detection.Validation.IsValid;
+            if (detection.Validation.IsValid) Toasts.Success(detection.Validation.Summary);
+            else Toasts.Error(detection.Validation.Summary);
         }
         finally { activeOperation = null; }
     }
@@ -78,8 +72,8 @@
         try
         {
             var succeeded = await AskBridge.StartLoginAsync(configuration);
-            message = succeeded ? "登入流程已完成，瀏覽器已關閉。" : "登入流程未完成。";
-            isError = !succeeded;
+            if (succeeded) Toasts.Success("登入流程已完成，瀏覽器已關閉。");
+            else Toasts.Error("登入流程未完成。");
         }
         finally { activeOperation = null; }
     }
@@ -89,8 +83,8 @@
         try
         {
             var result = await AskBridge.TestConnectionAsync(configuration);
-            message = result.Succeeded ? "連線測試成功。" : result.Error ?? "連線測試失敗。";
-            isError = !result.Succeeded;
+            if (result.Succeeded) Toasts.Success("連線測試成功。");
+            else Toasts.Error(result.Error ?? "連線測試失敗。");
         }
         finally { activeOperation = null; }
     }
@@ -102,8 +96,15 @@
         try
         {
             var result = await AskBridge.TestPromptAsync(configuration, ReportService.ResolvePrompt(configuration, ReportKind.Daily));
-            promptResult = result.Succeeded ? result.Body ?? "範例 Prompt 未產生內容。" : result.Error ?? "範例 Prompt 測試失敗。";
-            isError = !result.Succeeded;
+            if (result.Succeeded)
+            {
+                promptResult = result.Body ?? "範例 Prompt 未產生內容。";
+                Toasts.Success("範例 Prompt 測試完成。");
+            }
+            else
+            {
+                Toasts.Error(result.Error ?? "範例 Prompt 測試失敗。");
+            }
         }
         finally { activeOperation = null; }
     }
@@ -111,7 +112,6 @@
     {
         if (IsBusy) return false;
         activeOperation = operation;
-        message = string.Empty;
         _ = InvokeAsync(StateHasChanged);
         return true;
     }

@@ -44,6 +44,21 @@ public sealed class GitSourceAdapter(ProcessRunner processRunner, ActivitySource
                 "Git 來源包含格式無效的作者 email。");
         }
 
+        if (sourceType == ActivitySourceType.MacOsGit && OperatingSystem.IsWindows())
+        {
+            return SourceValidationResult.Invalid(SourceHealthStatus.Unavailable, "macOS Git 來源只能在 macOS 上執行。");
+        }
+
+        if (sourceType == ActivitySourceType.WindowsGit && OperatingSystem.IsMacOS())
+        {
+            return SourceValidationResult.Invalid(SourceHealthStatus.Unavailable, "Windows Git 來源只能在 Windows 上執行。");
+        }
+
+        if (sourceType == ActivitySourceType.WslGit && !OperatingSystem.IsWindows())
+        {
+            return SourceValidationResult.Invalid(SourceHealthStatus.Unavailable, "WSL Git 來源只能在 Windows 上執行。");
+        }
+
         if (sourceType == ActivitySourceType.WslGit)
         {
             if (string.IsNullOrWhiteSpace(settings.Distro))
@@ -380,10 +395,10 @@ public sealed class GitSourceAdapter(ProcessRunner processRunner, ActivitySource
                 cancellationToken: cancellationToken);
         }
 
-        var windowsArguments = new List<string> { "-C", path };
-        windowsArguments.AddRange(gitArguments);
+        var nativeArguments = new List<string> { "-C", path };
+        nativeArguments.AddRange(gitArguments);
         return await processRunner.RunAsync(
-            new ProcessRequest("git", windowsArguments, path),
+            new ProcessRequest("git", nativeArguments, path),
             timeout: TimeSpan.FromSeconds(45),
             cancellationToken: cancellationToken);
     }

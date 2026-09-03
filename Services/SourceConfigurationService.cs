@@ -23,7 +23,7 @@ public sealed class SourceConfigurationService(
         source.CollectionIntervalMinutes = Math.Clamp(source.CollectionIntervalMinutes, 1, 1440);
         source.InitialImportDays = Math.Clamp(source.InitialImportDays, 1, 90);
         source.SettingsJson = string.IsNullOrWhiteSpace(source.SettingsJson) ? "{}" : source.SettingsJson;
-        if (source.SourceType is ActivitySourceType.WindowsGit or ActivitySourceType.WslGit)
+        if (source.SourceType is ActivitySourceType.WindowsGit or ActivitySourceType.WslGit or ActivitySourceType.MacOsGit)
         {
             var gitSettings = SourceSettingsSerializer.DeserializeGit(source.SettingsJson);
             gitSettings.AuthorEmails = SourceSettingsSerializer
@@ -45,7 +45,7 @@ public sealed class SourceConfigurationService(
 
             source.SettingsJson = SourceSettingsSerializer.Serialize(gitSettings);
         }
-        else if (source.SourceType is ActivitySourceType.WindowsCodex or ActivitySourceType.WslCodex)
+        else if (source.SourceType is ActivitySourceType.WindowsCodex or ActivitySourceType.WslCodex or ActivitySourceType.MacOsCodex)
         {
             var codexSettings = SourceSettingsSerializer.DeserializeCodex(source.SettingsJson);
             codexSettings.CodexHome = string.IsNullOrWhiteSpace(codexSettings.CodexHome)
@@ -59,7 +59,7 @@ public sealed class SourceConfigurationService(
                 throw new ArgumentException("WSL Codex 來源必須指定 Linux 環境名稱，例如 Ubuntu。", nameof(source));
             }
 
-            if (source.SourceType == ActivitySourceType.WindowsCodex)
+            if (source.SourceType is ActivitySourceType.WindowsCodex or ActivitySourceType.MacOsCodex)
             {
                 codexSettings.Distro = null;
             }

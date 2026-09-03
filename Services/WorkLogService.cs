@@ -36,7 +36,9 @@ public sealed class WorkLogService(
                             (projectId == null || entry.ProjectId == projectId))
             .ToListAsync(cancellationToken);
         return entries
-            .Where(entry => string.IsNullOrWhiteSpace(query) || entry.WorkContent.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .Where(entry => string.IsNullOrWhiteSpace(query) ||
+                            entry.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                            entry.WorkContent.Contains(query, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(entry => entry.WorkDate)
             .ThenBy(entry => entry.CreatedAt)
             .ToList();
@@ -47,6 +49,7 @@ public sealed class WorkLogService(
         double hours,
         string workContent,
         Guid? projectId = null,
+        string? title = null,
         CancellationToken cancellationToken = default)
     {
         if (!double.IsFinite(hours) || hours <= 0 || hours > 24)
@@ -64,6 +67,7 @@ public sealed class WorkLogService(
         {
             WorkDate = workDate,
             Hours = hours,
+            Title = ContentTitle.Resolve(title, workContent),
             WorkContent = workContent.Trim(),
             ProjectId = projectId
         };
@@ -80,6 +84,7 @@ public sealed class WorkLogService(
         double hours,
         string workContent,
         Guid? projectId,
+        string? title = null,
         CancellationToken cancellationToken = default)
     {
         Validate(hours, workContent);
@@ -93,6 +98,7 @@ public sealed class WorkLogService(
         var oldDate = entry.WorkDate;
         entry.WorkDate = workDate;
         entry.Hours = hours;
+        entry.Title = ContentTitle.Resolve(title, workContent);
         entry.WorkContent = workContent.Trim();
         entry.ProjectId = projectId;
         entry.UpdatedAt = DateTimeOffset.UtcNow;

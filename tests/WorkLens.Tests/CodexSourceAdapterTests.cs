@@ -18,7 +18,7 @@ public sealed class CodexSourceAdapterTests : IDisposable
     }
 
     [Fact]
-    public async Task Validation_accepts_readable_windows_codex_home()
+    public async Task Validation_accepts_readable_local_codex_home()
     {
         var adapter = CreateAdapter();
         var source = CreateSource();
@@ -271,6 +271,25 @@ public sealed class CodexSourceAdapterTests : IDisposable
     }
 
     [Fact]
+    public async Task Mac_home_resolver_accepts_a_native_absolute_path()
+    {
+        var resolver = new CodexHomeResolver(new RecordingProcessRunner(new ProcessResult(1, string.Empty, "not used")));
+        var source = new ActivitySource
+        {
+            SourceType = ActivitySourceType.MacOsCodex,
+            SettingsJson = SourceSettingsSerializer.Serialize(new CodexSourceSettings { CodexHome = testRoot })
+        };
+
+        var result = await resolver.ResolveAsync(
+            ActivitySourceType.MacOsCodex,
+            source,
+            CancellationToken.None);
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Equal(Path.GetFullPath(testRoot), result.Path);
+    }
+
+    [Fact]
     public async Task Wsl_home_resolver_can_be_verified_against_an_installed_distro()
     {
         var distro = Environment.GetEnvironmentVariable("WORKLENS_WSL_TEST");
@@ -297,14 +316,17 @@ public sealed class CodexSourceAdapterTests : IDisposable
     }
 
     private CodexSourceAdapter CreateAdapter() =>
-        new(new ProcessRunner(), ActivitySourceType.WindowsCodex);
+        new(new ProcessRunner(), LocalCodexType);
 
     private ActivitySource CreateSource() => new()
     {
-        SourceType = ActivitySourceType.WindowsCodex,
+        SourceType = LocalCodexType,
         Enabled = true,
         SettingsJson = SourceSettingsSerializer.Serialize(new CodexSourceSettings { CodexHome = testRoot })
     };
+
+    private static ActivitySourceType LocalCodexType =>
+        OperatingSystem.IsMacOS() ? ActivitySourceType.MacOsCodex : ActivitySourceType.WindowsCodex;
 
     private string SessionPath(Guid id) => Path.Combine(
         testRoot,

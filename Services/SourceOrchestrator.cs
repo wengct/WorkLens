@@ -216,7 +216,7 @@ public sealed class SourceOrchestrator(
                 var previousDate = DateOnly.FromDateTime(current.OccurredAt.LocalDateTime);
                 // The evidence identity is repository + external key. Keep the
                 // database-generated Id and original observation time stable
-                // when Windows Git and WSL Git observe the same evidence.
+                // when native Git and WSL Git observe the same evidence.
                 current.SourceId = evidence.SourceId;
                 current.ProjectId = evidence.ProjectId;
                 current.RepositoryPath = evidence.RepositoryPath;

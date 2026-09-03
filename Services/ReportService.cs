@@ -177,7 +177,9 @@ public sealed class ReportService(
             .ToListAsync(cancellationToken);
         var allEvidence = await db.SourceEvidence.AsNoTracking().ToListAsync(cancellationToken);
         var evidence = allEvidence
-            .Where(x => sourceIds.Contains(x.SourceId) &&
+            .Where(x => (sourceIds.Contains(x.SourceId) ||
+                         (x.Kind == EvidenceKind.Manual &&
+                          (x.ProjectId == null || aiProjects.Contains(x.ProjectId.Value)))) &&
                         x.OccurredAt >= report.PeriodStart &&
                         x.OccurredAt < report.PeriodEnd)
             .OrderBy(x => x.OccurredAt)
@@ -277,12 +279,13 @@ public sealed class ReportService(
             .ThenBy(x => x.CreatedAt)
             .ToList();
         var builder = new StringBuilder();
-        builder.AppendLine("工作日期,時數,工作內容");
+        builder.AppendLine("工作日期,時數,標題,工作內容");
         foreach (var entry in entries)
         {
             builder.AppendLine(string.Join(',',
                 Csv(entry.WorkDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)),
                 Csv(entry.Hours.ToString("0.##", CultureInfo.InvariantCulture)),
+                Csv(entry.Title),
                 Csv(entry.WorkContent)));
         }
 
@@ -314,7 +317,7 @@ public sealed class ReportService(
                 builder.AppendLine($"### {group.Key}");
                 foreach (var entry in group)
                 {
-                    builder.AppendLine($"#### {entry.WorkDate:yyyy/MM/dd}｜{entry.Hours:0.##} 小時");
+                    builder.AppendLine($"#### {entry.WorkDate:yyyy/MM/dd}｜{entry.Hours:0.##} 小時｜{entry.Title}");
                     builder.AppendLine(entry.WorkContent);
                     builder.AppendLine();
                 }
@@ -377,12 +380,14 @@ public sealed class ReportService(
         builder.AppendLine($"報告 ID：{report.Id}");
         builder.AppendLine($"確認工時：{report.TotalHours:0.##} 小時");
         builder.AppendLine();
-        builder.AppendLine(report.DeterministicBody);
-        builder.AppendLine();
+        // DeterministicBody is intentionally not reused here. It is generated for the
+        // human-facing report from every collected source and may therefore contain
+        // evidence from a source or project that was later excluded from AI sharing.
+        // The AI context must be rebuilt exclusively from the already-filtered inputs.
         builder.AppendLine("補充人工紀錄：");
         foreach (var entry in entries)
         {
-            builder.AppendLine($"- id={entry.Id}｜日期={entry.WorkDate:yyyy-MM-dd}｜確認時數={entry.Hours:0.##}");
+            builder.AppendLine($"- id={entry.Id}｜日期={entry.WorkDate:yyyy-MM-dd}｜確認時數={entry.Hours:0.##}｜標題={entry.Title}");
             builder.AppendLine(entry.WorkContent);
         }
 

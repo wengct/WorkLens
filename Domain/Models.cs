@@ -5,7 +5,9 @@ public enum ActivitySourceType
     WindowsGit,
     WslGit,
     WindowsCodex,
-    WslCodex
+    WslCodex,
+    MacOsGit,
+    MacOsCodex
 }
 
 public enum SourceHealthStatus
@@ -19,6 +21,7 @@ public enum SourceHealthStatus
 
 public enum EvidenceKind
 {
+    Manual,
     Commit,
     WorkingTreeSnapshot,
     RebaseStarted,
@@ -71,6 +74,7 @@ public sealed class WorkEntry
     public Guid Id { get; set; } = Guid.NewGuid();
     public DateOnly WorkDate { get; set; }
     public double Hours { get; set; }
+    public string Title { get; set; } = string.Empty;
     public string WorkContent { get; set; } = string.Empty;
 
     public Guid? ProjectId { get; set; }

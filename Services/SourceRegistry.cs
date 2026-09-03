@@ -22,6 +22,8 @@ public sealed class SourceRegistry(IEnumerable<IActivitySourceAdapter> adapters)
                     ActivitySourceType.WslGit => "WSL Git",
                     ActivitySourceType.WindowsCodex => "Windows Codex",
                     ActivitySourceType.WslCodex => "WSL Codex",
+                    ActivitySourceType.MacOsGit => "macOS Git",
+                    ActivitySourceType.MacOsCodex => "macOS Codex",
                     _ => x.Key.ToString()
                 },
                 x.Value.Capabilities))

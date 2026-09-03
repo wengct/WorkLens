@@ -1,14 +1,10 @@
 @page "/projects"
 @inject SourceConfigurationService SourceConfig
+@inject ToastService Toasts
 
 <PageTitle>專案設定｜WorkLens</PageTitle>
 
 <div class="page-heading"><div><p class="eyebrow">Settings</p><h1>專案設定</h1><p>專案是選填分類；停用不會影響既有歷史資料。</p></div></div>
-
-@if (!string.IsNullOrWhiteSpace(message))
-{
-    <div class="alert @(isError ? "alert-danger" : "alert-success")">@message</div>
-}
 
 <div class="panel">
     <div class="panel-heading"><div><h2>新增專案</h2><p>新專案會出現在日常紀錄的下拉選單。</p></div></div>
@@ -49,24 +45,21 @@
     private Guid? editingId;
     private string editName = string.Empty;
     private string editColor = "#6d7cff";
-    private string message = string.Empty;
-    private bool isError;
-
     protected override async Task OnInitializedAsync() => await ReloadAsync();
     private async Task ReloadAsync() => projects = await SourceConfig.GetProjectsAsync(includeArchived: true);
     private async Task CreateAsync()
     {
         var project = await SourceConfig.CreateProjectAsync(newName, newColor);
-        if (project is null) { message = "請輸入未重複的專案名稱。"; isError = true; return; }
-        newName = string.Empty; message = "專案已新增。"; isError = false; await ReloadAsync();
+        if (project is null) { Toasts.Error("請輸入未重複的專案名稱。"); return; }
+        newName = string.Empty; Toasts.Success("專案已新增。"); await ReloadAsync();
     }
     private void BeginEdit(Project project) { editingId = project.Id; editName = project.Name; editColor = project.Color; }
     private void CancelEdit() => editingId = null;
     private async Task SaveAsync(Guid id)
     {
-        if (await SourceConfig.UpdateProjectAsync(id, editName, editColor) is null) { message = "請輸入未重複的專案名稱。"; isError = true; return; }
-        editingId = null; message = "專案已更新；相關報告已標示為需要重產。"; isError = false; await ReloadAsync();
+        if (await SourceConfig.UpdateProjectAsync(id, editName, editColor) is null) { Toasts.Error("請輸入未重複的專案名稱。"); return; }
+        editingId = null; Toasts.Success("專案已更新；相關報告已標示為需要重產。"); await ReloadAsync();
     }
-    private async Task ToggleAiAsync(Project project) { await SourceConfig.SetProjectAiAsync(project.Id, !project.IncludeInAi); message = project.IncludeInAi ? "專案已停止提供給 AI。" : "專案已允許提供給 AI。"; isError = false; await ReloadAsync(); }
-    private async Task ToggleArchiveAsync(Project project) { await SourceConfig.SetProjectArchivedAsync(project.Id, !project.IsArchived); message = project.IsArchived ? "專案已重新啟用。" : "專案已停用，既有歷史不受影響。"; isError = false; await ReloadAsync(); }
+    private async Task ToggleAiAsync(Project project) { await SourceConfig.SetProjectAiAsync(project.Id, !project.IncludeInAi); Toasts.Success(project.IncludeInAi ? "專案已停止提供給 AI。" : "專案已允許提供給 AI。"); await ReloadAsync(); }
+    private async Task ToggleArchiveAsync(Project project) { await SourceConfig.SetProjectArchivedAsync(project.Id, !project.IsArchived); Toasts.Success(project.IsArchived ? "專案已重新啟用。" : "專案已停用，既有歷史不受影響。"); await ReloadAsync(); }
 }

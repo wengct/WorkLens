@@ -85,6 +85,42 @@ public sealed class DatabaseInitializerTests
         Assert.Contains("我的自訂整理方式", prompts);
     }
 
+    [Fact]
+    public async Task Initialize_adds_and_backfills_work_entry_titles_in_an_existing_database()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
+        await using (var setup = new WorkLensDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            await setup.Database.ExecuteSqlRawAsync("DROP TABLE \"WorkEntries\";");
+            await setup.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE "WorkEntries" (
+                    "Id" TEXT NOT NULL CONSTRAINT "PK_WorkEntries" PRIMARY KEY,
+                    "WorkDate" TEXT NOT NULL,
+                    "Hours" REAL NOT NULL,
+                    "WorkContent" TEXT NOT NULL,
+                    "ProjectId" TEXT NULL,
+                    "CreatedAt" TEXT NOT NULL,
+                    "UpdatedAt" TEXT NOT NULL
+                );
+                INSERT INTO "WorkEntries" (
+                    "Id", "WorkDate", "Hours", "WorkContent", "CreatedAt", "UpdatedAt")
+                VALUES (
+                    '11111111-1111-1111-1111-111111111111', '2026-09-03', 2,
+                    '# 舊紀錄標題
+
+                    內容', '2026-09-03 00:00:00+00:00', '2026-09-03 00:00:00+00:00');
+                """);
+        }
+
+        await new DatabaseInitializer(new Factory(options)).InitializeAsync();
+
+        await using var verify = new WorkLensDbContext(options);
+        Assert.Equal("舊紀錄標題", (await verify.WorkEntries.SingleAsync()).Title);
+    }
+
     private sealed class Factory(DbContextOptions<WorkLensDbContext> options)
         : IDbContextFactory<WorkLensDbContext>
     {

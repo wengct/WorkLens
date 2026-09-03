@@ -16,16 +16,27 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
 
     public string ProviderType => "ask-bridge";
 
-    public IReadOnlyList<string> WindowsInstallSteps =>
-    [
-        "確認 Node.js LTS 至少為 20.19.0，並確認 node -v 與 npx -v 可執行。",
-        "確認已安裝 Google Chrome。",
-        "在 PowerShell 執行官方安裝命令：",
-        "irm https://raw.githubusercontent.com/doggy8088/ask-bridge/main/install.ps1 | iex",
-        "驗證：where.exe ask-bridge",
-        "驗證：ask-bridge --version",
-        "回到 WorkLens 按「重新偵測」，再執行 Provider 登入。"
-    ];
+    public IReadOnlyList<string> InstallSteps => !OperatingSystem.IsWindows()
+        ?
+        [
+            "確認 Node.js LTS 至少為 20.19.0，並確認 node -v 與 npx -v 可執行。",
+            "確認已安裝 Google Chrome。",
+            "在終端機執行官方安裝命令：",
+            "curl -fsSL https://raw.githubusercontent.com/doggy8088/ask-bridge/main/install.sh | bash",
+            "確認 ~/.local/bin 已加入 PATH。",
+            "驗證：command -v ask-bridge && ask-bridge --version",
+            "回到 WorkLens 按「重新偵測」，再執行 Provider 登入。"
+        ]
+        :
+        [
+            "確認 Node.js LTS 至少為 20.19.0，並確認 node -v 與 npx -v 可執行。",
+            "確認已安裝 Google Chrome。",
+            "在 PowerShell 執行官方安裝命令：",
+            "irm https://raw.githubusercontent.com/doggy8088/ask-bridge/main/install.ps1 | iex",
+            "驗證：where.exe ask-bridge",
+            "驗證：ask-bridge --version",
+            "回到 WorkLens 按「重新偵測」，再執行 Provider 登入。"
+        ];
 
     public async Task<AiDetectionResult> DetectAsync(
         AiProviderConfiguration configuration,
@@ -39,7 +50,7 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
                     false,
                     "NotInstalled",
                     "找不到 ask-bridge。請依下方指引安裝後重新偵測.",
-                    Details: WindowsInstallSteps),
+                    Details: InstallSteps),
                 null,
                 null,
                 false,
@@ -551,7 +562,20 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
 
     private static string? FindChrome()
     {
-        var candidates = new[]
+        var candidates = OperatingSystem.IsMacOS()
+            ?
+            [
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    "Applications",
+                    "Google Chrome.app",
+                    "Contents",
+                    "MacOS",
+                    "Google Chrome")
+            ]
+            :
+            new[]
         {
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Google", "Chrome", "Application", "chrome.exe"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Google", "Chrome", "Application", "chrome.exe"),

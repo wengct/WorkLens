@@ -6,7 +6,8 @@ WorkLens 是一個以本機優先為設計的個人工作歷程與工時回報�
 
 此 repository 僅包含程式碼與安全的預設設定。執行期間的資料會儲存在 repository 外部，預設位置為：
 
-`%LOCALAPPDATA%\WorkLens`
+- Windows：`%LOCALAPPDATA%\WorkLens`
+- macOS：`~/Library/Application Support/WorkLens`
 
 此目錄包含 SQLite 資料庫、報告、備份、每日實體 log 及本機整合狀態，並已刻意排除在版控之外。請勿將以下內容提交至 Git：
 
@@ -19,11 +20,12 @@ WorkLens 是一個以本機優先為設計的個人工作歷程與工時回報�
 
 若需要查看錯誤與啟動紀錄，請檢查：
 
-`%LOCALAPPDATA%\WorkLens\logs\worklens-YYYY-MM-DD.log`
+- Windows：`%LOCALAPPDATA%\WorkLens\logs\worklens-YYYY-MM-DD.log`
+- macOS：`~/Library/Application Support/WorkLens/logs/worklens-YYYY-MM-DD.log`
 
 ## 執行
 
-```powershell
+```shell
 dotnet run
 ```
 
@@ -33,8 +35,10 @@ dotnet run
 
 開啟首頁就是「今日工作台」：可選擇日期、選填專案、輸入時數與 Markdown 工作內容，適合連續補登。Git 來源活動會依日期與專案自動顯示並納入報告，不需要人工關聯。
 
+今日工作台也可直接貼上會議紀錄、討論內容或其他人工來源。人工來源會保存為來源活動並納入日／週摘要，但不會自行增加確認工時。
+
 「工作摘要」將工作歷程與摘要放在同一頁：可用月曆選擇每日或每週期間、依專案與關鍵字篩選左側歷程，並在右側產生、編輯、AI 整理與匯出完整期間摘要。篩選不會改變摘要涵蓋的資料範圍；回補來源可針對單日或整週執行，且不會改變正常收集的 checkpoint。
 
-資料來源也支援 Windows Codex 與 WSL Codex。系統會從 `sessions` 與 `archived_sessions` 讀取本機會話、以 session id 去重，並保存 User／Codex 的可見文字對話；每日、每週及 AI 報告上下文只使用 User 訊息。Codex 資料目錄可自動偵測 `CODEX_HOME`／`~/.codex`，也可在來源設定中覆寫。
+資料來源支援 Windows、macOS 與 WSL 的 Git 和 Codex。系統會從 `sessions` 與 `archived_sessions` 讀取本機會話、以 session id 去重，並保存 User／Codex 的可見文字對話；每日、每週及 AI 報告上下文只使用 User 訊息。Codex 資料目錄可自動偵測 `CODEX_HOME`／`~/.codex`，也可在來源設定中覆寫。
 
 報告在人工紀錄或來源資料有實質異動時會標示為「需要重產」；重產會覆蓋同一期間的內容，並在覆蓋前要求確認。AI 整理可在設定中調整通用 Prompt，或分別覆寫每日與每週 Prompt；系統仍固定驗證 JSON、工時與工作紀錄 ID。

@@ -29,8 +29,30 @@ public sealed class WorkLogServiceTests
         var entry = Assert.Single(entries);
         Assert.Equal(date, entry.WorkDate);
         Assert.Equal(7.5, entry.Hours);
+        Assert.Equal("工作內容", entry.Title);
         Assert.Equal("# 工作內容\n\n- 完成離線編輯器", entry.WorkContent);
         Assert.Equal(7.5, WorkLogService.CalculateHours(entries));
+    }
+
+    [Fact]
+    public async Task Stores_optional_title_and_rebuilds_it_when_cleared_during_update()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
+        await using (var db = new WorkLensDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+        }
+
+        var service = CreateService(options);
+        var date = new DateOnly(2026, 9, 3);
+        var entry = await service.AddAsync(date, 2, "內容第一行", title: "自訂標題");
+        Assert.Equal("自訂標題", entry.Title);
+
+        var updated = await service.UpdateAsync(entry.Id, date, 3, "# 更新後第一行\n細節", null, "  ");
+        Assert.NotNull(updated);
+        Assert.Equal("更新後第一行", updated.Title);
     }
 
     [Theory]

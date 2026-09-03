@@ -1,6 +1,7 @@
 @page "/sources"
 @inject SourceConfigurationService SourceConfig
 @inject SourceOrchestrator Orchestrator
+@inject ToastService Toasts
 @implements IAsyncDisposable
 
 <PageTitle>資料來源｜WorkLens</PageTitle>
@@ -12,11 +13,6 @@
         <p>沒有設定就不會自動蒐集。每個來源可以獨立啟用、停用、排程與決定是否提供給 AI。</p>
     </div>
 </div>
-
-@if (!string.IsNullOrWhiteSpace(message))
-{
-    <div class="alert @(isError ? "alert-danger" : "alert-success")">@message</div>
-}
 
 <nav class="source-workspace-tabs" aria-label="資料來源工作區">
     <button type="button"
@@ -46,13 +42,13 @@
     <div class="panel-heading">
         <div>
             <h2>@(editingSourceId is null ? "新增來源" : "編輯來源")</h2>
-            <p>可收集 Windows／WSL 的 Git 與 Codex 會話；WSL 不存在時不會影響其他功能。啟用後仍需先驗證才會加入排程。</p>
+            <p>可收集 Windows、macOS 與 WSL 的 Git 與 Codex 會話；啟用後仍需先驗證才會加入排程。</p>
         </div>
     </div>
     <div class="form-grid">
         <div class="field">
             <label for="sourceName">來源名稱</label>
-            <input id="sourceName" @bind="newName" placeholder="例如：WorkLens Windows repositories" />
+            <input id="sourceName" @bind="newName" placeholder="例如：WorkLens repositories" />
         </div>
         <div class="field">
             <label for="sourceType">來源類型</label>
@@ -61,6 +57,8 @@
                 <option value="WslGit">WSL Git（可選）</option>
                 <option value="WindowsCodex">Windows Codex</option>
                 <option value="WslCodex">WSL Codex（可選）</option>
+                <option value="MacOsGit">macOS Git</option>
+                <option value="MacOsCodex">macOS Codex</option>
             </select>
         </div>
         @if (newType is ActivitySourceType.WslGit or ActivitySourceType.WslCodex)
@@ -132,7 +130,7 @@
             <div class="field full">
                 <label for="codexHome">Codex 資料目錄（選填）</label>
                 <input id="codexHome" @bind="newCodexHome" placeholder="留空即自動偵測 CODEX_HOME 或 ~/.codex" />
-                <span class="hint">Windows 請填 Windows 路徑；WSL 請填該 Linux 環境內的路徑。</span>
+                <span class="hint">Windows 與 macOS 請填本機路徑；WSL 請填該 Linux 環境內的路徑。</span>
             </div>
         }
         <div class="field">
@@ -190,7 +188,7 @@
     {
         <div class="empty-state">
             <h3>目前是純人工模式</h3>
-            <p>這是預設狀態。你可以稍後再新增 Windows Git 或 WSL Git 來源。</p>
+            <p>這是預設狀態。你可以稍後再新增目前平台的 Git 或 Codex 來源。</p>
             <button type="button" class="button button-primary" @onclick="BeginAdd">新增第一個來源</button>
         </div>
     }
@@ -273,7 +271,7 @@
     private IReadOnlyList<ActivitySource> sources = [];
     private IReadOnlyList<Project> projects = [];
     private string newName = string.Empty;
-    private ActivitySourceType newType = ActivitySourceType.WindowsGit;
+    private ActivitySourceType newType = DefaultSourceType;
     private string newDistro = string.Empty;
     private string newCodexHome = string.Empty;
     private List<string> repositoryPaths = [];
@@ -291,8 +289,6 @@
     private DateTime backfillEnd = DateTime.Today;
     private string backfillSourceId = string.Empty;
     private bool isBackfilling;
-    private string message = string.Empty;
-    private bool isError;
     private readonly HashSet<Guid> collectingSourceIds = [];
     private readonly HashSet<Guid> validatingSourceIds = [];
     private readonly CancellationTokenSource refreshCancellation = new();
@@ -306,7 +302,6 @@
 
     private async Task SaveSourceAsync()
     {
-        ClearMessage();
         if (IsGitType(newType))
         {
             CommitAuthorEmailInput();
@@ -387,9 +382,9 @@
                 })
         };
         await SourceConfig.SaveAsync(source);
-        message = existing is null
+        Toasts.Success(existing is null
             ? "來源已新增。請按「驗證」確認環境與資料路徑。"
-            : "來源設定已更新。請重新按「驗證」確認環境與資料路徑。";
+            : "來源設定已更新。請重新按「驗證」確認環境與資料路徑。");
         ResetForm();
         await ReloadAsync();
         activeWorkspace = SourceWorkspace.Overview;
@@ -424,14 +419,12 @@
         newEnabled = source.Enabled;
         newIncludeInAi = source.IncludeInAi;
         activeWorkspace = SourceWorkspace.Setup;
-        message = $"正在編輯「{source.DisplayName}」。儲存後不會清除既有 checkpoint 或歷程。";
-        isError = false;
+        Toasts.Info($"正在編輯「{source.DisplayName}」。儲存後不會清除既有 checkpoint 或歷程。");
     }
 
     private void BeginAdd()
     {
         ResetForm();
-        ClearMessage();
         activeWorkspace = SourceWorkspace.Setup;
     }
 
@@ -444,15 +437,13 @@
     {
         ResetForm();
         activeWorkspace = SourceWorkspace.Overview;
-        message = "已取消編輯。";
-        isError = false;
+        Toasts.Info("已取消編輯。");
     }
 
     private async Task BackfillAsync()
     {
         isBackfilling = true;
-        ClearMessage();
-        message = "正在回補來源資料…";
+        Toasts.Info("正在回補來源資料…");
         await InvokeAsync(StateHasChanged);
         await Task.Yield();
         try
@@ -460,8 +451,9 @@
             var available = sources.Where(source => source.Enabled && source.HealthStatus == SourceHealthStatus.Ready).Select(source => source.Id);
             var ids = Guid.TryParse(backfillSourceId, out var sourceId) ? [sourceId] : available.ToArray();
             var results = await Orchestrator.CollectRangeAsync(ids, DateOnly.FromDateTime(backfillStart), DateOnly.FromDateTime(backfillEnd));
-            message = $"回補完成：新增 {results.Sum(result => result.AddedCount)}、更新 {results.Sum(result => result.UpdatedCount)}、未變更 {results.Sum(result => result.UnchangedCount)}。";
-            isError = results.Any(result => !result.Succeeded);
+            var resultMessage = $"回補完成：新增 {results.Sum(result => result.AddedCount)}、更新 {results.Sum(result => result.UpdatedCount)}、未變更 {results.Sum(result => result.UnchangedCount)}。";
+            if (results.Any(result => !result.Succeeded)) Toasts.Error(resultMessage);
+            else Toasts.Success(resultMessage);
             await ReloadAsync();
         }
         catch (ArgumentException exception) { SetError(exception.Message); }
@@ -471,8 +463,7 @@
     private async Task ValidateAsync(Guid id)
     {
         if (!validatingSourceIds.Add(id)) return;
-        ClearMessage();
-        message = "正在驗證來源環境與資料路徑…";
+        Toasts.Info("正在驗證來源環境與資料路徑…");
         await InvokeAsync(StateHasChanged);
         await Task.Yield();
         try
@@ -480,7 +471,7 @@
             var result = await Orchestrator.ValidateAsync(id);
             if (result.IsValid)
             {
-                message = result.Summary;
+                Toasts.Success(result.Summary);
             }
             else
             {
@@ -501,9 +492,8 @@
             return;
         }
 
-        ClearMessage();
         var sourceName = sources.FirstOrDefault(source => source.Id == id)?.DisplayName ?? "資料來源";
-        message = $"「{sourceName}」正在掃描與匯入資料…";
+        Toasts.Info($"「{sourceName}」正在掃描與匯入資料…");
         await InvokeAsync(StateHasChanged);
         await Task.Yield();
         try
@@ -511,12 +501,12 @@
             var result = await Orchestrator.CollectAsync(id);
             if (result.Succeeded)
             {
-                message = $"收集完成：新增 {result.AddedCount}、更新 {result.UpdatedCount}、未變更 {result.UnchangedCount}。";
+                var resultMessage = $"收集完成：新增 {result.AddedCount}、更新 {result.UpdatedCount}、未變更 {result.UnchangedCount}。";
                 if (result.Warnings.Count > 0)
                 {
-                    message += $" 另有 {result.Warnings.Count} 個警告。";
+                    resultMessage += $" 另有 {result.Warnings.Count} 個警告。";
                 }
-                isError = false;
+                Toasts.Success(resultMessage);
             }
             else
             {
@@ -537,32 +527,30 @@
     private async Task ToggleAsync(ActivitySource source)
     {
         await SourceConfig.SetEnabledAsync(source.Id, !source.Enabled);
-        message = source.Enabled ? "來源已停用，既有歷程仍保留。" : "來源已啟用。";
+        Toasts.Success(source.Enabled ? "來源已停用，既有歷程仍保留。" : "來源已啟用。");
         await ReloadAsync();
     }
 
     private async Task ToggleSourceAiAsync(ActivitySource source)
     {
         await SourceConfig.SetIncludeInAiAsync(source.Id, !source.IncludeInAi);
-        message = source.IncludeInAi
+        Toasts.Success(source.IncludeInAi
             ? "此來源已停止提供給 AI；既有證據仍保留。"
-            : "此來源已允許提供給 AI，仍會受 Project AI 分享設定限制。";
-        isError = false;
+            : "此來源已允許提供給 AI，仍會受 Project AI 分享設定限制。");
         await ReloadAsync();
     }
 
     private async Task ArchiveAsync(Guid id)
     {
         await SourceConfig.ArchiveAsync(id);
-        message = "來源已封存，既有歷程仍保留。";
+        Toasts.Success("來源已封存，既有歷程仍保留。");
         await ReloadAsync();
     }
 
     private void PrepareReset(Guid id)
     {
         resetSourceId = id;
-        message = "請確認 checkpoint 重設的影響範圍。";
-        isError = false;
+        Toasts.Info("請確認 checkpoint 重設的影響範圍。");
     }
 
     private void CancelReset() => resetSourceId = null;
@@ -571,8 +559,7 @@
     {
         await SourceConfig.ResetCheckpointAsync(id);
         resetSourceId = null;
-        message = "checkpoint 已重設；下次收集會依首次匯入天數重新掃描，既有歷程保留。";
-        isError = false;
+        Toasts.Success("checkpoint 已重設；下次收集會依首次匯入天數重新掃描，既有歷程保留。");
         await ReloadAsync();
     }
 
@@ -693,7 +680,7 @@
     private void ResetForm()
     {
         newName = string.Empty;
-        newType = ActivitySourceType.WindowsGit;
+        newType = DefaultSourceType;
         newDistro = string.Empty;
         newCodexHome = string.Empty;
         repositoryPaths.Clear();
@@ -708,23 +695,13 @@
         editingSourceId = null;
     }
 
-    private void ClearMessage()
-    {
-        message = string.Empty;
-        isError = false;
-    }
-
-    private void SetError(string value)
-    {
-        message = value;
-        isError = true;
-    }
+    private void SetError(string value) => Toasts.Error(value);
 
     private static bool IsGitType(ActivitySourceType type) =>
-        type is ActivitySourceType.WindowsGit or ActivitySourceType.WslGit;
+        type is ActivitySourceType.WindowsGit or ActivitySourceType.WslGit or ActivitySourceType.MacOsGit;
 
     private static bool IsCodexType(ActivitySourceType type) =>
-        type is ActivitySourceType.WindowsCodex or ActivitySourceType.WslCodex;
+        type is ActivitySourceType.WindowsCodex or ActivitySourceType.WslCodex or ActivitySourceType.MacOsCodex;
 
     private static string SourceTypeText(ActivitySourceType type) => type switch
     {
@@ -732,8 +709,13 @@
         ActivitySourceType.WslGit => "WSL Git",
         ActivitySourceType.WindowsCodex => "Windows Codex",
         ActivitySourceType.WslCodex => "WSL Codex",
+        ActivitySourceType.MacOsGit => "macOS Git",
+        ActivitySourceType.MacOsCodex => "macOS Codex",
         _ => type.ToString()
     };
+
+    private static ActivitySourceType DefaultSourceType =>
+        OperatingSystem.IsMacOS() ? ActivitySourceType.MacOsGit : ActivitySourceType.WindowsGit;
 
     private enum SourceWorkspace
     {

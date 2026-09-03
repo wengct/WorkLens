@@ -1,0 +1,62 @@
+@inject ToastService Toasts
+@implements IDisposable
+
+<div class="toast-container" aria-live="polite" aria-relevant="additions">
+    @foreach (var toast in notifications)
+    {
+        <div @key="toast.Id"
+             class="toast toast-@LevelClass(toast.Level)"
+             role="@(toast.Level == ToastLevel.Error ? "alert" : "status")">
+            <span class="toast-icon" aria-hidden="true">@LevelIcon(toast.Level)</span>
+            <span class="toast-message">@toast.Message</span>
+            <button type="button" class="toast-close" aria-label="關閉通知" @onclick="() => Dismiss(toast.Id)">×</button>
+        </div>
+    }
+</div>
+
+@code {
+    private readonly List<ToastNotification> notifications = [];
+    private bool disposed;
+
+    protected override void OnInitialized() => Toasts.NotificationRequested += Show;
+
+    private void Show(ToastNotification notification)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            notifications.Add(notification);
+            StateHasChanged();
+
+            await Task.Delay(notification.Level == ToastLevel.Error ? 8000 : 5000);
+            if (!disposed) Dismiss(notification.Id);
+        });
+    }
+
+    private void Dismiss(Guid id)
+    {
+        if (notifications.RemoveAll(notification => notification.Id == id) > 0)
+        {
+            StateHasChanged();
+        }
+    }
+
+    private static string LevelClass(ToastLevel level) => level switch
+    {
+        ToastLevel.Success => "success",
+        ToastLevel.Error => "error",
+        _ => "info"
+    };
+
+    private static string LevelIcon(ToastLevel level) => level switch
+    {
+        ToastLevel.Success => "✓",
+        ToastLevel.Error => "!",
+        _ => "i"
+    };
+
+    public void Dispose()
+    {
+        disposed = true;
+        Toasts.NotificationRequested -= Show;
+    }
+}
