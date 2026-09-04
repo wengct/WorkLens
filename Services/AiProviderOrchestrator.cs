@@ -15,6 +15,11 @@ public sealed class AiProviderOrchestrator(AiProviderRegistry registry)
         CancellationToken cancellationToken = default) =>
         registry.Get(configuration).GenerateAsync(configuration, request, cancellationToken);
 
+    public Task<AiConnectionTestResult> TestConnectionAsync(
+        AiProviderConfiguration configuration,
+        CancellationToken cancellationToken = default) =>
+        registry.Get(configuration).TestConnectionAsync(configuration, cancellationToken);
+
     public Task<AiReportResult> TestPromptAsync(
         AiProviderConfiguration configuration,
         string effectivePrompt,
@@ -27,7 +32,7 @@ public sealed class AiProviderOrchestrator(AiProviderRegistry registry)
             configuration,
             new AiReportRequest(
                 reportId,
-                configuration.Provider,
+                ResolveTarget(configuration),
                 sample,
                 [entryId],
                 1,
@@ -35,4 +40,9 @@ public sealed class AiProviderOrchestrator(AiProviderRegistry registry)
                 effectivePrompt),
             cancellationToken);
     }
+
+    private static string ResolveTarget(AiProviderConfiguration configuration) =>
+        configuration.ProviderType == "ask-bridge"
+            ? configuration.Provider
+            : configuration.Model ?? configuration.ProviderType;
 }

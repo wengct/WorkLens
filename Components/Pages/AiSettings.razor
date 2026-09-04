@@ -1,73 +1,271 @@
 @page "/ai"
+@using WorkLens.Domain
 @inject AiConfigurationService AiConfig
+@inject AiProviderOrchestrator AiProviders
 @inject AskBridgeService AskBridge
 @inject ToastService Toasts
 
 <PageTitle>AI 設定｜WorkLens</PageTitle>
 
-<div class="page-heading"><div><p class="eyebrow">Settings</p><h1>AI 設定</h1><p>選擇工作摘要使用的 AI Provider、目標服務與執行方式。</p></div><a class="button button-secondary" href="/prompts">管理 Prompt</a></div>
+<div class="page-heading"><div><p class="eyebrow">Settings</p><h1>AI 設定</h1><p>管理多組 AI Provider 設定，並指定工作摘要使用的預設組。</p></div><div class="button-row"><a class="button button-secondary" href="/prompts">管理 Prompt</a><button class="button button-primary" @onclick="CreateNew" disabled="@IsBusy">新增設定</button></div></div>
 
 @if (activeOperation is not null)
 {
-    <OperationProgress Title="@ActiveOperationTitle()" Detail="@ActiveOperationDetail()" />
+    <div class="ai-operation-progress">
+        <OperationProgress Title="@ActiveOperationTitle()" Detail="@ActiveOperationDetail()" />
+    </div>
 }
 
-<div class="panel">
-    <div class="panel-heading"><div><h2>報告整理</h2><p>啟用後，可以手動或透過排程使用 AI 整理工作摘要。</p></div></div>
-    <div class="form-grid">
-        <div class="field full"><label class="inline-checkbox"><input type="checkbox" @bind="configuration.Enabled" /> 啟用 AI 報告整理</label><span class="hint">整理前仍會先建立制式摘要；AI 執行失敗時會保留原內容。</span></div>
+<section class="ai-feature-bar" aria-labelledby="ai-feature-title">
+    <div class="ai-feature-copy">
+        <span class="ai-feature-icon" aria-hidden="true">✦</span>
+        <div>
+            <div class="ai-feature-title-row">
+                <h2 id="ai-feature-title">AI 報告整理</h2>
+                <span class="badge @(featureEnabled ? "badge-ready" : "badge-disabled")">@(featureEnabled ? "已啟用" : "已停用")</span>
+            </div>
+            <p>使用「@DefaultConfigurationName」整理手動與排程報告；失敗時保留制式摘要。</p>
+        </div>
     </div>
+    <label class="ai-feature-toggle">
+        <span>@(featureEnabled ? "停用" : "啟用")</span>
+        <input type="checkbox" aria-label="啟用 AI 報告整理" checked="@featureEnabled" @onchange="HandleFeatureEnabledChangedAsync" disabled="@IsBusy" />
+        <span class="ai-feature-switch" aria-hidden="true"></span>
+    </label>
+</section>
+
+<div class="ai-settings-stack">
+<div class="settings-split">
+    <section class="panel ai-provider-library">
+        <div class="panel-heading"><div><h2>設定清單</h2><p>報告、排程與 Prompt 測試會使用標示為預設的設定。</p></div></div>
+        @foreach (var item in configurations)
+        {
+            <button type="button" class="prompt-list-item @(configuration.Id == item.Id && !isNew ? "selected" : string.Empty)" @onclick="() => Edit(item)" disabled="@IsBusy">
+                <span><strong>@item.Name</strong><small>@ProviderSummary(item)</small></span>
+                <span class="button-row">
+                    @if (item.IsDefault) { <span class="badge badge-ready">預設</span> }
+                    <span class="badge @StatusClass(item.Status)">@StatusText(item.Status)</span>
+                </span>
+            </button>
+        }
+    </section>
+
+    <section class="panel">
+        <div class="panel-heading"><div><h2>@(isNew ? "新增 AI 設定" : configuration.Name)</h2><p>API Provider 直接傳送 JSON；ask-bridge 維持瀏覽器與檔案附件流程。</p></div>@if (!isNew) { <span class="badge @StatusClass(configuration.Status)">@StatusText(configuration.Status)</span> }</div>
+        <div class="form-grid">
+            <div class="field full"><label for="ai-config-name">設定名稱</label><input id="ai-config-name" @bind="configuration.Name" @bind:event="oninput" placeholder="例如：公司 Azure OpenAI" /></div>
+            <div class="field">
+                <label for="ai-provider">Provider</label>
+                <select id="ai-provider" @bind="configuration.ProviderType" @bind:after="HandleProviderTypeChanged">
+                    <option value="ask-bridge">ask-bridge</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="azure-openai">Azure OpenAI</option>
+                    <option value="anthropic">Anthropic</option>
+                    <option value="gemini">Google Gemini</option>
+                    <option value="openai-compatible">OpenAI Compatible</option>
+                </select>
+            </div>
+
+            @if (IsAskBridge)
+            {
+                <div class="field"><label for="ai-service">AI 服務</label><select id="ai-service" @bind="configuration.Provider"><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option><option value="claude">Claude</option></select></div>
+                <div class="field full"><label for="ask-bridge-path">ask-bridge 執行檔路徑（選填）</label><input id="ask-bridge-path" @bind="configuration.ExecutablePath" placeholder="留白則自動尋找" /></div>
+                <div class="field full"><label class="inline-checkbox"><input type="checkbox" @bind="configuration.UseHeadless" /> 背景執行瀏覽器（--headless=true）</label></div>
+            }
+            else
+            {
+                @if (NeedsEndpoint)
+                {
+                    <div class="field full"><label for="api-endpoint">API Endpoint</label><input id="api-endpoint" type="url" @bind="configuration.ApiEndpoint" placeholder="@EndpointPlaceholder" /><span class="hint">@EndpointHint</span></div>
+                }
+                @if (configuration.ProviderType == "azure-openai")
+                {
+                    <div class="field"><label for="api-version">API Version</label><input id="api-version" @bind="configuration.ApiVersion" placeholder="preview" /></div>
+                }
+                <div class="field">
+                    <label for="api-model">模型</label>
+                    <input id="api-model" list="ai-model-options" @bind="configuration.Model" placeholder="輸入或選擇模型名稱" />
+                    <datalist id="ai-model-options">@foreach (var model in CurrentModels) { <option value="@model"></option> }</datalist>
+                    <span class="hint">可使用預設值，也可以填入 Provider 提供的其他模型。</span>
+                </div>
+                <div class="field">
+                    <label for="reasoning-level">推理能力</label>
+                    <select id="reasoning-level" @bind="configuration.ReasoningLevel">
+                        <option value="@AiReasoningLevel.Default">由 Provider 決定</option>
+                        <option value="@AiReasoningLevel.Low">低</option>
+                        <option value="@AiReasoningLevel.Medium">中</option>
+                        <option value="@AiReasoningLevel.High">高</option>
+                    </select>
+                    <span class="hint">模型不支援時請改用「由 Provider 決定」；OpenAI Compatible 的支援程度由端點決定。</span>
+                </div>
+                <div class="field full">
+                    <label for="api-key">API Key @(ApiKeyOptional ? "（選填）" : string.Empty)</label>
+                    <input id="api-key" type="password" @bind="apiKey" autocomplete="new-password" placeholder="@(HasStoredApiKey ? "已安全儲存；留白可保留原值" : "輸入 API Key")" />
+                    <span class="hint">API Key 使用 WorkLens Data Protection 加密，只保存在本機資料目錄，且各組設定彼此獨立。</span>
+                    @if (HasStoredApiKey) { <label class="inline-checkbox"><input type="checkbox" @bind="clearApiKey" /> 清除已儲存的 API Key</label> }
+                </div>
+            }
+
+            <div class="form-actions">
+                <button class="button button-primary" @onclick="SaveAsync" disabled="@IsBusy">@(isNew ? "新增設定" : "儲存設定")</button>
+                @if (!isNew && !configuration.IsDefault) { <button class="button button-secondary" @onclick="SetDefaultAsync" disabled="@IsBusy">設為預設</button> }
+                @if (IsAskBridge)
+                {
+                    <button class="button button-secondary" @onclick="DetectAsync" disabled="@IsBusy">@(activeOperation == "detect" ? "偵測中…" : "重新偵測")</button>
+                    <button class="button button-secondary" @onclick="LoginAsync" disabled="@(detection?.Validation.IsValid != true || IsBusy)">開啟 AI 服務登入</button>
+                }
+                <button class="button button-secondary" @onclick="TestConnectionAsync" disabled="@IsBusy">@(activeOperation == "connection" ? "測試中…" : "測試連線")</button>
+                @if (!isNew && !configuration.IsDefault) { <button class="button button-danger" @onclick="PrepareDelete" disabled="@IsBusy">刪除</button> }
+            </div>
+        </div>
+    </section>
 </div>
 
-<div class="panel">
-    <div class="panel-heading"><div><h2>Provider 設定</h2><p>Provider 負責連接 AI；AI 服務則是 Provider 實際使用的目標。</p></div><span class="badge @StatusClass(configuration.Status)">@StatusText(configuration.Status)</span></div>
-    <div class="form-grid">
-        <div class="field"><label for="ai-provider">Provider</label><select id="ai-provider" @bind="configuration.ProviderType"><option value="ask-bridge">ask-bridge</option></select><span class="hint">目前提供 ask-bridge；後續可加入其他 Provider。</span></div>
-        <div class="field"><label for="ai-service">AI 服務</label><select id="ai-service" @bind="configuration.Provider"><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option><option value="claude">Claude</option></select><span class="hint">選擇 ask-bridge 要操作的網站服務。</span></div>
-        <div class="field full"><label for="ask-bridge-path">ask-bridge 執行檔路徑（選填）</label><input id="ask-bridge-path" @bind="configuration.ExecutablePath" placeholder="留白則自動尋找" /><span class="hint">通常不需設定；只有自動偵測不到時才指定完整路徑。</span></div>
-        <div class="field full"><label class="inline-checkbox"><input type="checkbox" @bind="configuration.UseHeadless" /> 背景執行瀏覽器（--headless=true）</label><span class="hint">登入流程固定顯示瀏覽器；測試或整理報告時會依此設定切換模式。ask-bridge 專用瀏覽器會在作業完成後自動關閉。</span></div>
-        <div class="form-actions"><button class="button button-primary" @onclick="SaveAsync" disabled="@IsBusy">儲存設定</button><button class="button button-secondary" @onclick="DetectAsync" disabled="@IsBusy">@(activeOperation == "detect" ? "偵測中…" : "重新偵測")</button><button class="button button-secondary" @onclick="LoginAsync" disabled="@(detection?.Validation.IsValid != true || IsBusy)">開啟 AI 服務登入</button><button class="button button-secondary" @onclick="TestConnectionAsync" disabled="@(detection?.Validation.IsValid != true || IsBusy)">@(activeOperation == "connection" ? "測試中…" : "測試連線")</button></div>
-    </div>
-</div>
-
-@if (detection is not null)
+@if (IsAskBridge && detection is not null)
 {
     <div class="panel"><div class="panel-heading"><div><h2>環境診斷</h2><p>@detection.Validation.Summary</p></div></div><div class="form-grid"><div class="field"><label>執行檔</label><div class="hint">@(detection.ExecutablePath ?? "未找到")</div></div><div class="field"><label>版本</label><div class="hint">@(detection.Version ?? "未取得")</div></div><div class="field"><label>Node.js</label><div class="hint">@(detection.NodeAvailable ? "可用" : "不可用")</div></div><div class="field"><label>Chrome</label><div class="hint">@(detection.ChromeAvailable ? "可用" : "不可用")</div></div></div></div>
 }
 
-<div class="panel">
-    <div class="panel-heading">
-        <div><h2>安裝 ask-bridge</h2><p>依目前作業系統完成安裝後，再回到上方重新偵測。</p></div>
-        <a class="button button-secondary" href="https://github.com/doggy8088/ask-bridge" target="_blank" rel="noopener noreferrer">查看套件來源</a>
-    </div>
-    <ol class="ai-install-steps">
-        @foreach (var step in AskBridge.InstallSteps)
-        {
-            <li><code>@step</code></li>
-        }
-    </ol>
-    <p class="hint">安裝來源：<a class="inline-link" href="https://github.com/doggy8088/ask-bridge" target="_blank" rel="noopener noreferrer">github.com/doggy8088/ask-bridge</a></p>
+@if (IsAskBridge)
+{
+    <div class="panel"><div class="panel-heading"><div><h2>安裝 ask-bridge</h2><p>依目前作業系統完成安裝後，再回到上方重新偵測。</p></div><a class="button button-secondary" href="https://github.com/doggy8088/ask-bridge" target="_blank" rel="noopener noreferrer">查看套件來源</a></div><ol class="ai-install-steps">@foreach (var step in AskBridge.InstallSteps) { <li><code>@step</code></li> }</ol></div>
+}
 </div>
 
+<ConfirmDialog Open="deletePending"
+               Title="刪除這組 AI 設定？"
+               Message="刪除後，這組設定與本機加密保存的 API Key 無法復原；既有報告紀錄不受影響。"
+               ConfirmText="確認刪除"
+               BusyText="刪除中…"
+               IsBusy="@(activeOperation == "delete")"
+               OnConfirm="DeleteAsync"
+               OnCancel="CancelDelete" />
+
 @code {
-    private AiProviderConfiguration configuration = new();
+    private static readonly IReadOnlyDictionary<string, string[]> Models = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["openai"] = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-4.1", "gpt-4.1-mini"],
+        ["azure-openai"] = ["gpt-5.6-sol", "gpt-5.4", "gpt-4.1", "gpt-4o"],
+        ["anthropic"] = ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5"],
+        ["gemini"] = ["gemini-3.1-pro-preview", "gemini-3.1-flash-lite", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+        ["openai-compatible"] = []
+    };
+
+    private IReadOnlyList<AiProviderConfiguration> configurations = [];
+    private AiProviderConfiguration configuration = NewConfiguration();
     private AiDetectionResult? detection;
+    private string apiKey = string.Empty;
+    private bool clearApiKey;
+    private bool featureEnabled;
+    private bool isNew = true;
+    private bool deletePending;
     private string? activeOperation;
     private bool IsBusy => activeOperation is not null;
-    protected override async Task OnInitializedAsync() => configuration = await AiConfig.GetAsync();
+    private bool IsAskBridge => configuration.ProviderType == "ask-bridge";
+    private bool NeedsEndpoint => configuration.ProviderType is "azure-openai" or "openai-compatible";
+    private bool ApiKeyOptional => configuration.ProviderType == "openai-compatible";
+    private bool HasStoredApiKey => !string.IsNullOrWhiteSpace(configuration.ProtectedApiKey) && !clearApiKey;
+    private string DefaultConfigurationName => configurations.FirstOrDefault(x => x.IsDefault)?.Name ?? "尚未指定預設設定";
+    private IReadOnlyList<string> CurrentModels => Models.TryGetValue(configuration.ProviderType, out var models) ? models : [];
+    private string EndpointPlaceholder => configuration.ProviderType == "azure-openai" ? "https://你的資源.openai.azure.com" : "http://localhost:11434/v1";
+    private string EndpointHint => configuration.ProviderType == "azure-openai" ? "填入 Azure OpenAI 資源 Endpoint；模型欄位填 Deployment 名稱。" : "填入 API 根路徑，例如 http://localhost:11434/v1。";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var settings = await AiConfig.GetFeatureSettingsAsync();
+        featureEnabled = settings.Enabled;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync(Guid? selectId = null)
+    {
+        configurations = await AiConfig.GetAllAsync();
+        var selected = selectId is Guid id ? configurations.FirstOrDefault(x => x.Id == id) : null;
+        selected ??= configurations.FirstOrDefault(x => x.IsDefault) ?? configurations.FirstOrDefault();
+        if (selected is not null) Edit(selected); else CreateNew();
+    }
+
+    private void CreateNew()
+    {
+        configuration = NewConfiguration();
+        isNew = true;
+        ResetSensitiveEditorState();
+    }
+
+    private void Edit(AiProviderConfiguration source)
+    {
+        configuration = Copy(source);
+        isNew = false;
+        ResetSensitiveEditorState();
+    }
+
+    private async Task HandleFeatureEnabledChangedAsync(ChangeEventArgs args)
+    {
+        featureEnabled = args.Value is bool value && value;
+        try
+        {
+            activeOperation = "enable";
+            await AiConfig.SetEnabledAsync(featureEnabled);
+            Toasts.Success(featureEnabled ? "AI 報告整理已啟用。" : "AI 報告整理已停用。");
+        }
+        finally { activeOperation = null; }
+    }
+
+    private void HandleProviderTypeChanged()
+    {
+        ResetSensitiveEditorState();
+        configuration.Status = "NotConfigured";
+        configuration.Model = CurrentModels.FirstOrDefault();
+        configuration.ApiEndpoint = configuration.ProviderType switch { "azure-openai" => string.Empty, "openai-compatible" => "http://localhost:11434/v1", _ => null };
+        configuration.ApiVersion = configuration.ProviderType == "azure-openai" ? "preview" : null;
+        configuration.ReasoningLevel = AiReasoningLevel.Default;
+    }
+
     private async Task SaveAsync()
     {
         try
         {
-            await AiConfig.SaveAsync(configuration);
-            configuration = await AiConfig.GetAsync();
-            Toasts.Success("AI 設定已儲存。");
+            activeOperation = "save";
+            var saved = await AiConfig.SaveAsync(configuration, apiKey, clearApiKey);
+            apiKey = string.Empty;
+            clearApiKey = false;
+            Toasts.Success(isNew ? "AI 設定已新增。" : "AI 設定已儲存。");
+            await ReloadAsync(saved.Id);
         }
-        catch (ArgumentException exception)
-        {
-            Toasts.Error(exception.Message);
-        }
+        catch (ArgumentException exception) { Toasts.Error(exception.Message); }
+        finally { activeOperation = null; }
     }
+
+    private async Task SetDefaultAsync()
+    {
+        try
+        {
+            activeOperation = "default";
+            await AiConfig.SetDefaultAsync(configuration.Id);
+            Toasts.Success($"已將「{configuration.Name}」設為預設 AI 設定。");
+            await ReloadAsync(configuration.Id);
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { Toasts.Error(exception.Message); }
+        finally { activeOperation = null; }
+    }
+
+    private void PrepareDelete() => deletePending = true;
+    private void CancelDelete() => deletePending = false;
+
+    private async Task DeleteAsync()
+    {
+        try
+        {
+            activeOperation = "delete";
+            await AiConfig.DeleteAsync(configuration.Id);
+            deletePending = false;
+            Toasts.Success("AI 設定已刪除。");
+            await ReloadAsync();
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { Toasts.Error(exception.Message); }
+        finally { activeOperation = null; }
+    }
+
     private async Task DetectAsync()
     {
         if (!BeginOperation("detect")) return;
@@ -79,55 +277,92 @@
             configuration.ExecutablePath = detection.ExecutablePath ?? configuration.ExecutablePath;
             configuration.LastError = detection.Validation.IsValid ? null : detection.Validation.Summary;
             configuration.LastCheckedAt = DateTimeOffset.UtcNow;
-            await AiConfig.SaveAsync(configuration);
-            if (detection.Validation.IsValid) Toasts.Success(detection.Validation.Summary);
-            else Toasts.Error(detection.Validation.Summary);
+            var saved = await AiConfig.SaveAsync(configuration, apiKey, clearApiKey);
+            configuration = Copy(saved);
+            isNew = false;
+            apiKey = string.Empty;
+            clearApiKey = false;
+            configurations = await AiConfig.GetAllAsync();
+            if (detection.Validation.IsValid) Toasts.Success(detection.Validation.Summary); else Toasts.Error(detection.Validation.Summary);
         }
+        catch (ArgumentException exception) { Toasts.Error(exception.Message); }
         finally { activeOperation = null; }
     }
+
     private async Task LoginAsync()
     {
         if (!BeginOperation("login")) return;
-        try
-        {
-            var succeeded = await AskBridge.StartLoginAsync(configuration);
-            if (succeeded) Toasts.Success("登入流程已完成，瀏覽器已關閉。");
-            else Toasts.Error("登入流程未完成。");
-        }
+        try { if (await AskBridge.StartLoginAsync(configuration)) Toasts.Success("登入流程已完成，瀏覽器已關閉。"); else Toasts.Error("登入流程未完成。"); }
         finally { activeOperation = null; }
     }
+
     private async Task TestConnectionAsync()
     {
         if (!BeginOperation("connection")) return;
         try
         {
-            var result = await AskBridge.TestConnectionAsync(configuration);
-            if (result.Succeeded) Toasts.Success("連線測試成功。");
-            else Toasts.Error(result.Error ?? "連線測試失敗。");
+            var saved = await AiConfig.SaveAsync(configuration, apiKey, clearApiKey);
+            configuration = Copy(saved);
+            isNew = false;
+            apiKey = string.Empty;
+            clearApiKey = false;
+            var result = await AiProviders.TestConnectionAsync(configuration);
+            configuration.Status = result.Succeeded ? "Ready" : "Error";
+            configuration.LastError = result.Error;
+            configuration.LastCheckedAt = DateTimeOffset.UtcNow;
+            configuration = Copy(await AiConfig.SaveAsync(configuration));
+            configurations = await AiConfig.GetAllAsync();
+            if (result.Succeeded) Toasts.Success("連線測試成功。"); else Toasts.Error(result.Error ?? "連線測試失敗。");
         }
+        catch (ArgumentException exception) { Toasts.Error(exception.Message); }
         finally { activeOperation = null; }
     }
-    private bool BeginOperation(string operation)
+
+    private void ResetSensitiveEditorState()
     {
-        if (IsBusy) return false;
-        activeOperation = operation;
-        _ = InvokeAsync(StateHasChanged);
-        return true;
+        apiKey = string.Empty;
+        clearApiKey = false;
+        detection = null;
+        deletePending = false;
     }
-    private string ActiveOperationTitle() => activeOperation switch
-    {
-        "detect" => "正在偵測 AI 執行環境…",
-        "login" => "正在等待 AI 服務登入…",
-        "connection" => "正在測試 AI 連線…",
-        _ => "正在處理…"
-    };
-    private string ActiveOperationDetail() => activeOperation switch
-    {
-        "detect" => "正在檢查 ask-bridge、Node.js、瀏覽器與登入狀態。",
-        "login" => "請在瀏覽器完成登入；偵測成功後會自動關閉 ask-bridge 專用瀏覽器。",
-        "connection" => "正在等待 Provider 回應測試請求。",
-        _ => "完成後會自動顯示結果。"
-    };
+
+    private bool BeginOperation(string operation) { if (IsBusy) return false; activeOperation = operation; _ = InvokeAsync(StateHasChanged); return true; }
+    private string ActiveOperationTitle() => activeOperation switch { "detect" => "正在偵測 AI 執行環境…", "login" => "正在等待 AI 服務登入…", "connection" => "正在測試 AI 連線…", "delete" => "正在刪除 AI 設定…", _ => "正在處理…" };
+    private string ActiveOperationDetail() => activeOperation switch { "detect" => "正在檢查 ask-bridge、Node.js、瀏覽器與登入狀態。", "login" => "請在瀏覽器完成登入。", "connection" => "正在傳送最小化測試請求；這可能產生少量 API 用量。", "delete" => "正在移除設定與本機加密保存的 API Key。", _ => "完成後會自動顯示結果。" };
+    private static string ProviderSummary(AiProviderConfiguration item) => item.ProviderType == "ask-bridge" ? $"ask-bridge · {item.Provider}" : string.IsNullOrWhiteSpace(item.Model) ? item.ProviderType : $"{item.ProviderType} · {item.Model}";
     private static string StatusText(string status) => status switch { "Ready" => "可用", "NotInstalled" => "未安裝", "MissingPrerequisite" => "缺少必要條件", "IncompatibleVersion" => "版本不相容", "LoginRequired" => "需要登入", "Error" => "錯誤", _ => "未設定" };
     private static string StatusClass(string status) => status switch { "Ready" => "badge-ready", "NotInstalled" or "MissingPrerequisite" => "badge-unavailable", "IncompatibleVersion" or "Error" => "badge-error", "LoginRequired" => "badge-running", _ => "badge-disabled" };
+
+    private static AiProviderConfiguration NewConfiguration() => new()
+    {
+        ProviderType = "ask-bridge",
+        Provider = "chatgpt",
+        UseHeadless = true,
+        GeneralReportPrompt = AiPromptDefaults.GeneralReportPrompt
+    };
+
+    private static AiProviderConfiguration Copy(AiProviderConfiguration source) => new()
+    {
+        Id = source.Id,
+        Name = source.Name,
+        IsDefault = source.IsDefault,
+        ProviderType = source.ProviderType,
+        UseHeadless = source.UseHeadless,
+        Provider = source.Provider,
+        ExecutablePath = source.ExecutablePath,
+        ProtectedApiKey = source.ProtectedApiKey,
+        ApiEndpoint = source.ApiEndpoint,
+        Model = source.Model,
+        ApiVersion = source.ApiVersion,
+        ReasoningLevel = source.ReasoningLevel,
+        Status = source.Status,
+        DetectedVersion = source.DetectedVersion,
+        LastError = source.LastError,
+        LastCheckedAt = source.LastCheckedAt,
+        GeneralReportPrompt = source.GeneralReportPrompt,
+        DailyReportPromptOverride = source.DailyReportPromptOverride,
+        WeeklyReportPromptOverride = source.WeeklyReportPromptOverride,
+        CreatedAt = source.CreatedAt,
+        UpdatedAt = source.UpdatedAt
+    };
 }

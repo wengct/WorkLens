@@ -6,12 +6,19 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ### 變更
 
+- AI Provider 設定現在可儲存多組具名設定、指定唯一的全域預設組，並將 AI 報告整理啟用狀態改為不受預設組切換影響的全域開關；既有單筆設定會自動保留並移轉為預設組。
+- AI 設定頁將報告整理改為緊湊的狀態控制列，並修正設定清單、編輯區塊與環境診斷面板的間距，以及窄螢幕排列。
+- AI 設定新增 OpenAI、Azure OpenAI、Anthropic、Google Gemini 與 OpenAI Compatible API Provider，可設定模型、推理能力、Endpoint 及本機加密保存的 API Key；ask-bridge 的檔案附件流程維持不變。
 - AI 整理現在透過 Provider Adapter registry 與統一執行入口選擇執行環境，並將 ask-bridge 與其 ChatGPT、Gemini、Claude 目標服務分開建模，為後續加入其他 Provider 保留擴充點。
 - 原「AI 整理」設定頁更名為「AI 設定」，並重新區分報告整理、Provider、AI 服務與 ask-bridge 執行選項。
 - AI 設定頁新增依作業系統顯示的 ask-bridge 安裝步驟、驗證方式與官方 GitHub 套件來源。
 - 將來源設定由六種平台專屬選項簡化為 Git 或 Codex，並可選填 WSL 位置；系統會自動對應原生平台，並以漸進方式顯示進階設定。
 - 來源名稱現在為選填；省略時，系統會自動提供具描述性的預設名稱。
 - Windows 與 macOS 的一鍵安裝程式現在會將 `worklens` 命令目錄加入使用者的 `PATH`，重新安裝時不會產生重複項目。
+
+### 修正
+
+- 修正舊版資料庫升級後，新增或重新偵測 AI Provider 設定時因遺留的 `Enabled` 欄位而無法儲存。
 
 ## [1.1.0] - 2026-09-04
 

@@ -133,7 +133,12 @@
         promptResult = string.Empty;
         try
         {
-            var configuration = await AiConfig.GetAsync();
+            var configuration = await AiConfig.GetDefaultAsync();
+            if (configuration is null)
+            {
+                Toasts.Error("找不到預設 AI 設定，請先到 AI 設定指定預設組。");
+                return;
+            }
             var result = await AiProviders.TestPromptAsync(configuration, editing.Content);
             if (result.Succeeded)
             {

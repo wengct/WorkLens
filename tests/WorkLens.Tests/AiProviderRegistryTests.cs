@@ -39,5 +39,10 @@ public sealed class AiProviderRegistryTests
             AiReportRequest request,
             CancellationToken cancellationToken) =>
             Task.FromResult(new AiReportResult(true, "Body", null, null));
+
+        public Task<AiConnectionTestResult> TestConnectionAsync(
+            AiProviderConfiguration configuration,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new AiConnectionTestResult(true, "OK", null));
     }
 }

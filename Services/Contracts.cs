@@ -102,4 +102,14 @@ public interface IAiProviderAdapter
         AiProviderConfiguration configuration,
         AiReportRequest request,
         CancellationToken cancellationToken);
+
+    Task<AiConnectionTestResult> TestConnectionAsync(
+        AiProviderConfiguration configuration,
+        CancellationToken cancellationToken);
+}
+
+public interface IAiSecretProtector
+{
+    string Protect(string value);
+    string Unprotect(string value);
 }

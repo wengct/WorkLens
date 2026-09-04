@@ -151,10 +151,17 @@ public sealed class ReportService(
             return new AiReportResult(false, null, null, "找不到報告。");
         }
 
-        var configuration = await db.AiProviders.SingleAsync(cancellationToken);
-        if (!configuration.Enabled)
+        var featureSettings = await db.AiFeatureSettings.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == AiFeatureSettings.SingletonId, cancellationToken);
+        if (featureSettings?.Enabled != true)
         {
             return new AiReportResult(false, null, null, "AI 報告整理尚未啟用，請先到設定開啟。");
+        }
+        var configuration = await db.AiProviders.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.IsDefault, cancellationToken);
+        if (configuration is null)
+        {
+            return new AiReportResult(false, null, null, "找不到預設 AI 設定，請先到 AI 設定指定預設組。");
         }
         var validation = await aiProviders.ValidateAsync(configuration, cancellationToken);
         if (!validation.IsValid)
@@ -204,10 +211,13 @@ public sealed class ReportService(
             // service tests and recovery scenarios compatible during that transition.
         }
         var effectivePrompt = promptTemplate?.Content ?? ResolvePrompt(configuration, report.Kind);
+        var providerTarget = configuration.ProviderType == "ask-bridge"
+            ? configuration.Provider
+            : configuration.Model ?? configuration.ProviderType;
         var job = new AiJob
         {
             ProviderType = configuration.ProviderType,
-            Provider = configuration.Provider,
+            Provider = providerTarget,
             Status = "Running",
             StartedAt = DateTimeOffset.UtcNow,
             PromptTemplateId = promptTemplate?.Id,
@@ -220,9 +230,10 @@ public sealed class ReportService(
         var contextBytes = GetUtf8ContextByteCount(input);
         var contextSizeKb = contextBytes / 1024d;
         logger.LogInformation(
-            "AI 報告上下文大小：{ContextSizeKb:F2} KB（{ContextBytes} bytes），傳送方式=檔案附件，ReportId={ReportId}，Kind={ReportKind}，Period={PeriodKey}",
+            "AI 報告上下文大小：{ContextSizeKb:F2} KB（{ContextBytes} bytes），傳送方式={Transport}，ReportId={ReportId}，Kind={ReportKind}，Period={PeriodKey}",
             contextSizeKb,
             contextBytes,
+            configuration.ProviderType == "ask-bridge" ? "檔案附件" : "HTTP JSON",
             report.Id,
             report.Kind,
             report.PeriodKey);
@@ -231,7 +242,7 @@ public sealed class ReportService(
             configuration,
             new AiReportRequest(
                 report.Id,
-                configuration.Provider,
+                providerTarget,
                 input,
                 entries.Select(x => x.Id).ToArray(),
                 report.TotalHours,

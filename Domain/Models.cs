@@ -192,12 +192,18 @@ public sealed class AiJob
 
 public sealed class AiProviderConfiguration
 {
-    public Guid Id { get; set; } = Guid.Parse("00000000-0000-0000-0000-000000000001");
-    public bool Enabled { get; set; }
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    public bool IsDefault { get; set; }
     public string ProviderType { get; set; } = "ask-bridge";
     public bool UseHeadless { get; set; } = true;
     public string Provider { get; set; } = "chatgpt";
     public string? ExecutablePath { get; set; }
+    public string? ProtectedApiKey { get; set; }
+    public string? ApiEndpoint { get; set; }
+    public string? Model { get; set; }
+    public string? ApiVersion { get; set; }
+    public AiReasoningLevel ReasoningLevel { get; set; }
     public string Status { get; set; } = "NotConfigured";
     public string? DetectedVersion { get; set; }
     public string? LastError { get; set; }
@@ -205,6 +211,24 @@ public sealed class AiProviderConfiguration
     public string GeneralReportPrompt { get; set; } = AiPromptDefaults.GeneralReportPrompt;
     public string DailyReportPromptOverride { get; set; } = string.Empty;
     public string WeeklyReportPromptOverride { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class AiFeatureSettings
+{
+    public static readonly Guid SingletonId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+
+    public Guid Id { get; set; } = SingletonId;
+    public bool Enabled { get; set; }
+}
+
+public enum AiReasoningLevel
+{
+    Default,
+    Low,
+    Medium,
+    High
 }
 
 public static class AiPromptDefaults

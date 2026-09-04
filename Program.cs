@@ -71,9 +71,13 @@ builder.Services.Configure<HostOptions>(options =>
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
-builder.Services.AddDataProtection()
+var dataProtection = builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionPath))
     .SetApplicationName("WorkLens");
+if (OperatingSystem.IsWindows())
+{
+    dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);
+}
 
 builder.Services.AddSingleton(paths);
 builder.Services.AddSingleton<RuntimeSettingsService>();
@@ -87,8 +91,18 @@ builder.Services.AddSingleton<ProcessRunner>();
 builder.Services.AddSingleton<IProcessRunner>(serviceProvider =>
     serviceProvider.GetRequiredService<ProcessRunner>());
 builder.Services.AddSingleton<AskBridgeService>();
+builder.Services.AddSingleton<IAiSecretProtector, AiSecretProtector>();
+builder.Services.AddHttpClient("AiProvider", client => client.Timeout = TimeSpan.FromMinutes(5));
 builder.Services.AddSingleton<IAiProviderAdapter>(serviceProvider =>
     serviceProvider.GetRequiredService<AskBridgeService>());
+foreach (var providerType in new[] { "openai", "azure-openai", "anthropic", "gemini", "openai-compatible" })
+{
+    builder.Services.AddSingleton<IAiProviderAdapter>(serviceProvider =>
+        new ApiAiProviderAdapter(
+            providerType,
+            serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient("AiProvider"),
+            serviceProvider.GetRequiredService<IAiSecretProtector>()));
+}
 builder.Services.AddSingleton<AiProviderRegistry>();
 builder.Services.AddSingleton<AiProviderOrchestrator>();
 builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>

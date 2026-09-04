@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using WorkLens.Data;
 using WorkLens.Domain;
+using WorkLens.Services;
 
 namespace WorkLens.Tests;
 
@@ -47,9 +48,29 @@ public sealed class DatabaseInitializerTests
         var configuration = await db.AiProviders.SingleAsync();
         Assert.Equal("ask-bridge", configuration.ProviderType);
         Assert.True(configuration.UseHeadless);
+        Assert.Null(configuration.ProtectedApiKey);
+        Assert.Null(configuration.ApiEndpoint);
+        Assert.Null(configuration.Model);
+        Assert.Null(configuration.ApiVersion);
+        Assert.Equal(AiReasoningLevel.Default, configuration.ReasoningLevel);
+        Assert.Equal("預設 AI 設定", configuration.Name);
+        Assert.True(configuration.IsDefault);
         Assert.Equal("整理", configuration.GeneralReportPrompt);
+        Assert.True((await db.AiFeatureSettings.SingleAsync()).Enabled);
         Assert.Equal("整理", (await db.PromptTemplates.SingleAsync()).Content);
         Assert.Equal(4, await db.ScheduleDefinitions.CountAsync());
+
+        var service = new AiConfigurationService(new Factory(options), new StubSecretProtector());
+        var added = await service.SaveAsync(new AiProviderConfiguration
+        {
+            Name = "第二組",
+            ProviderType = "ask-bridge"
+        });
+        Assert.Equal("第二組", added.Name);
+
+        await new DatabaseInitializer(new Factory(options)).InitializeAsync();
+        Assert.Equal(2, await db.AiProviders.AsNoTracking().CountAsync());
+        Assert.Single(await db.AiFeatureSettings.AsNoTracking().ToListAsync());
     }
 
     [Fact]
@@ -95,11 +116,14 @@ public sealed class DatabaseInitializerTests
                 new AiProviderConfiguration
                 {
                     Id = Guid.Parse("00000000-0000-0000-0000-000000000001"),
+                    Name = "舊預設",
+                    IsDefault = true,
                     GeneralReportPrompt = "請將資料整理成清楚、可直接交付的工作回報。保留具體成果、處理過程與下一步；以繁體中文撰寫，內容精簡但不可遺漏重要脈絡。"
                 },
                 new AiProviderConfiguration
                 {
                     Id = Guid.NewGuid(),
+                    Name = "自訂",
                     GeneralReportPrompt = "我的自訂整理方式"
                 });
             await setup.SaveChangesAsync();
@@ -181,5 +205,11 @@ public sealed class DatabaseInitializerTests
         : IDbContextFactory<WorkLensDbContext>
     {
         public WorkLensDbContext CreateDbContext() => new(options);
+    }
+
+    private sealed class StubSecretProtector : IAiSecretProtector
+    {
+        public string Protect(string value) => value;
+        public string Unprotect(string value) => value;
     }
 }

@@ -14,20 +14,190 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         await db.Database.EnsureCreatedAsync(cancellationToken);
         await EnsureSchedulingSchemaAsync(db, cancellationToken);
+        var legacyAiEnabled = await ReadLegacyAiEnabledAsync(db, cancellationToken);
         await EnsureColumnAsync(db, "AiProviders", "ProviderType", "TEXT NOT NULL DEFAULT 'ask-bridge'", cancellationToken);
+        await EnsureColumnAsync(db, "AiProviders", "ProtectedApiKey", "TEXT NULL", cancellationToken);
+        await EnsureColumnAsync(db, "AiProviders", "ApiEndpoint", "TEXT NULL", cancellationToken);
+        await EnsureColumnAsync(db, "AiProviders", "Model", "TEXT NULL", cancellationToken);
+        await EnsureColumnAsync(db, "AiProviders", "ApiVersion", "TEXT NULL", cancellationToken);
+        await EnsureColumnAsync(db, "AiProviders", "ReasoningLevel", "TEXT NOT NULL DEFAULT 'Default'", cancellationToken);
+        await EnsureColumnAsync(db, "AiProviders", "Name", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await EnsureColumnAsync(db, "AiProviders", "IsDefault", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+        await EnsureColumnAsync(db, "AiProviders", "CreatedAt", "TEXT NOT NULL DEFAULT '0001-01-01 00:00:00+00:00'", cancellationToken);
+        await EnsureColumnAsync(db, "AiProviders", "UpdatedAt", "TEXT NOT NULL DEFAULT '0001-01-01 00:00:00+00:00'", cancellationToken);
+        await EnsureAiFeatureSettingsSchemaAsync(db, cancellationToken);
+        await EnsureAiFeatureSettingsAsync(db, legacyAiEnabled, cancellationToken);
+        await RemoveLegacyAiProviderEnabledColumnAsync(db, cancellationToken);
         await EnsureUseHeadlessColumnAsync(db, cancellationToken);
         await EnsureWorkEntryTitleColumnAsync(db, cancellationToken);
         await RecoverInterruptedSourceCollectionsAsync(db, cancellationToken);
         await RecoverInterruptedScheduleExecutionsAsync(db, cancellationToken);
         if (!await db.AiProviders.AnyAsync(cancellationToken))
         {
-            db.AiProviders.Add(new AiProviderConfiguration());
+            db.AiProviders.Add(new AiProviderConfiguration
+            {
+                Id = Guid.Parse("00000000-0000-0000-0000-000000000001"),
+                Name = "預設 AI 設定",
+                IsDefault = true
+            });
             await db.SaveChangesAsync(cancellationToken);
         }
+
+        await NormalizeAiProviderConfigurationsAsync(db, cancellationToken);
+        await EnsureAiProviderIndexesAsync(db, cancellationToken);
 
         await UpgradeDefaultPromptAsync(db, cancellationToken);
         await SeedPromptTemplatesAndSchedulesAsync(db, cancellationToken);
     }
+
+    private static async Task<bool> ReadLegacyAiEnabledAsync(
+        WorkLensDbContext db,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(db, "AiProviders", cancellationToken))
+        {
+            return false;
+        }
+
+        var connection = db.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose) await connection.OpenAsync(cancellationToken);
+        try
+        {
+            await using var columnCheck = connection.CreateCommand();
+            columnCheck.CommandText = "SELECT COUNT(*) FROM pragma_table_info('AiProviders') WHERE name = 'Enabled';";
+            if (Convert.ToInt32(await columnCheck.ExecuteScalarAsync(cancellationToken)) == 0)
+            {
+                return false;
+            }
+
+            await using var valueQuery = connection.CreateCommand();
+            valueQuery.CommandText = """
+                SELECT "Enabled"
+                FROM "AiProviders"
+                ORDER BY CASE WHEN "Id" = '00000000-0000-0000-0000-000000000001' THEN 0 ELSE 1 END, "Id"
+                LIMIT 1;
+                """;
+            var value = await valueQuery.ExecuteScalarAsync(cancellationToken);
+            return value is not null && value != DBNull.Value && Convert.ToInt32(value) != 0;
+        }
+        finally
+        {
+            if (shouldClose) await connection.CloseAsync();
+        }
+    }
+
+    private static async Task EnsureAiFeatureSettingsSchemaAsync(
+        WorkLensDbContext db,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            CREATE TABLE IF NOT EXISTS "AiFeatureSettings" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_AiFeatureSettings" PRIMARY KEY,
+                "Enabled" INTEGER NOT NULL
+            );
+            """;
+        await db.Database.ExecuteSqlRawAsync(sql, cancellationToken);
+    }
+
+    private static async Task EnsureAiFeatureSettingsAsync(
+        WorkLensDbContext db,
+        bool legacyEnabled,
+        CancellationToken cancellationToken)
+    {
+        if (await db.AiFeatureSettings.AnyAsync(cancellationToken))
+        {
+            return;
+        }
+
+        db.AiFeatureSettings.Add(new AiFeatureSettings { Enabled = legacyEnabled });
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task RemoveLegacyAiProviderEnabledColumnAsync(
+        WorkLensDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var connection = db.Database.GetDbConnection();
+        var shouldClose = connection.State != ConnectionState.Open;
+        if (shouldClose) await connection.OpenAsync(cancellationToken);
+        try
+        {
+            await using var check = connection.CreateCommand();
+            check.CommandText = "SELECT COUNT(*) FROM pragma_table_info('AiProviders') WHERE name = 'Enabled';";
+            if (Convert.ToInt32(await check.ExecuteScalarAsync(cancellationToken)) == 0)
+            {
+                return;
+            }
+
+            await using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE \"AiProviders\" DROP COLUMN \"Enabled\";";
+            await alter.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            if (shouldClose) await connection.CloseAsync();
+        }
+    }
+
+    private static async Task NormalizeAiProviderConfigurationsAsync(
+        WorkLensDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var configurations = await db.AiProviders.OrderBy(x => x.Id).ToListAsync(cancellationToken);
+        var legacyId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var selectedDefault = configurations
+            .Where(x => x.IsDefault)
+            .OrderBy(x => x.Id == legacyId ? 0 : 1)
+            .FirstOrDefault()
+            ?? configurations.OrderBy(x => x.Id == legacyId ? 0 : 1).First();
+        var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var now = DateTimeOffset.UtcNow;
+
+        foreach (var configuration in configurations)
+        {
+            configuration.IsDefault = configuration.Id == selectedDefault.Id;
+            if (configuration.CreatedAt == default) configuration.CreatedAt = now;
+            if (configuration.UpdatedAt == default) configuration.UpdatedAt = configuration.CreatedAt;
+
+            var baseName = string.IsNullOrWhiteSpace(configuration.Name)
+                ? configuration.Id == selectedDefault.Id
+                    ? "預設 AI 設定"
+                    : ProviderDisplayName(configuration.ProviderType)
+                : configuration.Name.Trim();
+            var uniqueName = baseName;
+            var suffix = 2;
+            while (!usedNames.Add(uniqueName))
+            {
+                uniqueName = $"{baseName} ({suffix++})";
+            }
+            configuration.Name = uniqueName;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static async Task EnsureAiProviderIndexesAsync(
+        WorkLensDbContext db,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_AiProviders_Name" ON "AiProviders" ("Name" COLLATE NOCASE);
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_AiProviders_IsDefault" ON "AiProviders" ("IsDefault") WHERE "IsDefault" = 1;
+            """;
+        await db.Database.ExecuteSqlRawAsync(sql, cancellationToken);
+    }
+
+    private static string ProviderDisplayName(string providerType) => providerType switch
+    {
+        "ask-bridge" => "ask-bridge",
+        "openai" => "OpenAI",
+        "azure-openai" => "Azure OpenAI",
+        "anthropic" => "Anthropic",
+        "gemini" => "Google Gemini",
+        "openai-compatible" => "OpenAI Compatible",
+        _ => "AI 設定"
+    };
 
     private static async Task EnsureSchedulingSchemaAsync(WorkLensDbContext db, CancellationToken cancellationToken)
     {

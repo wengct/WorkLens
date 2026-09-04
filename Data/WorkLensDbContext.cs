@@ -14,6 +14,7 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
     public DbSet<ReportDocument> Reports => Set<ReportDocument>();
     public DbSet<AiJob> AiJobs => Set<AiJob>();
     public DbSet<AiProviderConfiguration> AiProviders => Set<AiProviderConfiguration>();
+    public DbSet<AiFeatureSettings> AiFeatureSettings => Set<AiFeatureSettings>();
     public DbSet<BackupRecord> BackupRecords => Set<BackupRecord>();
     public DbSet<PromptTemplate> PromptTemplates => Set<PromptTemplate>();
     public DbSet<ScheduleDefinition> ScheduleDefinitions => Set<ScheduleDefinition>();
@@ -28,6 +29,7 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
         modelBuilder.Entity<CommitLineage>().Property(x => x.Relation).HasConversion<string>();
         modelBuilder.Entity<ReportDocument>().Property(x => x.Kind).HasConversion<string>();
         modelBuilder.Entity<ScheduleDefinition>().Property(x => x.Kind).HasConversion<string>();
+        modelBuilder.Entity<AiProviderConfiguration>().Property(x => x.ReasoningLevel).HasConversion<string>();
 
         modelBuilder.Entity<ActivitySource>()
             .HasIndex(x => new { x.DisplayName, x.IsArchived });
@@ -55,6 +57,22 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
             .IsUnique();
 
         modelBuilder.Entity<AiProviderConfiguration>()
+            .HasKey(x => x.Id);
+
+        modelBuilder.Entity<AiProviderConfiguration>()
+            .Property(x => x.Name)
+            .UseCollation("NOCASE");
+
+        modelBuilder.Entity<AiProviderConfiguration>()
+            .HasIndex(x => x.Name)
+            .IsUnique();
+
+        modelBuilder.Entity<AiProviderConfiguration>()
+            .HasIndex(x => x.IsDefault)
+            .IsUnique()
+            .HasFilter("\"IsDefault\" = 1");
+
+        modelBuilder.Entity<AiFeatureSettings>()
             .HasKey(x => x.Id);
 
         modelBuilder.Entity<PromptTemplate>()
