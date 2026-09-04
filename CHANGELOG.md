@@ -4,8 +4,14 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [尚未發布]
 
+## [1.2.0] - 2026-09-04
+
 ### 變更
 
+- AI 工作回報上下文現在會帶入允許提供給 AI 的專案名稱，讓產生內容能正確標示各筆人工紀錄與來源活動所屬專案。
+- 系統預設工作回報 Prompt 新增每日回報的標題、日期、專案及工作項目 Markdown 格式；仍使用舊系統預設的設定與範本會自動升級，自訂內容維持不變。
+- 將每日與每週備份整合為單一「自動備份」排程；可複選星期，選滿七天即為每天備份，既有每週備份設定會合併後停用並保留歷史紀錄；所有排程改為緊湊的單欄設定列，由上而下排列。
+- 每日與每週報告頁面及排程卡片現在會顯示資料涵蓋範圍與重複執行規則。
 - AI Provider 設定現在可儲存多組具名設定、指定唯一的全域預設組，並將 AI 報告整理啟用狀態改為不受預設組切換影響的全域開關；既有單筆設定會自動保留並移轉為預設組。
 - AI 設定頁將報告整理改為緊湊的狀態控制列，並修正設定清單、編輯區塊與環境診斷面板的間距，以及窄螢幕排列。
 - AI 設定新增 OpenAI、Azure OpenAI、Anthropic、Google Gemini 與 OpenAI Compatible API Provider，可設定模型、推理能力、Endpoint 及本機加密保存的 API Key；ask-bridge 的檔案附件流程維持不變。
@@ -18,6 +24,7 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ### 修正
 
+- 修正視窗高度不足時，固定側邊欄無法捲動，導致部分選單與底部版本資訊無法查看。
 - 修正舊版資料庫升級後，新增或重新偵測 AI Provider 設定時因遺留的 `Enabled` 欄位而無法儲存。
 
 ## [1.1.0] - 2026-09-04
@@ -56,5 +63,6 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.1.0...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/wengct/WorkLens/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/wengct/WorkLens/compare/v1.0.3...v1.1.0

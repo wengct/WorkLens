@@ -171,14 +171,16 @@ public sealed class ReportService(
 
         var aiProjects = await db.Projects.AsNoTracking()
             .Where(x => x.IncludeInAi && !x.IsArchived)
-            .Select(x => x.Id)
+            .Select(x => new { x.Id, x.Name })
             .ToListAsync(cancellationToken);
+        var aiProjectIds = aiProjects.Select(x => x.Id).ToArray();
+        var aiProjectNames = aiProjects.ToDictionary(x => x.Id, x => x.Name);
         var reportStartDate = DateOnly.FromDateTime(report.PeriodStart.LocalDateTime);
         var reportEndDate = DateOnly.FromDateTime(report.PeriodEnd.LocalDateTime);
         var entries = await db.WorkEntries.AsNoTracking()
             .Where(x => x.WorkDate >= reportStartDate &&
                         x.WorkDate < reportEndDate &&
-                        (x.ProjectId == null || aiProjects.Contains(x.ProjectId.Value)))
+                        (x.ProjectId == null || aiProjectIds.Contains(x.ProjectId.Value)))
             .ToListAsync(cancellationToken);
         entries = entries
             .OrderBy(x => x.WorkDate)
@@ -186,20 +188,20 @@ public sealed class ReportService(
             .ToList();
         var sourceIds = await db.ActivitySources.AsNoTracking()
             .Where(x => x.IncludeInAi && x.Enabled && !x.IsArchived &&
-                        (x.ProjectId == null || aiProjects.Contains(x.ProjectId.Value)))
+                        (x.ProjectId == null || aiProjectIds.Contains(x.ProjectId.Value)))
             .Select(x => x.Id)
             .ToListAsync(cancellationToken);
         var allEvidence = await db.SourceEvidence.AsNoTracking().ToListAsync(cancellationToken);
         var evidence = allEvidence
             .Where(x => (sourceIds.Contains(x.SourceId) ||
                          (x.Kind == EvidenceKind.Manual &&
-                          (x.ProjectId == null || aiProjects.Contains(x.ProjectId.Value)))) &&
+                          (x.ProjectId == null || aiProjectIds.Contains(x.ProjectId.Value)))) &&
                         x.OccurredAt >= report.PeriodStart &&
                         x.OccurredAt < report.PeriodEnd)
             .OrderBy(x => x.OccurredAt)
             .ToList();
 
-        var input = BuildAiInput(report, entries, evidence);
+        var input = BuildAiInput(report, entries, evidence, aiProjectNames);
         PromptTemplate? promptTemplate = null;
         try
         {
@@ -406,7 +408,8 @@ public sealed class ReportService(
     private static string BuildAiInput(
         ReportDocument report,
         IReadOnlyList<WorkEntry> entries,
-        IReadOnlyList<SourceEvidence> evidence)
+        IReadOnlyList<SourceEvidence> evidence,
+        IReadOnlyDictionary<Guid, string> projectNames)
     {
         var builder = new StringBuilder();
         builder.AppendLine($"報告 ID：{report.Id}");
@@ -419,14 +422,14 @@ public sealed class ReportService(
         builder.AppendLine("補充人工紀錄：");
         foreach (var entry in entries)
         {
-            builder.AppendLine($"- id={entry.Id}｜日期={entry.WorkDate:yyyy-MM-dd}｜確認時數={entry.Hours:0.##}｜標題={entry.Title}");
+            builder.AppendLine($"- id={entry.Id}｜專案={ProjectName(entry.ProjectId, projectNames)}｜日期={entry.WorkDate:yyyy-MM-dd}｜確認時數={entry.Hours:0.##}｜標題={entry.Title}");
             builder.AppendLine(entry.WorkContent);
         }
 
         builder.AppendLine("來源活動：");
         foreach (var item in evidence)
         {
-            builder.AppendLine($"- {item.OccurredAt:O}｜{item.Kind}｜title={item.Title}｜message={item.CommitMessage}｜branch={item.Branch}");
+            builder.AppendLine($"- {item.OccurredAt:O}｜{item.Kind}｜專案={ProjectName(item.ProjectId, projectNames)}｜title={item.Title}｜message={item.CommitMessage}｜branch={item.Branch}");
         }
 
         return builder.ToString();

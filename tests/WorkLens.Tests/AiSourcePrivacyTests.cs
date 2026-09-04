@@ -38,7 +38,8 @@ public sealed class AiSourcePrivacyTests
             "BuildAiInput",
             BindingFlags.NonPublic | BindingFlags.Static);
 
-        var context = Assert.IsType<string>(method?.Invoke(null, [report, entries, evidence]));
+        IReadOnlyDictionary<Guid, string> projectNames = new Dictionary<Guid, string>();
+        var context = Assert.IsType<string>(method?.Invoke(null, [report, entries, evidence, projectNames]));
 
         Assert.DoesNotContain(report.DeterministicBody, context, StringComparison.Ordinal);
         Assert.Contains("允許的人工紀錄", context, StringComparison.Ordinal);

@@ -8,6 +8,7 @@ namespace WorkLens.Data;
 public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> factory)
 {
     private const string PreviousGeneralReportPrompt = "請將資料整理成清楚、可直接交付的工作回報。保留具體成果、處理過程與下一步；以繁體中文撰寫，內容精簡但不可遺漏重要脈絡。";
+    private const string PreviousCategorizedGeneralReportPrompt = "請將資料整理成清楚、可直接交付的工作回報，並依據工作內容自動歸類，按以下固定分類拆分章節：專案管理、UIUX相關、需求評估、功能開發、功能測試、BUG處理、文件相關、客服、其他。分類名稱、文字與順序不可更動；只建立有內容的章節。同一筆工作若涉及多個分類，歸入最主要的分類，避免重複。保留具體成果與處理過程；以繁體中文撰寫，內容精簡但不可遺漏重要脈絡。";
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -48,6 +49,7 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
 
         await UpgradeDefaultPromptAsync(db, cancellationToken);
         await SeedPromptTemplatesAndSchedulesAsync(db, cancellationToken);
+        await MergeLegacyBackupSchedulesAsync(db, cancellationToken);
     }
 
     private static async Task<bool> ReadLegacyAiEnabledAsync(
@@ -346,6 +348,37 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
         if (interrupted.Count > 0) await db.SaveChangesAsync(cancellationToken);
     }
 
+    private static async Task MergeLegacyBackupSchedulesAsync(
+        WorkLensDbContext db,
+        CancellationToken cancellationToken)
+    {
+        var backup = await db.ScheduleDefinitions
+            .SingleOrDefaultAsync(x => x.Kind == ScheduleKind.DailyBackup, cancellationToken);
+        var legacyWeekly = await db.ScheduleDefinitions
+            .SingleOrDefaultAsync(x => x.Kind == ScheduleKind.WeeklyBackup, cancellationToken);
+        if (backup is null || legacyWeekly is null || !legacyWeekly.Enabled)
+        {
+            return;
+        }
+
+        if (!backup.Enabled)
+        {
+            backup.Enabled = true;
+            backup.DaysOfWeekMask = legacyWeekly.DaysOfWeekMask;
+            backup.Hour = legacyWeekly.Hour;
+            backup.Minute = legacyWeekly.Minute;
+        }
+        else
+        {
+            backup.DaysOfWeekMask |= legacyWeekly.DaysOfWeekMask;
+        }
+
+        backup.UpdatedAt = DateTimeOffset.UtcNow;
+        legacyWeekly.Enabled = false;
+        legacyWeekly.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     private static async Task RecoverInterruptedSourceCollectionsAsync(
         WorkLensDbContext db,
         CancellationToken cancellationToken)
@@ -409,19 +442,32 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
         CancellationToken cancellationToken)
     {
         var configurations = await db.AiProviders
-            .Where(configuration => configuration.GeneralReportPrompt == PreviousGeneralReportPrompt)
+            .Where(configuration =>
+                configuration.GeneralReportPrompt == PreviousGeneralReportPrompt ||
+                configuration.GeneralReportPrompt == PreviousCategorizedGeneralReportPrompt)
             .ToListAsync(cancellationToken);
-        if (configurations.Count == 0)
-        {
-            return;
-        }
+        var templates = await db.PromptTemplates
+            .Where(template =>
+                template.IsDefault &&
+                (template.Content == PreviousGeneralReportPrompt ||
+                 template.Content == PreviousCategorizedGeneralReportPrompt))
+            .ToListAsync(cancellationToken);
 
         foreach (var configuration in configurations)
         {
             configuration.GeneralReportPrompt = AiPromptDefaults.GeneralReportPrompt;
         }
 
-        await db.SaveChangesAsync(cancellationToken);
+        foreach (var template in templates)
+        {
+            template.Content = AiPromptDefaults.GeneralReportPrompt;
+            template.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        if (configurations.Count > 0 || templates.Count > 0)
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
     }
 
     private static async Task EnsureUseHeadlessColumnAsync(

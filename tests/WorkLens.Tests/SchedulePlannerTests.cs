@@ -6,6 +6,18 @@ namespace WorkLens.Tests;
 public sealed class SchedulePlannerTests
 {
     [Fact]
+    public void Defaults_expose_one_backup_schedule_covering_every_day()
+    {
+        var backups = ScheduleDefaults.Create()
+            .Where(schedule => schedule.Kind is ScheduleKind.DailyBackup or ScheduleKind.WeeklyBackup)
+            .ToList();
+
+        var backup = Assert.Single(backups);
+        Assert.Equal(ScheduleKind.DailyBackup, backup.Kind);
+        Assert.Equal(ScheduleDefaults.EveryDayMask, backup.DaysOfWeekMask);
+    }
+
+    [Fact]
     public void Due_requires_enabled_selected_day_and_time()
     {
         var schedule = new ScheduleDefinition

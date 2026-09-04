@@ -58,7 +58,7 @@ public sealed class DatabaseInitializerTests
         Assert.Equal("整理", configuration.GeneralReportPrompt);
         Assert.True((await db.AiFeatureSettings.SingleAsync()).Enabled);
         Assert.Equal("整理", (await db.PromptTemplates.SingleAsync()).Content);
-        Assert.Equal(4, await db.ScheduleDefinitions.CountAsync());
+        Assert.Equal(3, await db.ScheduleDefinitions.CountAsync());
 
         var service = new AiConfigurationService(new Factory(options), new StubSecretProtector());
         var added = await service.SaveAsync(new AiProviderConfiguration
@@ -102,6 +102,52 @@ public sealed class DatabaseInitializerTests
     }
 
     [Fact]
+    public async Task Initialize_merges_an_enabled_legacy_weekly_backup_into_the_disabled_backup_schedule()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
+        await using (var setup = new WorkLensDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            setup.AiProviders.Add(new AiProviderConfiguration { Name = "預設 AI 設定", IsDefault = true });
+            setup.ScheduleDefinitions.AddRange(
+                new ScheduleDefinition
+                {
+                    Id = ScheduleDefaults.DailyBackupId,
+                    Kind = ScheduleKind.DailyBackup,
+                    Enabled = false,
+                    DaysOfWeekMask = ScheduleDefaults.WeekdaysMask,
+                    Hour = 17,
+                    Minute = 45
+                },
+                new ScheduleDefinition
+                {
+                    Id = ScheduleDefaults.WeeklyBackupId,
+                    Kind = ScheduleKind.WeeklyBackup,
+                    Enabled = true,
+                    DaysOfWeekMask = (1 << (int)DayOfWeek.Wednesday) | (1 << (int)DayOfWeek.Saturday),
+                    Hour = 20,
+                    Minute = 15
+                });
+            await setup.SaveChangesAsync();
+        }
+
+        var initializer = new DatabaseInitializer(new Factory(options));
+        await initializer.InitializeAsync();
+        await initializer.InitializeAsync();
+
+        await using var verify = new WorkLensDbContext(options);
+        var backup = await verify.ScheduleDefinitions.SingleAsync(x => x.Kind == ScheduleKind.DailyBackup);
+        var legacyWeekly = await verify.ScheduleDefinitions.SingleAsync(x => x.Kind == ScheduleKind.WeeklyBackup);
+        Assert.True(backup.Enabled);
+        Assert.Equal((1 << (int)DayOfWeek.Wednesday) | (1 << (int)DayOfWeek.Saturday), backup.DaysOfWeekMask);
+        Assert.Equal(20, backup.Hour);
+        Assert.Equal(15, backup.Minute);
+        Assert.False(legacyWeekly.Enabled);
+    }
+
+    [Fact]
     public async Task Initialize_upgrades_the_previous_default_prompt_without_overwriting_custom_prompts()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -138,6 +184,41 @@ public sealed class DatabaseInitializerTests
             .ToListAsync();
         Assert.Contains(AiPromptDefaults.GeneralReportPrompt, prompts);
         Assert.Contains("我的自訂整理方式", prompts);
+    }
+
+    [Fact]
+    public async Task Initialize_upgrades_the_categorized_default_template_to_the_structured_format()
+    {
+        const string previousPrompt = "請將資料整理成清楚、可直接交付的工作回報，並依據工作內容自動歸類，按以下固定分類拆分章節：專案管理、UIUX相關、需求評估、功能開發、功能測試、BUG處理、文件相關、客服、其他。分類名稱、文字與順序不可更動；只建立有內容的章節。同一筆工作若涉及多個分類，歸入最主要的分類，避免重複。保留具體成果與處理過程；以繁體中文撰寫，內容精簡但不可遺漏重要脈絡。";
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
+        await using (var setup = new WorkLensDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            setup.AiProviders.Add(new AiProviderConfiguration
+            {
+                Name = "預設 AI 設定",
+                IsDefault = true,
+                GeneralReportPrompt = previousPrompt
+            });
+            setup.PromptTemplates.Add(new PromptTemplate
+            {
+                Name = "預設工作回報",
+                Content = previousPrompt,
+                IsDefault = true
+            });
+            await setup.SaveChangesAsync();
+        }
+
+        await new DatabaseInitializer(new Factory(options)).InitializeAsync();
+
+        await using var verify = new WorkLensDbContext(options);
+        Assert.Equal(AiPromptDefaults.GeneralReportPrompt, (await verify.AiProviders.SingleAsync()).GeneralReportPrompt);
+        Assert.Equal(AiPromptDefaults.GeneralReportPrompt, (await verify.PromptTemplates.SingleAsync()).Content);
+        Assert.Contains("# 每日工作回報", AiPromptDefaults.GeneralReportPrompt, StringComparison.Ordinal);
+        Assert.Contains("## 日期：{{YYYY-MM-DD}}", AiPromptDefaults.GeneralReportPrompt, StringComparison.Ordinal);
+        Assert.Contains("## 專案：{專案}", AiPromptDefaults.GeneralReportPrompt, StringComparison.Ordinal);
     }
 
     [Fact]

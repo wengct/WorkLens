@@ -15,6 +15,16 @@
 
 <section class="panel report-period-panel">
     <div class="panel-heading"><div><h2>選擇摘要期間</h2><p>每日查看單日；每週會彙整週一至週日。</p></div></div>
+    <div class="report-range-note">
+        @if (kind == ReportKind.Daily)
+        {
+            <span><strong>每日報告：</strong>涵蓋所選日期 00:00 至 24:00 的人工紀錄與來源活動；目前範圍為 @SelectedPeriodTitle。</span>
+        }
+        else
+        {
+            <span><strong>每週報告：</strong>涵蓋所選日期所在週，固定由星期一至星期日；目前範圍為 @SelectedPeriodTitle。</span>
+        }
+    </div>
     <div class="button-row">
         <div class="view-switch" aria-label="摘要期間種類">
             <button type="button" class="@(kind == ReportKind.Daily ? "active" : string.Empty)" @onclick="() => RequestPeriodChangeAsync(ReportKind.Daily, selectedDate)">每日</button>

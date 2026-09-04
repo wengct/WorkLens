@@ -13,14 +13,14 @@ public static class ScheduleDefaults
     public static readonly Guid DailyBackupId = Guid.Parse("10000000-0000-0000-0000-000000000003");
     public static readonly Guid WeeklyBackupId = Guid.Parse("10000000-0000-0000-0000-000000000004");
     public const int WeekdaysMask = (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5);
+    public const int EveryDayMask = (1 << 7) - 1;
     public const int FridayMask = 1 << 5;
 
     public static IReadOnlyList<ScheduleDefinition> Create() =>
     [
         New(DailyReportId, ScheduleKind.DailyReport, WeekdaysMask, 17, 30),
         New(WeeklyReportId, ScheduleKind.WeeklyReport, FridayMask, 18, 0),
-        New(DailyBackupId, ScheduleKind.DailyBackup, WeekdaysMask, 17, 45),
-        New(WeeklyBackupId, ScheduleKind.WeeklyBackup, FridayMask, 18, 0)
+        New(DailyBackupId, ScheduleKind.DailyBackup, EveryDayMask, 17, 45)
     ];
 
     private static ScheduleDefinition New(Guid id, ScheduleKind kind, int days, int hour, int minute) => new()
@@ -79,7 +79,10 @@ public sealed class ScheduleService(
     public async Task<IReadOnlyList<ScheduleOverview>> GetAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        var schedules = await db.ScheduleDefinitions.AsNoTracking().OrderBy(x => x.Kind).ToListAsync(cancellationToken);
+        var schedules = await db.ScheduleDefinitions.AsNoTracking()
+            .Where(x => x.Kind != ScheduleKind.WeeklyBackup)
+            .OrderBy(x => x.Kind)
+            .ToListAsync(cancellationToken);
         var executions = (await db.ScheduleExecutions.AsNoTracking().ToListAsync(cancellationToken))
             .OrderByDescending(x => x.StartedAt)
             .ToList();
@@ -132,7 +135,9 @@ public sealed class ScheduleRunner(
     public async Task RunDueAsync(DateTime localNow, CancellationToken cancellationToken = default)
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
-        var schedules = await db.ScheduleDefinitions.AsNoTracking().Where(x => x.Enabled).ToListAsync(cancellationToken);
+        var schedules = await db.ScheduleDefinitions.AsNoTracking()
+            .Where(x => x.Enabled && x.Kind != ScheduleKind.WeeklyBackup)
+            .ToListAsync(cancellationToken);
         foreach (var schedule in schedules.Where(x => SchedulePlanner.IsDue(x, localNow)))
         {
             await RunAsync(schedule.Id, localNow, false, cancellationToken);
