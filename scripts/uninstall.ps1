@@ -21,6 +21,8 @@ if (Test-Path -LiteralPath $Manager -PathType Leaf) {
 }
 
 Remove-Item -LiteralPath (Join-Path $BinDir "worklens.cmd") -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $BinDir "worklens.ps1") -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $BinDir "worklens-install-dir.txt") -Force -ErrorAction SilentlyContinue
 if ($PSCmdlet.ShouldProcess($InstallDir, "Remove the WorkLens application")) {
     Remove-Item -LiteralPath $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
 }

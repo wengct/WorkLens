@@ -26,16 +26,23 @@ try {
     $env:WorkLens__BackupPath = Join-Path $RuntimeDir "backups"
     $env:WorkLens__LogPath = Join-Path $RuntimeDir "logs"
 
-    & $InstallScript -InstallDir $InstallDir -BinDir $BinDir -Port $Port -NoAutostart -NoOpenBrowser
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $InstallScript `
+        -InstallDir $InstallDir -BinDir $BinDir -Port $Port -NoAutostart -NoOpenBrowser
+    if ($LASTEXITCODE -ne 0) { throw "The installer subprocess failed." }
     $InstalledManager = Get-Content -LiteralPath (Join-Path $InstallDir "scripts\manage.ps1") -Raw
     if (!$InstalledManager.Contains("-AllowStartIfOnBatteries") -or !$InstalledManager.Contains("-DontStopIfGoingOnBatteries")) {
         throw "The installed scheduled task configuration does not remain running on battery power."
     }
+    $InstalledRunScript = Get-Content -LiteralPath (Join-Path $InstallDir "scripts\run.ps1") -Raw
+    if ($InstalledRunScript.Contains("-NoNewWindow") -or !$InstalledRunScript.Contains("-WindowStyle Hidden")) {
+        throw "The installed application process is not isolated from console close events."
+    }
     $PathEntries = @([Environment]::GetEnvironmentVariable("Path", "User") -split ";")
     if (@($PathEntries | Where-Object { $_ -ieq $BinDir }).Count -ne 1) { throw "The installer did not add the command directory to the user PATH exactly once." }
-    if (@($env:Path -split ";" | Where-Object { $_ -ieq $BinDir }).Count -ne 1) { throw "The installer did not add the command directory to the current process PATH." }
     $Health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/healthz" -TimeoutSec 5
     if ($Health.status -ne "Healthy") { throw "Installed WorkLens did not report healthy." }
+    & (Join-Path $BinDir "worklens.cmd") status
+    if ($LASTEXITCODE -ne 0) { throw "The worklens command could not run from a path containing non-ASCII characters." }
     $Asset = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/app.css" -UseBasicParsing -TimeoutSec 5
     if ($Asset.StatusCode -ne 200 -or $Asset.RawContentLength -eq 0) { throw "Installed WorkLens did not serve app.css." }
     if (!(Test-Path -LiteralPath (Join-Path $RuntimeDir "worklens.db"))) { throw "WorkLens did not create its SQLite database." }

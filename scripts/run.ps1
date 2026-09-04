@@ -24,7 +24,7 @@ $env:ASPNETCORE_URLS = "http://127.0.0.1:$Port"
 $env:DOTNET_ENVIRONMENT = "Production"
 $Process = $null
 try {
-    $Process = Start-Process -FilePath $Executable -WorkingDirectory (Split-Path -Parent $Executable) -NoNewWindow -PassThru
+    $Process = Start-Process -FilePath $Executable -WorkingDirectory (Split-Path -Parent $Executable) -WindowStyle Hidden -PassThru
     Set-Content -LiteralPath $PidFile -Value $Process.Id -Encoding ASCII
     $Process.WaitForExit()
     exit $Process.ExitCode

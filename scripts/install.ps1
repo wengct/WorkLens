@@ -87,13 +87,27 @@ try {
     Set-Content -LiteralPath $PortFile -Value $Port -Encoding ASCII
     Set-Content -LiteralPath (Join-Path $InstallDir "bin-dir.txt") -Value $BinDir -Encoding UTF8
 
-    $EscapedInstallDir = $InstallDir.Replace("%", "%%")
     $Shim = @"
 @echo off
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$EscapedInstallDir\scripts\manage.ps1" %*
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0worklens.ps1" %*
 exit /b %ERRORLEVEL%
 "@
+    $PowerShellShim = @'
+[CmdletBinding()]
+param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$RemainingArguments
+)
+
+$ErrorActionPreference = "Stop"
+$InstallDirFile = Join-Path $PSScriptRoot "worklens-install-dir.txt"
+$InstallDir = (Get-Content -LiteralPath $InstallDirFile -Raw).Trim()
+& (Join-Path $InstallDir "scripts\manage.ps1") @RemainingArguments -InstallDir $InstallDir
+exit $LASTEXITCODE
+'@
     Set-Content -LiteralPath (Join-Path $BinDir "worklens.cmd") -Value $Shim -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $BinDir "worklens.ps1") -Value $PowerShellShim -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $BinDir "worklens-install-dir.txt") -Value $InstallDir -Encoding UTF8
     Add-WorkLensBinToPath
 
     $Manager = Join-Path $InstalledScripts "manage.ps1"
