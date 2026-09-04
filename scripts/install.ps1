@@ -19,8 +19,12 @@ if ($InstallDir -eq $InstallRoot -or $InstallDir.Length -lt ($InstallRoot.Length
 $ReleaseDir = Split-Path -Parent $PSScriptRoot
 $VersionFile = Join-Path $ReleaseDir "VERSION"
 $Executable = Join-Path $ReleaseDir "WorkLens.exe"
+$ReleaseManager = Join-Path $ReleaseDir "scripts\manage.ps1"
 if (!(Test-Path -LiteralPath $VersionFile -PathType Leaf) -or !(Test-Path -LiteralPath $Executable -PathType Leaf)) {
     throw "Run install.ps1 from an extracted WorkLens Windows release package."
+}
+if (!(Test-Path -LiteralPath $ReleaseManager -PathType Leaf)) {
+    throw "The WorkLens release package does not contain scripts\manage.ps1."
 }
 
 $Version = (Get-Content -LiteralPath $VersionFile -Raw).Trim().TrimStart('v')
@@ -67,7 +71,8 @@ try {
     }
 
     if (Test-Path -LiteralPath $ExistingManager) {
-        & $ExistingManager stop -InstallDir $InstallDir
+        # The installed manager may be the version whose stop behavior is being fixed.
+        & $ReleaseManager stop -InstallDir $InstallDir
     }
 
     if (Test-Path -LiteralPath $StagingDir) {

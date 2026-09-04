@@ -48,7 +48,20 @@ try {
     if ($RemainingListener) { throw "Stopping left an installed WorkLens process listening after its PID file was lost." }
     & $InstalledManagerPath start -InstallDir $InstallDir
 
-    # Reinstalling the same version must be safe and must preserve the database.
+    # Updating must use the release manager when the installed manager cannot stop an orphaned process.
+    $LegacyManager = @'
+[CmdletBinding()]
+param(
+    [Parameter(Position = 0)]
+    [string]$Command,
+    [string]$InstallDir
+)
+throw "The legacy WorkLens manager cannot stop the installed process."
+'@
+    Set-Content -LiteralPath $InstalledManagerPath -Value $LegacyManager -Encoding UTF8
+    Remove-Item -LiteralPath (Join-Path $InstallDir "app.pid") -Force
+
+    # Reinstalling the same version must recover safely and must preserve the database.
     & $InstallScript -InstallDir $InstallDir -BinDir $BinDir -Port $Port -NoAutostart -NoOpenBrowser
     $PathEntries = @([Environment]::GetEnvironmentVariable("Path", "User") -split ";")
     if (@($PathEntries | Where-Object { $_ -ieq $BinDir }).Count -ne 1) { throw "Reinstalling duplicated the command directory in the user PATH." }
