@@ -248,7 +248,7 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
 
         try
         {
-            foreach (var line in File.ReadLines(path))
+            foreach (var line in ReadSharedLines(path))
             {
                 if (string.IsNullOrWhiteSpace(line))
                 {
@@ -304,7 +304,7 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
         var attachmentCount = 0;
         var ordinal = 0;
 
-        foreach (var line in File.ReadLines(file.FullName))
+        foreach (var line in ReadSharedLines(file.FullName))
         {
             ordinal++;
             if (string.IsNullOrWhiteSpace(line))
@@ -429,6 +429,20 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
             archived,
             attachmentCount,
             messages);
+    }
+
+    private static IEnumerable<string> ReadSharedLines(string path)
+    {
+        using var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        while (reader.ReadLine() is { } line)
+        {
+            yield return line;
+        }
     }
 
     private static List<CodexSessionMessage> DeduplicateMessages(IEnumerable<CodexSessionMessage> messages)

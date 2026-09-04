@@ -1,0 +1,123 @@
+@using System.Text.Json
+@using WorkLens.Domain
+
+@if (Metadata is not null)
+{
+    <details class="ado-pr-details">
+        <summary>Azure DevOps PR 詳情（@(Evidence.Kind == EvidenceKind.AzureDevOpsPullRequestClosed ? "結案" : "建立")）</summary>
+        <div class="ado-pr-meta">
+            <span>狀態：@Metadata.Status@(Metadata.IsDraft ? "（Draft）" : string.Empty)</span>
+            <span>Project：@Metadata.ProjectName</span>
+            <span>Repo：@Metadata.RepositoryName</span>
+            <span>分支：@Metadata.SourceBranch → @Metadata.TargetBranch</span>
+            <span>建立者：@Metadata.CreatorName</span>
+            <span>建立：@Metadata.CreationDate.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+            @if (Metadata.ClosedDate is DateTimeOffset closedDate)
+            {
+                <span>結案：@closedDate.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</span>
+            }
+        </div>
+        @if (PullRequestWebUrl(Metadata) is string pullRequestUrl)
+        {
+            <a class="timeline-link" href="@pullRequestUrl" target="_blank" rel="noreferrer">在 Azure DevOps 開啟 PR</a>
+        }
+        @if (!string.IsNullOrWhiteSpace(Metadata.Description))
+        {
+            <div class="ado-pr-description">@PlainText(Metadata.Description)</div>
+        }
+        <div class="ado-work-items">
+            <strong>關聯 Work Items（@Metadata.WorkItems.Count）</strong>
+            @if (Metadata.WorkItems.Count == 0)
+            {
+                <span class="muted">此 PR 沒有直接關聯的 work item。</span>
+            }
+            else
+            {
+                @foreach (var item in Metadata.WorkItems)
+                {
+                    <div class="ado-work-item">
+                        <div class="ado-work-item-heading">
+                            <strong>#@item.Id · @item.Type · @item.State</strong>
+                            @if (WorkItemWebUrl(item) is string workItemUrl)
+                            {
+                                <a href="@workItemUrl" target="_blank" rel="noreferrer">開啟</a>
+                            }
+                        </div>
+                        <div class="timeline-title">@item.Title</div>
+                        @if (!string.IsNullOrWhiteSpace(item.AssignedTo))
+                        {
+                            <div class="ado-work-item-field"><strong>Assigned To：</strong>@item.AssignedTo</div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(item.Tags))
+                        {
+                            <div class="ado-work-item-field"><strong>Tags：</strong>@item.Tags</div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(item.Description))
+                        {
+                            <div class="ado-work-item-field"><strong>Description：</strong>@PlainText(item.Description)</div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(item.AcceptanceCriteria))
+                        {
+                            <div class="ado-work-item-field"><strong>Acceptance Criteria：</strong>@PlainText(item.AcceptanceCriteria)</div>
+                        }
+                        <details class="ado-work-item-extra">
+                            <summary>其他完整欄位與 relations</summary>
+                            @foreach (var field in item.Fields.OrderBy(field => field.Key, StringComparer.OrdinalIgnoreCase))
+                            {
+                                <div class="ado-work-item-field"><strong>@field.Key：</strong>@FormatJson(field.Value)</div>
+                            }
+                            @if (item.Relations.Count > 0)
+                            {
+                                <div class="ado-work-item-field"><strong>Relations：</strong></div>
+                                @foreach (var relation in item.Relations)
+                                {
+                                    <div class="ado-work-item-field">@(relation.Rel) · @relation.Url@if (!string.IsNullOrWhiteSpace(relation.AttributesJson)) { <text> · @relation.AttributesJson</text> }</div>
+                                }
+                            }
+                        </details>
+                    </div>
+                }
+            }
+        </div>
+    </details>
+}
+
+@code {
+    [Parameter]
+    public SourceEvidence Evidence { get; set; } = new();
+
+    private AzureDevOpsPullRequestMetadata? Metadata =>
+        SourceSettingsSerializer.DeserializeAzureDevOpsMetadata(Evidence.MetadataJson);
+
+    private static string PlainText(string value)
+    {
+        return AzureDevOpsCliService.ToPlainText(value);
+    }
+
+    private static string FormatJson(JsonElement value) =>
+        value.ValueKind == JsonValueKind.String
+            ? PlainText(value.GetString() ?? string.Empty)
+            : value.GetRawText();
+
+    private static string? PullRequestWebUrl(AzureDevOpsPullRequestMetadata metadata)
+    {
+        return AzureDevOpsCliService.ToPullRequestWebUrl(
+            metadata.Url,
+            metadata.PullRequestId,
+            metadata.OrganizationUrl,
+            metadata.ProjectId,
+            metadata.RepositoryName);
+    }
+
+    private string? WorkItemWebUrl(AzureDevOpsWorkItemMetadata item)
+    {
+        var project = !string.IsNullOrWhiteSpace(Metadata?.ProjectId)
+            ? Metadata.ProjectId
+            : Metadata?.ProjectName;
+        return AzureDevOpsCliService.ToWorkItemWebUrl(
+            item.Url,
+            item.Id,
+            Metadata?.OrganizationUrl,
+            project);
+    }
+}

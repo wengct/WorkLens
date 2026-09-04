@@ -221,6 +221,38 @@ public sealed class CodexSourceAdapterTests : IDisposable
     }
 
     [Fact]
+    public async Task Collection_reads_codex_files_while_codex_is_appending()
+    {
+        var id = Guid.NewGuid();
+        var sessionPath = SessionPath(id);
+        var indexPath = Path.Combine(testRoot, "session_index.jsonl");
+        await WriteMinimalSessionAsync(id, "2026-09-02T01:00:00Z", "進行中的工作");
+        await File.WriteAllLinesAsync(indexPath,
+        [
+            JsonSerializer.Serialize(new { id, thread_name = "進行中的 Codex 會話", updated_at = "2026-09-02T01:01:00Z" })
+        ]);
+        await using var sessionWriter = File.Open(
+            sessionPath,
+            FileMode.Open,
+            FileAccess.Write,
+            FileShare.ReadWrite | FileShare.Delete);
+        await using var indexWriter = File.Open(
+            indexPath,
+            FileMode.Open,
+            FileAccess.Write,
+            FileShare.ReadWrite | FileShare.Delete);
+
+        var batch = await CreateAdapter().CollectAsync(
+            new CollectionRequest(CreateSource(), DateTimeOffset.Parse("2026-09-01T00:00:00Z")),
+            CancellationToken.None);
+
+        Assert.Empty(batch.Warnings);
+        var evidence = Assert.Single(batch.Evidence);
+        Assert.Equal("進行中的 Codex 會話", evidence.Title);
+        Assert.Equal("進行中的工作", evidence.CommitMessage);
+    }
+
+    [Fact]
     public async Task Wsl_home_resolver_uses_selected_distro_and_custom_linux_path()
     {
         var runner = new RecordingProcessRunner(new ProcessResult(

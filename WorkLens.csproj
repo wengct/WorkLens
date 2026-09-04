@@ -15,5 +15,9 @@
     <Content Remove="tests\**" />
     <None Remove="tests\**" />
     <EmbeddedResource Remove="tests\**" />
+    <Compile Remove="site\**" />
+    <Content Remove="site\**" />
+    <None Remove="site\**" />
+    <EmbeddedResource Remove="site\**" />
   </ItemGroup>
 </Project>

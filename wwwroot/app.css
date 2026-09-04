@@ -399,6 +399,8 @@ button.calendar-day:hover { border-color: #aeb8dc; transform: translateY(-1px); 
     .summary-history-column { display: contents; }
     .summary-history-column .history-calendar-panel { order: -1; }
     .summary-history-column .history-day-detail { order: 1; }
+    .ado-scope-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ado-scope-remove { justify-self: start; }
 }
 
 @media (max-width: 650px) {
@@ -441,6 +443,7 @@ button.calendar-day:hover { border-color: #aeb8dc; transform: translateY(-1px); 
     .modal-backdrop { align-items: end; padding: 0; }
     .modal-dialog, .modal-dialog-wide { width: 100%; max-height: 92vh; border-radius: 16px 16px 0 0; }
     .modal-actions .button { flex: 1; }
+    .ado-scope-row { grid-template-columns: 1fr; }
     .history-calendar-panel { padding: 14px 10px; }
     .history-calendar-panel .panel-heading { align-items: flex-start; flex-direction: column; }
     .history-calendar-panel .panel-heading .button-row { width: 100%; }
@@ -466,6 +469,128 @@ button.calendar-day:hover { border-color: #aeb8dc; transform: translateY(-1px); 
 }
 .codex-session-details {
     margin-top: 8px;
+}
+
+.ado-source-setup {
+    display: grid;
+    gap: 14px;
+}
+
+.compact-heading {
+    margin-bottom: 0;
+}
+
+.source-diagnostics,
+.install-instructions {
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: #fafbff;
+    font-size: 13px;
+}
+
+.source-diagnostics-title {
+    font-weight: 700;
+}
+
+.source-diagnostics-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.source-diagnostics-detail,
+.install-instructions span {
+    color: var(--muted);
+}
+
+.install-instructions code {
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: #edf0f8;
+    color: #3d4963;
+    font-family: Consolas, monospace;
+    font-size: 12px;
+}
+
+.ado-scope-editor {
+    display: grid;
+    gap: 12px;
+}
+
+.ado-scope-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px 14px;
+}
+
+.ado-scope-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+    gap: 10px;
+    align-items: end;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: #fff;
+}
+
+.ado-scope-remove {
+    margin-bottom: 1px;
+}
+
+.ado-pr-details {
+    margin-top: 8px;
+}
+
+.ado-pr-details > summary,
+.ado-work-item-extra > summary {
+    cursor: pointer;
+    color: var(--accent, #6d7cff);
+}
+
+.ado-pr-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    margin: 10px 0;
+    color: var(--muted, #697386);
+    font-size: 0.88rem;
+}
+
+.ado-pr-description,
+.ado-work-item-field {
+    margin-top: 8px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.ado-work-items {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+.ado-work-item {
+    padding: 10px 12px;
+    border-left: 3px solid #4f9dce;
+    border-radius: 6px;
+    background: rgba(79, 157, 206, 0.07);
+}
+
+.ado-work-item-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--muted, #697386);
+    font-size: 0.85rem;
+}
+
+.ado-work-item-extra {
+    margin-top: 10px;
 }
 
 .codex-session-details > summary {

@@ -66,6 +66,48 @@ public sealed class SourceConfigurationService(
 
             source.SettingsJson = SourceSettingsSerializer.Serialize(codexSettings);
         }
+        else if (source.SourceType == ActivitySourceType.AzureDevOpsPullRequest)
+        {
+            var settings = SourceSettingsSerializer.DeserializeAzureDevOps(source.SettingsJson);
+            settings.OrganizationUrl = SourceSettingsSerializer.NormalizeAzureDevOpsOrganizationUrl(settings.OrganizationUrl);
+            if (settings.OrganizationUrl.Length == 0)
+            {
+                throw new ArgumentException("Azure DevOps PR 來源必須設定 Organization URL。", nameof(source));
+            }
+
+            if (!AzureDevOpsCliService.IsSupportedOrganizationUrl(settings.OrganizationUrl))
+            {
+                throw new ArgumentException("Azure DevOps PR 來源的 Organization URL 必須是 Azure DevOps Services HTTPS URL。", nameof(source));
+            }
+
+            var scopes = settings.Scopes
+                .Select(scope =>
+                {
+                    scope.ProjectId = scope.ProjectId.Trim();
+                    scope.ProjectName = scope.ProjectName.Trim();
+                    scope.RepositoryId = scope.RepositoryId.Trim();
+                    scope.RepositoryName = scope.RepositoryName.Trim();
+                    scope.TargetBranch = SourceSettingsSerializer.NormalizeAzureDevOpsBranch(scope.TargetBranch);
+                    return scope;
+                })
+                .ToList();
+            if (scopes.Count == 0 || scopes.Any(scope =>
+                    scope.ProjectId.Length == 0 ||
+                    scope.RepositoryId.Length == 0 ||
+                    scope.TargetBranch.Length == 0))
+            {
+                throw new ArgumentException("Azure DevOps PR 來源至少需要一組完整的 Project、Repo 與 target branch。", nameof(source));
+            }
+
+            if (scopes.GroupBy(SourceSettingsSerializer.AzureDevOpsScopeKey, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
+            {
+                throw new ArgumentException("Azure DevOps PR 來源不可重複設定相同的 Project、Repo 與 target branch。", nameof(source));
+            }
+
+            settings.Scopes = scopes;
+            source.ProjectId = null;
+            source.SettingsJson = SourceSettingsSerializer.Serialize(settings);
+        }
         source.UpdatedAt = DateTimeOffset.UtcNow;
         source.HealthStatus = source.Enabled ? SourceHealthStatus.Unavailable : SourceHealthStatus.Disabled;
 

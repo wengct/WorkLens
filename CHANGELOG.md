@@ -4,6 +4,17 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [尚未發布]
 
+### 修正
+
+- Codex 來源現在能以唯讀方式掃描仍由 Codex 寫入的索引與會話檔案，不再因 Windows 檔案共享模式而略過進行中的會話。
+- Azure DevOps PR 身分解析改用 `az ad signed-in-user show` 取得目前登入者的 Entra 身分與 UPN，不再要求 `az devops user show`；Entra ID 不會誤拿來和 ADO `createdBy.id` 比對，PR 本人篩選改用 UPN／帳號欄位核對，Graph 身分資料不可用時會顯示警告。
+- Azure DevOps PR 與關聯 work item 的連結會優先使用 Web UI URL；若 CLI 只回傳 `/_apis/` API URL，會轉換為可直接開啟的 PR／work item 頁面，並依資源類型重新建立舊資料連結，避免 work item 誤連到 PR。
+
+### 新增
+
+- 新增 Azure DevOps PR 資料來源，可設定多組 Project／Repo／target branch，僅收集 `az login` 目前使用者建立的 PR，並取得 PR 直接關聯的 work item 欄位與 relations。
+- Azure DevOps PR 設定頁新增 Azure CLI、Azure DevOps CLI extension 與登入身分檢測，並以輸入的 Organization URL 直接載入 Projects；同時提供各平台安裝說明（包含 `az extension add --name azure-devops` 與 `az login`）。
+
 ## [1.2.2] - 2026-09-04
 
 ### 修正

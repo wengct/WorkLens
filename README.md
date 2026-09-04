@@ -2,6 +2,34 @@
 
 WorkLens 是一個以本機優先為設計的個人工作歷程與工時回報網站。
 
+## 介面預覽
+
+### 工作填寫
+
+![工作填寫](screenshot/01.工作填寫.png)
+
+### 工作摘要
+
+![工作摘要](screenshot/02.工作摘要.png)
+
+![工作摘要明細](screenshot/02.工作摘要_2.png)
+
+### 資料來源
+
+![資料來源](screenshot/03.資料來源.png)
+
+### AI 設定
+
+![AI 設定](screenshot/04.AI%20設定.png)
+
+### Prompt 範本
+
+![Prompt 範本](screenshot/05.Prompt%20範本.png)
+
+### 排程設定
+
+![排程設定](screenshot/06.排程設定.png)
+
 ## 一鍵安裝
 
 GitHub Release 提供不需預先安裝 .NET 的 self-contained 版本。安裝完成後 WorkLens 會立即在本機啟動、開啟一次瀏覽器、將 `worklens` 指令加入目前使用者的 `PATH`，並設定成目前使用者登入後自動在背景執行。
@@ -59,7 +87,18 @@ $installer = irm https://raw.githubusercontent.com/wengct/WorkLens/main/scripts/
 curl -fsSL https://raw.githubusercontent.com/wengct/WorkLens/main/scripts/get.sh | bash -s -- --no-autostart --no-open-browser
 ```
 
-`Git`、Node.js、Chrome 與 `ask-bridge` 不會由安裝器自動安裝。它們是資料來源或 AI 功能的選用相依項，WorkLens 會在設定頁個別偵測。
+`Git`、Azure CLI、Azure DevOps CLI extension、Node.js、Chrome 與 `ask-bridge` 不會由安裝器自動安裝。它們是資料來源或 AI 功能的選用相依項，WorkLens 會在設定頁個別偵測。
+
+若要使用 Azure DevOps PR 資料來源，請先安裝 [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)，再安裝 Azure DevOps CLI extension：
+
+```shell
+az extension add --name azure-devops
+az login
+```
+
+Windows 也可以使用 `winget install --exact --id Microsoft.AzureCLI` 安裝 Azure CLI；macOS 與 Linux 請依 Microsoft 的平台安裝說明選擇 Homebrew 或套件管理器。WorkLens 只會透過 Azure CLI 讀取 Azure DevOps Services（不支援 Azure DevOps Server），Organization URL 支援 `https://dev.azure.com/<org>` 與 `https://<org>.visualstudio.com`；不會自動安裝 extension、修改 CLI defaults 或啟動互動登入；CLI 必須安裝在 WorkLens 執行的原生主機，不會從 Windows 呼叫 WSL 內的 CLI。
+
+設定來源時，WorkLens 會以 `az ad signed-in-user show` 取得目前登入者的 Entra 身分與 UPN。Entra object ID 與 Azure DevOps PR 的 `createdBy.id` 是不同識別碼，因此 PR 本人篩選會以 UPN／帳號欄位核對，不會直接比較兩者。
 
 ## 隱私與版控邊界
 
@@ -107,7 +146,7 @@ git push origin v1.0.0
 
 「工作摘要」將工作歷程與摘要放在同一頁：可用月曆選擇每日或每週期間、依專案與關鍵字篩選左側歷程，並在右側產生、編輯、AI 整理與匯出完整期間摘要。篩選不會改變摘要涵蓋的資料範圍；回補來源可針對單日或整週執行，且不會改變正常收集的 checkpoint。
 
-資料來源支援 Windows、macOS 與 WSL 的 Git 和 Codex。系統會從 `sessions` 與 `archived_sessions` 讀取本機會話、以 session id 去重，並保存 User／Codex 的可見文字對話；每日、每週及 AI 報告上下文只使用 User 訊息。Codex 資料目錄可自動偵測 `CODEX_HOME`／`~/.codex`，也可在來源設定中覆寫。
+資料來源支援 Windows、macOS 與 WSL 的 Git 和 Codex，也支援以 Azure DevOps CLI 讀取 Azure DevOps Services 的 PR。Azure DevOps PR 來源只會納入 `az login` 目前使用者建立的 PR，並取得 PR 直接關聯的 work item 欄位與 relations。系統會從 `sessions` 與 `archived_sessions` 讀取本機會話、以 session id 去重，並保存 User／Codex 的可見文字對話；每日、每週及 AI 報告上下文只使用 User 訊息。Codex 資料目錄可自動偵測 `CODEX_HOME`／`~/.codex`，也可在來源設定中覆寫。
 
 報告在人工紀錄或來源資料有實質異動時會標示為「需要重產」；重產會覆蓋同一期間的內容，並在覆蓋前要求確認。AI 整理可從 Prompt 範本庫選擇指令，系統仍固定驗證 JSON、工時與工作紀錄 ID；AI 完成後會直接儲存，手動修改文字時才需要另行儲存。
 

@@ -7,7 +7,8 @@ public enum ActivitySourceType
     WindowsCodex,
     WslCodex,
     MacOsGit,
-    MacOsCodex
+    MacOsCodex,
+    AzureDevOpsPullRequest
 }
 
 public enum SourceHealthStatus
@@ -32,7 +33,9 @@ public enum EvidenceKind
     ConflictObserved,
     BranchMoved,
     ReflogActivity,
-    CodexSession
+    CodexSession,
+    AzureDevOpsPullRequestCreated,
+    AzureDevOpsPullRequestClosed
 }
 
 public enum CommitReachabilityStatus

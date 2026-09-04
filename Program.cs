@@ -90,6 +90,7 @@ builder.Services.AddSingleton<DatabaseInitializer>();
 builder.Services.AddSingleton<ProcessRunner>();
 builder.Services.AddSingleton<IProcessRunner>(serviceProvider =>
     serviceProvider.GetRequiredService<ProcessRunner>());
+builder.Services.AddSingleton<AzureDevOpsCliService>();
 builder.Services.AddSingleton<AskBridgeService>();
 builder.Services.AddSingleton<IAiSecretProtector, AiSecretProtector>();
 builder.Services.AddHttpClient("AiProvider", client => client.Timeout = TimeSpan.FromMinutes(5));
@@ -129,6 +130,9 @@ builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
     new CodexSourceAdapter(
         serviceProvider.GetRequiredService<ProcessRunner>(),
         ActivitySourceType.MacOsCodex));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new AzureDevOpsPullRequestSourceAdapter(
+        serviceProvider.GetRequiredService<AzureDevOpsCliService>()));
 builder.Services.AddSingleton<SourceRegistry>();
 builder.Services.AddSingleton<SourceOrchestrator>();
 builder.Services.AddSingleton<ReportInvalidationService>();

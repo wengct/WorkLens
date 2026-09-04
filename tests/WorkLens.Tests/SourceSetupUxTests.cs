@@ -25,6 +25,24 @@ public sealed class SourceSetupUxTests
         Assert.Contains("進階設定", razor, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Setup_lists_azure_devops_cli_extension_and_uses_cascading_scope_fields()
+    {
+        var razor = await ReadSourcesPageAsync();
+
+        Assert.Contains("Azure DevOps PR", razor, StringComparison.Ordinal);
+        Assert.Contains("az extension add --name azure-devops", razor, StringComparison.Ordinal);
+        Assert.Contains("az login", razor, StringComparison.Ordinal);
+        Assert.Contains("az ad signed-in-user show", razor, StringComparison.Ordinal);
+        Assert.Contains("ADO Project", razor, StringComparison.Ordinal);
+        Assert.Contains("target branch", razor, StringComparison.Ordinal);
+        Assert.Contains("WorkLens Project", razor, StringComparison.Ordinal);
+        Assert.Contains("＋新增一組", razor, StringComparison.Ordinal);
+        Assert.DoesNotContain("Organization：無法存取", razor, StringComparison.Ordinal);
+        Assert.Contains("Projects：", razor, StringComparison.Ordinal);
+        Assert.Contains("visualstudio.com", razor, StringComparison.Ordinal);
+    }
+
     private static async Task<string> ReadSourcesPageAsync()
     {
         var path = Path.GetFullPath(Path.Combine(

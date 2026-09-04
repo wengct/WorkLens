@@ -1,6 +1,7 @@
 @page "/sources"
 @inject SourceConfigurationService SourceConfig
 @inject SourceOrchestrator Orchestrator
+@inject AzureDevOpsCliService AzureDevOpsCli
 @inject ToastService Toasts
 @implements IAsyncDisposable
 
@@ -48,12 +49,13 @@
     <div class="form-grid">
         <div class="field">
             <label for="sourceKind">要收集什麼？</label>
-            <select id="sourceKind" @bind="newKind">
+            <select id="sourceKind" @bind="newKind" @bind:after="SourceKindChangedAsync">
                 <option value="Git">Git repository</option>
                 <option value="Codex">Codex 工作紀錄</option>
+                <option value="AzureDevOps">Azure DevOps PR</option>
             </select>
         </div>
-        @if (SupportsWsl)
+        @if (SupportsWsl && newKind != SourceKind.AzureDevOps)
         {
             <div class="field">
                 <label for="sourceLocation">資料位於哪裡？</label>
@@ -69,7 +71,7 @@
             <input id="sourceName" @bind="newName" placeholder="留空將使用「@SuggestedSourceName」" />
             <span class="hint">可用來區分多組 repository 或不同的 Codex 資料目錄。</span>
         </div>
-        @if (newLocation == SourceLocation.Wsl)
+        @if (newKind != SourceKind.AzureDevOps && newLocation == SourceLocation.Wsl)
         {
             <div class="field">
                 <label for="distro">WSL Linux 環境</label>
@@ -77,6 +79,8 @@
                 <span class="hint">只有儲存後按「驗證」時才會偵測 WSL。</span>
             </div>
         }
+        @if (newKind != SourceKind.AzureDevOps)
+        {
         <div class="field">
             <label for="project">Project 映射</label>
             <select id="project" @bind="projectSelection">
@@ -84,9 +88,10 @@
                 @foreach (var project in projects)
                 {
                     <option value="@project.Id">@project.Name</option>
-                }
-            </select>
+            }
+        </select>
         </div>
+        }
         @if (newKind == SourceKind.Git)
         {
         <div class="field full">
@@ -139,6 +144,109 @@
                 <label for="codexHome">Codex 資料目錄（選填）</label>
                 <input id="codexHome" @bind="newCodexHome" placeholder="留空即自動偵測 CODEX_HOME 或 ~/.codex" />
                 <span class="hint">Windows 與 macOS 請填本機路徑；WSL 請填該 Linux 環境內的路徑。</span>
+            </div>
+        }
+        @if (newKind == SourceKind.AzureDevOps)
+        {
+            <div class="field full ado-source-setup">
+                <div class="panel-heading compact-heading">
+                    <div>
+                        <h3>Azure DevOps CLI 連線</h3>
+                        <p>WorkLens 只會使用目前主機的原生 Azure CLI；不會從 Windows 呼叫 WSL，也不會替你安裝、登入或變更 CLI 設定。</p>
+                    </div>
+                    <button type="button" class="button button-secondary button-small" @onclick="DiagnoseAzureDevOpsAsync" disabled="@isLoadingAdoOptions">@(isLoadingAdoOptions ? "檢測中…" : "重新檢測")</button>
+                </div>
+                <div class="field">
+                    <label for="adoOrganization">Azure DevOps Organization URL</label>
+                    <input id="adoOrganization" value="@newAdoOrganization" @oninput="HandleAdoOrganizationInput" @onblur="DiagnoseAzureDevOpsAsync" placeholder="https://dev.azure.com/contoso" />
+                    <span class="hint">只支援 Azure DevOps Services（不支援 Azure DevOps Server）；支援 https://dev.azure.com/&lt;org&gt; 與 https://&lt;org&gt;.visualstudio.com，不同 Organization 請建立不同來源。</span>
+                </div>
+                @if (adoDiagnostics is not null)
+                {
+                    <div class="source-diagnostics" aria-live="polite">
+                        <div class="source-diagnostics-title @(adoDiagnostics.IsValid ? "text-success" : "text-warning")">@adoDiagnostics.Summary</div>
+                        <div class="source-diagnostics-grid">
+                            <span class="badge @(adoDiagnostics.CliInstalled ? "badge-ready" : "badge-error")">Azure CLI：@(adoDiagnostics.CliInstalled ? adoDiagnostics.CliVersion ?? "已安裝" : "未安裝")</span>
+                            <span class="badge @(adoDiagnostics.ExtensionInstalled ? "badge-ready" : "badge-error")">Azure DevOps extension：@(adoDiagnostics.ExtensionInstalled ? adoDiagnostics.ExtensionVersion ?? "已安裝" : "未安裝")</span>
+                            <span class="badge @(adoDiagnostics.IsLoggedIn ? "badge-ready" : "badge-error")">登入：@(adoDiagnostics.IsLoggedIn ? adoDiagnostics.AccountName ?? "已登入" : "未登入")</span>
+                            <span class="badge @(adoDiagnostics.IsInteractiveUser ? "badge-ready" : "badge-error")">一般使用者：@(adoDiagnostics.IsInteractiveUser ? "是" : "否")</span>
+                            @if (!string.IsNullOrWhiteSpace(newAdoOrganization) && adoDiagnostics.IsValid)
+                            {
+                                <span class="badge @(adoProjectLoadError is null ? "badge-ready" : "badge-error")">Projects：@(adoProjectLoadError is null ? $"已載入 {adoProjects.Count} 個" : "載入失敗")</span>
+                            }
+                        </div>
+                        @foreach (var detail in adoDiagnostics.Details)
+                        {
+                            <div class="source-diagnostics-detail">@detail</div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(adoProjectLoadError))
+                        {
+                            <div class="source-diagnostics-detail text-warning">Projects 載入失敗：@adoProjectLoadError</div>
+                        }
+                    </div>
+                }
+                <div class="install-instructions">
+                    <strong>安裝與登入方式</strong>
+                    <span>Windows：安裝 <a href="https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-windows" target="_blank" rel="noreferrer">Azure CLI</a>（或執行 <code>winget install --exact --id Microsoft.AzureCLI</code>）。</span>
+                    <span>macOS：依 <a href="https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-macos" target="_blank" rel="noreferrer">官方說明</a> 使用 Homebrew 安裝。</span>
+                    <span>Linux：依 <a href="https://learn.microsoft.com/en-us/cli/azure/install-azure-cli-linux" target="_blank" rel="noreferrer">官方說明</a> 使用套件管理器安裝。</span>
+                    <span>所有平台都要再安裝 Azure DevOps CLI extension：<code>az extension add --name azure-devops</code>。</span>
+                    <span>最後執行 <code>az login</code>，完成後回到此頁按「重新檢測」。</span>
+                    <span class="hint">WorkLens 會以 <code>az ad signed-in-user show</code> 取得登入者的 UPN；Entra object ID 不等同 ADO PR 的 <code>createdBy.id</code>，不會直接拿來比對。</span>
+                </div>
+                <div class="ado-scope-editor">
+                    <div class="ado-scope-heading">
+                        <strong>PR 收集組合</strong>
+                        <span class="hint">只會取得目前登入者建立、且 target branch 符合的 PR。</span>
+                    </div>
+                    @foreach (var scope in adoScopes)
+                    {
+                        <div class="ado-scope-row" @key="scope">
+                            <div class="field">
+                                <label>ADO Project</label>
+                                <select value="@scope.ProjectId" @onchange="eventArgs => ChangeAdoProjectAsync(scope, eventArgs.Value?.ToString())" disabled="@isLoadingAdoOptions">
+                                    <option value="">請先選擇 Project</option>
+                                    @foreach (var project in adoProjects)
+                                    {
+                                        <option value="@project.Id">@project.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label>Repo</label>
+                                <select value="@scope.RepositoryId" @onchange="eventArgs => ChangeAdoRepositoryAsync(scope, eventArgs.Value?.ToString())" disabled="@(isLoadingAdoOptions || scope.Repositories.Count == 0)">
+                                    <option value="">請先選擇 Repo</option>
+                                    @foreach (var repository in scope.Repositories)
+                                    {
+                                        <option value="@repository.Id">@repository.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label>target branch</label>
+                                <select value="@scope.TargetBranch" @onchange="eventArgs => ChangeAdoBranch(scope, eventArgs.Value?.ToString())" disabled="@(isLoadingAdoOptions || scope.Branches.Count == 0)">
+                                    <option value="">請選擇 target branch</option>
+                                    @foreach (var branch in scope.Branches)
+                                    {
+                                        <option value="@branch.Id">@branch.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label>WorkLens Project</label>
+                                <select value="@(scope.WorkLensProjectId?.ToString() ?? string.Empty)" @onchange="eventArgs => ChangeWorkLensProject(scope, eventArgs.Value?.ToString())">
+                                    <option value="">待分類</option>
+                                    @foreach (var project in projects)
+                                    {
+                                        <option value="@project.Id">@project.Name</option>
+                                    }
+                                </select>
+                            </div>
+                            <button type="button" class="button button-danger button-small ado-scope-remove" @onclick="() => RemoveAdoScope(scope)" disabled="@(adoScopes.Count == 1)">移除</button>
+                        </div>
+                    }
+                    <button type="button" class="button button-secondary button-small" @onclick="AddAdoScope" disabled="@isLoadingAdoOptions">＋新增一組</button>
+                </div>
             </div>
         }
         <details class="source-advanced full">
@@ -210,7 +318,7 @@
     {
         <div class="empty-state">
             <h3>目前是純人工模式</h3>
-            <p>這是預設狀態。你可以稍後再新增目前平台的 Git 或 Codex 來源。</p>
+            <p>這是預設狀態。你可以稍後再新增目前平台的 Git、Codex 或 Azure DevOps PR 來源。</p>
             <button type="button" class="button button-primary" @onclick="BeginAdd">新增第一個來源</button>
         </div>
     }
@@ -222,6 +330,9 @@
             var sourceIsValidating = validatingSourceIds.Contains(source.Id);
             var sourceIsStopping = stoppingSourceIds.Contains(source.Id);
             var sourceIsBusy = sourceIsCollecting || sourceIsValidating;
+            var adoSettings = IsAdoType(source.SourceType)
+                ? SourceSettingsSerializer.DeserializeAzureDevOps(source.SettingsJson)
+                : null;
             <div class="source-card">
                 <div>
                     <div class="source-title">
@@ -242,10 +353,14 @@
                         {
                             <span class="text-danger">@source.LastError</span>
                         }
+                        @if (adoSettings is not null)
+                        {
+                            <span> · @adoSettings.Scopes.Count 組 · @adoSettings.OrganizationUrl</span>
+                        }
                     </div>
                 </div>
                 <div class="source-actions">
-                    <button class="button button-secondary button-small" @onclick="() => BeginEdit(source)" disabled="@sourceIsBusy">編輯</button>
+                    <button class="button button-secondary button-small" @onclick="() => BeginEditAsync(source)" disabled="@sourceIsBusy">編輯</button>
                     <button class="button button-secondary button-small" @onclick="() => ValidateAsync(source.Id)" disabled="@sourceIsBusy">@(sourceIsValidating ? "驗證中…" : "驗證")</button>
                     @if (sourceIsCollecting)
                     {
@@ -300,6 +415,7 @@
     private SourceLocation newLocation = SourceLocation.Native;
     private string newDistro = string.Empty;
     private string newCodexHome = string.Empty;
+    private string newAdoOrganization = string.Empty;
     private List<string> repositoryPaths = [];
     private string repositoryPathInput = string.Empty;
     private List<string> authorEmails = [];
@@ -309,6 +425,11 @@
     private int newImportDays = 7;
     private bool newEnabled;
     private bool newIncludeInAi;
+    private AzureDevOpsCliDiagnostics? adoDiagnostics;
+    private IReadOnlyList<AzureDevOpsOption> adoProjects = [];
+    private string? adoProjectLoadError;
+    private readonly List<AzureDevOpsScopeForm> adoScopes = [];
+    private bool isLoadingAdoOptions;
     private Guid? editingSourceId;
     private Guid? resetSourceId;
     private bool isResettingCheckpoint;
@@ -367,6 +488,34 @@
             return;
         }
 
+        if (newType == ActivitySourceType.AzureDevOpsPullRequest)
+        {
+            var organization = SourceSettingsSerializer.NormalizeAzureDevOpsOrganizationUrl(newAdoOrganization);
+            if (!AzureDevOpsCliService.IsSupportedOrganizationUrl(organization))
+            {
+                SetError("請輸入有效的 Azure DevOps Services Organization HTTPS URL。");
+                return;
+            }
+
+            if (adoScopes.Count == 0 || adoScopes.Any(scope =>
+                    string.IsNullOrWhiteSpace(scope.ProjectId) ||
+                    string.IsNullOrWhiteSpace(scope.RepositoryId) ||
+                    string.IsNullOrWhiteSpace(scope.ToSettings().TargetBranch)))
+            {
+                SetError("Azure DevOps PR 來源至少需要一組完整的 Project、Repo 與 target branch。");
+                return;
+            }
+
+            var scopeKeys = adoScopes
+                .Select(scope => SourceSettingsSerializer.AzureDevOpsScopeKey(scope.ToSettings()))
+                .ToList();
+            if (scopeKeys.Count != scopeKeys.Distinct(StringComparer.OrdinalIgnoreCase).Count())
+            {
+                SetError("Azure DevOps PR 來源不可重複設定相同的 Project、Repo 與 target branch。");
+                return;
+            }
+        }
+
         var existing = editingSourceId is Guid id
             ? sources.FirstOrDefault(source => source.Id == id)
             : null;
@@ -399,11 +548,17 @@
                     AuthorEmails = configuredAuthorEmails,
                     Distro = newType == ActivitySourceType.WslGit ? newDistro.Trim() : null
                 })
-                : SourceSettingsSerializer.Serialize(new CodexSourceSettings
-                {
-                    CodexHome = string.IsNullOrWhiteSpace(newCodexHome) ? null : newCodexHome.Trim(),
-                    Distro = newType == ActivitySourceType.WslCodex ? newDistro.Trim() : null
-                })
+                : IsAdoType(newType)
+                    ? SourceSettingsSerializer.Serialize(new AzureDevOpsSourceSettings
+                    {
+                        OrganizationUrl = SourceSettingsSerializer.NormalizeAzureDevOpsOrganizationUrl(newAdoOrganization),
+                        Scopes = adoScopes.Select(scope => scope.ToSettings()).ToList()
+                    })
+                    : SourceSettingsSerializer.Serialize(new CodexSourceSettings
+                    {
+                        CodexHome = string.IsNullOrWhiteSpace(newCodexHome) ? null : newCodexHome.Trim(),
+                        Distro = newType == ActivitySourceType.WslCodex ? newDistro.Trim() : null
+                    })
         };
         await SourceConfig.SaveAsync(source);
         Toasts.Success(existing is null
@@ -414,7 +569,7 @@
         activeWorkspace = SourceWorkspace.Overview;
     }
 
-    private void BeginEdit(ActivitySource source)
+    private async Task BeginEditAsync(ActivitySource source)
     {
         editingSourceId = source.Id;
         newName = source.DisplayName;
@@ -426,6 +581,25 @@
             newCodexHome = string.Empty;
             repositoryPaths = settings.RepositoryPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             authorEmails = SourceSettingsSerializer.NormalizeAuthorEmails(settings.AuthorEmails).ToList();
+        }
+        else if (IsAdoType(source.SourceType))
+        {
+            var settings = SourceSettingsSerializer.DeserializeAzureDevOps(source.SettingsJson);
+            newAdoOrganization = settings.OrganizationUrl;
+            newDistro = string.Empty;
+            newCodexHome = string.Empty;
+            repositoryPaths.Clear();
+            authorEmails.Clear();
+            adoScopes.Clear();
+            foreach (var scope in settings.Scopes)
+            {
+                adoScopes.Add(new AzureDevOpsScopeForm(scope));
+            }
+
+            if (adoScopes.Count == 0)
+            {
+                adoScopes.Add(new AzureDevOpsScopeForm());
+            }
         }
         else
         {
@@ -444,6 +618,10 @@
         newIncludeInAi = source.IncludeInAi;
         activeWorkspace = SourceWorkspace.Setup;
         Toasts.Info($"正在編輯「{source.DisplayName}」。儲存後不會清除既有 checkpoint 或歷程。");
+        if (IsAdoType(source.SourceType))
+        {
+            await DiagnoseAzureDevOpsAsync();
+        }
     }
 
     private void BeginAdd()
@@ -455,6 +633,179 @@
     private void SelectWorkspace(SourceWorkspace workspace)
     {
         activeWorkspace = workspace;
+    }
+
+    private async Task SourceKindChangedAsync()
+    {
+        if (newKind != SourceKind.AzureDevOps)
+        {
+            return;
+        }
+
+        newLocation = SourceLocation.Native;
+        if (adoScopes.Count == 0)
+        {
+            adoScopes.Add(new AzureDevOpsScopeForm());
+        }
+
+        await DiagnoseAzureDevOpsAsync();
+    }
+
+    private void HandleAdoOrganizationInput(ChangeEventArgs args)
+    {
+        newAdoOrganization = args.Value?.ToString() ?? string.Empty;
+        adoDiagnostics = null;
+        adoProjects = [];
+        adoProjectLoadError = null;
+        foreach (var scope in adoScopes)
+        {
+            scope.ClearSelections();
+        }
+    }
+
+    private async Task DiagnoseAzureDevOpsAsync()
+    {
+        if (newKind != SourceKind.AzureDevOps || isLoadingAdoOptions)
+        {
+            return;
+        }
+
+        isLoadingAdoOptions = true;
+        try
+        {
+            adoDiagnostics = await AzureDevOpsCli.DiagnoseAsync(newAdoOrganization);
+            if (adoDiagnostics.IsValid && !string.IsNullOrWhiteSpace(newAdoOrganization))
+            {
+                await LoadAdoProjectsAsync();
+            }
+        }
+        catch (AzureDevOpsCliException exception)
+        {
+            adoDiagnostics = new AzureDevOpsCliDiagnostics(
+                true, null, true, null, false, null, false, false, exception.Message, []);
+        }
+        finally
+        {
+            isLoadingAdoOptions = false;
+        }
+    }
+
+    private async Task LoadAdoProjectsAsync()
+    {
+        adoProjectLoadError = null;
+        try
+        {
+            adoProjects = await AzureDevOpsCli.GetProjectsAsync(newAdoOrganization);
+            foreach (var scope in adoScopes)
+            {
+                scope.ProjectName = adoProjects.FirstOrDefault(project =>
+                    string.Equals(project.Id, scope.ProjectId, StringComparison.OrdinalIgnoreCase))?.Name ?? scope.ProjectName;
+                if (scope.ProjectId.Length > 0)
+                {
+                    await LoadAdoRepositoriesAsync(scope);
+                }
+            }
+        }
+        catch (AzureDevOpsCliException exception)
+        {
+            adoProjects = [];
+            adoProjectLoadError = exception.Message;
+            Toasts.Error(exception.Message);
+        }
+    }
+
+    private async Task ChangeAdoProjectAsync(AzureDevOpsScopeForm scope, string? projectId)
+    {
+        scope.ProjectId = projectId?.Trim() ?? string.Empty;
+        scope.ProjectName = adoProjects.FirstOrDefault(project =>
+            string.Equals(project.Id, scope.ProjectId, StringComparison.OrdinalIgnoreCase))?.Name ?? string.Empty;
+        scope.RepositoryId = string.Empty;
+        scope.RepositoryName = string.Empty;
+        scope.TargetBranch = string.Empty;
+        scope.Repositories.Clear();
+        scope.Branches.Clear();
+        if (scope.ProjectId.Length > 0)
+        {
+            await LoadAdoRepositoriesAsync(scope);
+        }
+    }
+
+    private async Task LoadAdoRepositoriesAsync(AzureDevOpsScopeForm scope)
+    {
+        if (scope.ProjectId.Length == 0 || string.IsNullOrWhiteSpace(newAdoOrganization))
+        {
+            return;
+        }
+
+        try
+        {
+            scope.Repositories = (await AzureDevOpsCli.GetRepositoriesAsync(newAdoOrganization, scope.ProjectId)).ToList();
+            if (!scope.Repositories.Any(repository => string.Equals(repository.Id, scope.RepositoryId, StringComparison.OrdinalIgnoreCase)))
+            {
+                scope.RepositoryId = string.Empty;
+                scope.RepositoryName = string.Empty;
+                scope.Branches.Clear();
+                scope.TargetBranch = string.Empty;
+            }
+            else
+            {
+                scope.RepositoryName = scope.Repositories.First(repository =>
+                    string.Equals(repository.Id, scope.RepositoryId, StringComparison.OrdinalIgnoreCase)).Name;
+                scope.Branches = (await AzureDevOpsCli.GetBranchesAsync(
+                    newAdoOrganization,
+                    scope.ProjectId,
+                    scope.RepositoryId)).ToList();
+            }
+        }
+        catch (AzureDevOpsCliException exception)
+        {
+            Toasts.Error(exception.Message);
+        }
+    }
+
+    private async Task ChangeAdoRepositoryAsync(AzureDevOpsScopeForm scope, string? repositoryId)
+    {
+        scope.RepositoryId = repositoryId?.Trim() ?? string.Empty;
+        scope.RepositoryName = scope.Repositories.FirstOrDefault(repository =>
+            string.Equals(repository.Id, scope.RepositoryId, StringComparison.OrdinalIgnoreCase))?.Name ?? string.Empty;
+        scope.TargetBranch = string.Empty;
+        scope.Branches.Clear();
+        if (scope.RepositoryId.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            scope.Branches = (await AzureDevOpsCli.GetBranchesAsync(
+                newAdoOrganization,
+                scope.ProjectId,
+                scope.RepositoryId)).ToList();
+        }
+        catch (AzureDevOpsCliException exception)
+        {
+            Toasts.Error(exception.Message);
+        }
+    }
+
+    private static void ChangeAdoBranch(AzureDevOpsScopeForm scope, string? branch)
+    {
+        scope.TargetBranch = SourceSettingsSerializer.NormalizeAzureDevOpsBranch(branch);
+    }
+
+    private static void ChangeWorkLensProject(AzureDevOpsScopeForm scope, string? projectId)
+    {
+        scope.WorkLensProjectId = Guid.TryParse(projectId, out var parsed) ? parsed : null;
+    }
+
+    private void AddAdoScope() => adoScopes.Add(new AzureDevOpsScopeForm());
+
+    private void RemoveAdoScope(AzureDevOpsScopeForm scope)
+    {
+        if (adoScopes.Count > 1)
+        {
+            adoScopes.Remove(scope);
+        }
     }
 
     private void CancelEdit()
@@ -776,6 +1127,11 @@
         newLocation = SourceLocation.Native;
         newDistro = string.Empty;
         newCodexHome = string.Empty;
+        newAdoOrganization = string.Empty;
+        adoDiagnostics = null;
+        adoProjects = [];
+        adoProjectLoadError = null;
+        adoScopes.Clear();
         repositoryPaths.Clear();
         repositoryPathInput = string.Empty;
         authorEmails.Clear();
@@ -796,6 +1152,9 @@
     private static bool IsCodexType(ActivitySourceType type) =>
         type is ActivitySourceType.WindowsCodex or ActivitySourceType.WslCodex or ActivitySourceType.MacOsCodex;
 
+    private static bool IsAdoType(ActivitySourceType type) =>
+        type == ActivitySourceType.AzureDevOpsPullRequest;
+
     private static string SourceTypeText(ActivitySourceType type) => type switch
     {
         ActivitySourceType.WindowsGit => "Windows Git",
@@ -804,6 +1163,7 @@
         ActivitySourceType.WslCodex => "WSL Codex",
         ActivitySourceType.MacOsGit => "macOS Git",
         ActivitySourceType.MacOsCodex => "macOS Codex",
+        ActivitySourceType.AzureDevOpsPullRequest => "Azure DevOps PR",
         _ => type.ToString()
     };
 
@@ -811,6 +1171,7 @@
     {
         (SourceKind.Git, SourceLocation.Wsl) => ActivitySourceType.WslGit,
         (SourceKind.Codex, SourceLocation.Wsl) => ActivitySourceType.WslCodex,
+        (SourceKind.AzureDevOps, _) => ActivitySourceType.AzureDevOpsPullRequest,
         (SourceKind.Git, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsGit,
         (SourceKind.Codex, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsCodex,
         (SourceKind.Git, _) => ActivitySourceType.WindowsGit,
@@ -821,6 +1182,7 @@
     {
         (SourceKind.Git, SourceLocation.Wsl) => "Git－WSL",
         (SourceKind.Codex, SourceLocation.Wsl) => "Codex－WSL",
+        (SourceKind.AzureDevOps, _) => "Azure DevOps PR",
         (SourceKind.Git, _) => "Git－此電腦",
         _ => "Codex－此電腦"
     };
@@ -833,13 +1195,15 @@
         ActivitySourceType.WslGit => (SourceKind.Git, SourceLocation.Wsl),
         ActivitySourceType.WindowsCodex or ActivitySourceType.MacOsCodex => (SourceKind.Codex, SourceLocation.Native),
         ActivitySourceType.WslCodex => (SourceKind.Codex, SourceLocation.Wsl),
+        ActivitySourceType.AzureDevOpsPullRequest => (SourceKind.AzureDevOps, SourceLocation.Native),
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
     };
 
     private enum SourceKind
     {
         Git,
-        Codex
+        Codex,
+        AzureDevOps
     }
 
     private enum SourceLocation
@@ -853,6 +1217,53 @@
         Overview,
         Setup,
         Backfill
+    }
+
+    private sealed class AzureDevOpsScopeForm
+    {
+        public AzureDevOpsScopeForm()
+        {
+        }
+
+        public AzureDevOpsScopeForm(AzureDevOpsPullRequestScope scope)
+        {
+            ProjectId = scope.ProjectId;
+            ProjectName = scope.ProjectName;
+            RepositoryId = scope.RepositoryId;
+            RepositoryName = scope.RepositoryName;
+            TargetBranch = SourceSettingsSerializer.NormalizeAzureDevOpsBranch(scope.TargetBranch);
+            WorkLensProjectId = scope.WorkLensProjectId;
+        }
+
+        public string ProjectId { get; set; } = string.Empty;
+        public string ProjectName { get; set; } = string.Empty;
+        public string RepositoryId { get; set; } = string.Empty;
+        public string RepositoryName { get; set; } = string.Empty;
+        public string TargetBranch { get; set; } = string.Empty;
+        public Guid? WorkLensProjectId { get; set; }
+        public List<AzureDevOpsOption> Repositories { get; set; } = [];
+        public List<AzureDevOpsOption> Branches { get; set; } = [];
+
+        public AzureDevOpsPullRequestScope ToSettings() => new()
+        {
+            ProjectId = ProjectId,
+            ProjectName = ProjectName,
+            RepositoryId = RepositoryId,
+            RepositoryName = RepositoryName,
+            TargetBranch = SourceSettingsSerializer.NormalizeAzureDevOpsBranch(TargetBranch),
+            WorkLensProjectId = WorkLensProjectId
+        };
+
+        public void ClearSelections()
+        {
+            ProjectId = string.Empty;
+            ProjectName = string.Empty;
+            RepositoryId = string.Empty;
+            RepositoryName = string.Empty;
+            TargetBranch = string.Empty;
+            Repositories.Clear();
+            Branches.Clear();
+        }
     }
 
     private static string StatusText(SourceHealthStatus status) => status switch

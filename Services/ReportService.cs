@@ -193,7 +193,8 @@ public sealed class ReportService(
             .ToListAsync(cancellationToken);
         var allEvidence = await db.SourceEvidence.AsNoTracking().ToListAsync(cancellationToken);
         var evidence = allEvidence
-            .Where(x => (sourceIds.Contains(x.SourceId) ||
+            .Where(x => ((sourceIds.Contains(x.SourceId) &&
+                         (x.ProjectId == null || aiProjectIds.Contains(x.ProjectId.Value))) ||
                          (x.Kind == EvidenceKind.Manual &&
                           (x.ProjectId == null || aiProjectIds.Contains(x.ProjectId.Value)))) &&
                         x.OccurredAt >= report.PeriodStart &&
@@ -381,6 +382,7 @@ public sealed class ReportService(
                         : string.Empty;
                     builder.AppendLine($"- {activity.OccurredAt:HH:mm} [{activity.Kind}] {activity.Title} {status}");
                     AppendCommitMessage(builder, activity);
+                    AppendAzureDevOpsSummary(builder, activity);
                 }
             }
         }
@@ -390,7 +392,13 @@ public sealed class ReportService(
         var currentCommits = evidence.Where(x =>
             x.Kind == EvidenceKind.Commit &&
             x.ReachabilityStatus == CommitReachabilityStatus.Current).ToList();
-        if (currentCommits.Count == 0)
+        var completedPullRequests = evidence.Where(x =>
+            x.Kind == EvidenceKind.AzureDevOpsPullRequestClosed &&
+            string.Equals(
+                SourceSettingsSerializer.DeserializeAzureDevOpsMetadata(x.MetadataJson)?.Status,
+                "completed",
+                StringComparison.OrdinalIgnoreCase)).ToList();
+        if (currentCommits.Count == 0 && completedPullRequests.Count == 0)
         {
             builder.AppendLine("- 尚無目前 branch 的自動成果證據。");
         }
@@ -399,6 +407,11 @@ public sealed class ReportService(
             foreach (var commit in currentCommits)
             {
                 builder.AppendLine($"- {commit.Title}");
+            }
+
+            foreach (var pullRequest in completedPullRequests)
+            {
+                builder.AppendLine($"- {pullRequest.Title}（PR 已完成）");
             }
         }
 
@@ -430,6 +443,7 @@ public sealed class ReportService(
         foreach (var item in evidence)
         {
             builder.AppendLine($"- {item.OccurredAt:O}｜{item.Kind}｜專案={ProjectName(item.ProjectId, projectNames)}｜title={item.Title}｜message={item.CommitMessage}｜branch={item.Branch}");
+            AppendAzureDevOpsAiSummary(builder, item);
         }
 
         return builder.ToString();
@@ -460,6 +474,11 @@ public sealed class ReportService(
 
     private static void AppendCommitMessage(StringBuilder builder, SourceEvidence activity)
     {
+        if (activity.Kind is EvidenceKind.AzureDevOpsPullRequestCreated or EvidenceKind.AzureDevOpsPullRequestClosed)
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(activity.CommitMessage) ||
             string.Equals(activity.CommitMessage.Trim(), activity.Title.Trim(), StringComparison.Ordinal))
         {
@@ -467,6 +486,80 @@ public sealed class ReportService(
         }
 
         builder.AppendLine("  " + activity.CommitMessage.Trim().Replace(Environment.NewLine, Environment.NewLine + "  "));
+    }
+
+    private static void AppendAzureDevOpsSummary(StringBuilder builder, SourceEvidence activity)
+    {
+        if (activity.Kind is not (EvidenceKind.AzureDevOpsPullRequestCreated or EvidenceKind.AzureDevOpsPullRequestClosed))
+        {
+            return;
+        }
+
+        var metadata = SourceSettingsSerializer.DeserializeAzureDevOpsMetadata(activity.MetadataJson);
+        if (metadata is null)
+        {
+            return;
+        }
+
+        builder.AppendLine($"  PR 狀態：{metadata.Status}；{metadata.SourceBranch} → {metadata.TargetBranch}");
+        if (!string.IsNullOrWhiteSpace(metadata.Description))
+        {
+            builder.AppendLine("  PR 描述：" + AzureDevOpsCliService.ToPlainText(metadata.Description));
+        }
+        foreach (var workItem in metadata.WorkItems)
+        {
+            builder.AppendLine($"  Work Item #{workItem.Id} [{workItem.Type}/{workItem.State}] {workItem.Title}");
+            if (!string.IsNullOrWhiteSpace(workItem.Description))
+            {
+                var description = AzureDevOpsCliService.ToPlainText(workItem.Description);
+                builder.AppendLine("  " + description.Replace(Environment.NewLine, Environment.NewLine + "  "));
+            }
+
+            if (!string.IsNullOrWhiteSpace(workItem.AcceptanceCriteria))
+            {
+                var acceptanceCriteria = AzureDevOpsCliService.ToPlainText(workItem.AcceptanceCriteria);
+                builder.AppendLine("  驗收條件：" + acceptanceCriteria.Replace(Environment.NewLine, Environment.NewLine + "  "));
+            }
+        }
+    }
+
+    private static void AppendAzureDevOpsAiSummary(StringBuilder builder, SourceEvidence activity)
+    {
+        if (activity.Kind is not (EvidenceKind.AzureDevOpsPullRequestCreated or EvidenceKind.AzureDevOpsPullRequestClosed))
+        {
+            return;
+        }
+
+        var metadata = SourceSettingsSerializer.DeserializeAzureDevOpsMetadata(activity.MetadataJson);
+        if (metadata is null)
+        {
+            return;
+        }
+
+        builder.AppendLine($"  PR：{metadata.Status}｜{metadata.SourceBranch} → {metadata.TargetBranch}｜建立者={metadata.CreatorName}");
+        if (!string.IsNullOrWhiteSpace(metadata.Description))
+        {
+            builder.AppendLine("  PR 描述：" + AzureDevOpsCliService.ToPlainText(metadata.Description));
+        }
+
+        foreach (var workItem in metadata.WorkItems)
+        {
+            builder.AppendLine($"  Work Item #{workItem.Id}｜類型={workItem.Type}｜狀態={workItem.State}｜標題={workItem.Title}｜Assigned To={workItem.AssignedTo}");
+            if (!string.IsNullOrWhiteSpace(workItem.Description))
+            {
+                builder.AppendLine("  Description：" + AzureDevOpsCliService.ToPlainText(workItem.Description));
+            }
+
+            if (!string.IsNullOrWhiteSpace(workItem.AcceptanceCriteria))
+            {
+                builder.AppendLine("  Acceptance Criteria：" + AzureDevOpsCliService.ToPlainText(workItem.AcceptanceCriteria));
+            }
+
+            if (!string.IsNullOrWhiteSpace(workItem.Tags))
+            {
+                builder.AppendLine("  Tags：" + workItem.Tags);
+            }
+        }
     }
 
     private static (DateTimeOffset Start, DateTimeOffset End) GetLocalDayBounds(DateOnly date)
