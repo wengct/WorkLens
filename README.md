@@ -4,7 +4,7 @@ WorkLens 是一個以本機優先為設計的個人工作歷程與工時回報�
 
 ## 一鍵安裝
 
-GitHub Release 提供不需預先安裝 .NET 的 self-contained 版本。安裝完成後 WorkLens 會立即在本機啟動、開啟一次瀏覽器，並設定成目前使用者登入後自動在背景執行。
+GitHub Release 提供不需預先安裝 .NET 的 self-contained 版本。安裝完成後 WorkLens 會立即在本機啟動、開啟一次瀏覽器、將 `worklens` 指令加入目前使用者的 `PATH`，並設定成目前使用者登入後自動在背景執行。
 
 Windows PowerShell：
 
@@ -27,22 +27,24 @@ curl -fsSL https://raw.githubusercontent.com/wengct/WorkLens/main/scripts/get.sh
 Windows：
 
 ```powershell
-& "$HOME\bin\worklens.cmd" status
-& "$HOME\bin\worklens.cmd" open
-& "$HOME\bin\worklens.cmd" restart
-& "$HOME\bin\worklens.cmd" stop
-& "$HOME\bin\worklens.cmd" uninstall
+worklens status
+worklens open
+worklens restart
+worklens stop
+worklens uninstall
 ```
 
 macOS：
 
 ```bash
-~/.local/bin/worklens status
-~/.local/bin/worklens open
-~/.local/bin/worklens restart
-~/.local/bin/worklens stop
-~/.local/bin/worklens uninstall
+worklens status
+worklens open
+worklens restart
+worklens stop
+worklens uninstall
 ```
+
+安裝中的終端機可立即使用 `worklens`；其他已開啟的終端機需關閉後重新開啟，才會讀取更新後的 `PATH`。
 
 重新執行一鍵安裝命令即可升級。安裝器會保留上一版；新版無法通過健康檢查時會自動回復。預設解除安裝只移除程式與登入排程，不刪除工作資料；若確定要永久刪除資料，使用 `uninstall --purge-data` 並依提示輸入 `DELETE`。
 

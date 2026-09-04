@@ -6,8 +6,14 @@ test_root="$(mktemp -d "${TMPDIR:-/tmp}/worklens-install-test.XXXXXX")"
 install_dir="${test_root}/Install Path 中文"
 bin_dir="${test_root}/bin path"
 runtime_dir="${test_root}/runtime data"
+test_home="${test_root}/home"
 port=$((18000 + RANDOM % 10000))
-mkdir -p "$runtime_dir"
+mkdir -p "$runtime_dir" "$test_home"
+
+original_home="$HOME"
+original_shell="${SHELL:-}"
+export HOME="$test_home"
+export SHELL="/bin/zsh"
 
 export ConnectionStrings__WorkLens="Data Source=${runtime_dir}/worklens.db"
 export WorkLens__BackupPath="${runtime_dir}/backups"
@@ -20,12 +26,15 @@ cleanup() {
 trap cleanup EXIT
 
 "${release_dir}/scripts/install.sh" --install-dir "$install_dir" --bin-dir "$bin_dir" --port "$port" --no-autostart --no-open-browser
+[[ ":$PATH:" == *":${bin_dir}:"* ]]
+[[ "$(grep -Fc '# WorkLens command path' "${HOME}/.zprofile")" -eq 1 ]]
 curl -fsS --max-time 5 "http://127.0.0.1:${port}/healthz" | grep -q '"status":"Healthy"'
 curl -fsS --max-time 5 "http://127.0.0.1:${port}/app.css" >/dev/null
 [[ -f "${runtime_dir}/worklens.db" ]]
 
 # Reinstalling the same version must preserve user data.
 "${release_dir}/scripts/install.sh" --install-dir "$install_dir" --bin-dir "$bin_dir" --port "$port" --no-autostart --no-open-browser
+[[ "$(grep -Fc '# WorkLens command path' "${HOME}/.zprofile")" -eq 1 ]]
 [[ -f "${runtime_dir}/worklens.db" ]]
 
 # A package whose declared version does not match the running assembly must roll back.
@@ -43,4 +52,6 @@ curl -fsS --max-time 5 "http://127.0.0.1:${port}/healthz" | grep -Fq "\"version\
 
 "${install_dir}/scripts/manage.sh" uninstall
 [[ -f "${runtime_dir}/worklens.db" ]]
+export HOME="$original_home"
+export SHELL="$original_shell"
 echo "macOS installation smoke test passed."

@@ -194,6 +194,7 @@ public sealed class AiProviderConfiguration
 {
     public Guid Id { get; set; } = Guid.Parse("00000000-0000-0000-0000-000000000001");
     public bool Enabled { get; set; }
+    public string ProviderType { get; set; } = "ask-bridge";
     public bool UseHeadless { get; set; } = true;
     public string Provider { get; set; } = "chatgpt";
     public string? ExecutablePath { get; set; }

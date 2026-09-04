@@ -48,11 +48,18 @@ public sealed class BackupService(
 
         try
         {
-            await using var source = new SqliteConnection($"Data Source={paths.DatabasePath}");
-            await using var destination = new SqliteConnection($"Data Source={databaseBackup}");
-            await source.OpenAsync(cancellationToken);
-            await destination.OpenAsync(cancellationToken);
-            source.BackupDatabase(destination);
+            var destinationConnectionString = new SqliteConnectionStringBuilder
+            {
+                DataSource = databaseBackup,
+                Pooling = false
+            }.ToString();
+            await using (var source = new SqliteConnection($"Data Source={paths.DatabasePath}"))
+            await using (var destination = new SqliteConnection(destinationConnectionString))
+            {
+                await source.OpenAsync(cancellationToken);
+                await destination.OpenAsync(cancellationToken);
+                source.BackupDatabase(destination);
+            }
 
             var sha256 = await ComputeSha256Async(databaseBackup, cancellationToken);
             var manifest = new

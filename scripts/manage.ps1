@@ -57,7 +57,14 @@ function Register-WorkLensTask {
     $Action = New-ScheduledTaskAction -Execute $PowerShellExe -Argument $Arguments -WorkingDirectory $InstallDir
     $Trigger = New-ScheduledTaskTrigger -AtLogOn -User $Identity
     $Principal = New-ScheduledTaskPrincipal -UserId $Identity -LogonType Interactive -RunLevel Limited
-    $Settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -StartWhenAvailable
+    $Settings = New-ScheduledTaskSettingsSet `
+        -MultipleInstances IgnoreNew `
+        -RestartCount 3 `
+        -RestartInterval (New-TimeSpan -Minutes 1) `
+        -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -StartWhenAvailable `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries
     Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force | Out-Null
 }
 

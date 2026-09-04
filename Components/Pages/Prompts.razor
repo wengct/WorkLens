@@ -1,7 +1,7 @@
 @page "/prompts"
 @inject PromptTemplateService PromptTemplates
 @inject AiConfigurationService AiConfig
-@inject AskBridgeService AskBridge
+@inject AiProviderOrchestrator AiProviders
 @inject ToastService Toasts
 
 <PageTitle>Prompt 範本｜WorkLens</PageTitle>
@@ -134,7 +134,7 @@
         try
         {
             var configuration = await AiConfig.GetAsync();
-            var result = await AskBridge.TestPromptAsync(configuration, editing.Content);
+            var result = await AiProviders.TestPromptAsync(configuration, editing.Content);
             if (result.Succeeded)
             {
                 promptResult = result.Body ?? "範例 Prompt 未產生內容。";

@@ -42,26 +42,34 @@
     <div class="panel-heading">
         <div>
             <h2>@(editingSourceId is null ? "新增來源" : "編輯來源")</h2>
-            <p>可收集 Windows、macOS 與 WSL 的 Git 與 Codex 會話；啟用後仍需先驗證才會加入排程。</p>
+            <p>先選擇要收集的內容；一般情況使用「此電腦」，只有資料位於 WSL 時才需切換執行位置。</p>
         </div>
     </div>
     <div class="form-grid">
         <div class="field">
-            <label for="sourceName">來源名稱</label>
-            <input id="sourceName" @bind="newName" placeholder="例如：WorkLens repositories" />
-        </div>
-        <div class="field">
-            <label for="sourceType">來源類型</label>
-            <select id="sourceType" @bind="newType">
-                <option value="WindowsGit">Windows Git</option>
-                <option value="WslGit">WSL Git（可選）</option>
-                <option value="WindowsCodex">Windows Codex</option>
-                <option value="WslCodex">WSL Codex（可選）</option>
-                <option value="MacOsGit">macOS Git</option>
-                <option value="MacOsCodex">macOS Codex</option>
+            <label for="sourceKind">要收集什麼？</label>
+            <select id="sourceKind" @bind="newKind">
+                <option value="Git">Git repository</option>
+                <option value="Codex">Codex 工作紀錄</option>
             </select>
         </div>
-        @if (newType is ActivitySourceType.WslGit or ActivitySourceType.WslCodex)
+        @if (SupportsWsl)
+        {
+            <div class="field">
+                <label for="sourceLocation">資料位於哪裡？</label>
+                <select id="sourceLocation" @bind="newLocation">
+                    <option value="Native">此電腦（Windows）</option>
+                    <option value="Wsl">WSL Linux</option>
+                </select>
+                <span class="hint">大多數情況請保留「此電腦」。</span>
+            </div>
+        }
+        <div class="field">
+            <label for="sourceName">來源名稱（選填）</label>
+            <input id="sourceName" @bind="newName" placeholder="留空將使用「@SuggestedSourceName」" />
+            <span class="hint">可用來區分多組 repository 或不同的 Codex 資料目錄。</span>
+        </div>
+        @if (newLocation == SourceLocation.Wsl)
         {
             <div class="field">
                 <label for="distro">WSL Linux 環境</label>
@@ -79,7 +87,7 @@
                 }
             </select>
         </div>
-        @if (IsGitType(newType))
+        @if (newKind == SourceKind.Git)
         {
         <div class="field full">
             <label for="repositories">Repository 路徑</label>
@@ -125,7 +133,7 @@
             <span class="hint">只會納入作者 email 完全符合這些設定的 commit；按 Enter、逗號或分號加入一組 pill。</span>
         </div>
         }
-        @if (IsCodexType(newType))
+        @if (newKind == SourceKind.Codex)
         {
             <div class="field full">
                 <label for="codexHome">Codex 資料目錄（選填）</label>
@@ -133,17 +141,22 @@
                 <span class="hint">Windows 與 macOS 請填本機路徑；WSL 請填該 Linux 環境內的路徑。</span>
             </div>
         }
-        <div class="field">
-            <label for="interval">收集間隔（分鐘）</label>
-            <input id="interval" type="number" min="1" max="1440" @bind="newInterval" />
-        </div>
-        <div class="field">
-            <label for="importDays">首次匯入天數</label>
-            <input id="importDays" type="number" min="1" max="90" @bind="newImportDays" />
-        </div>
+        <details class="source-advanced full">
+            <summary>進階設定</summary>
+            <div class="form-grid">
+                <div class="field">
+                    <label for="interval">收集間隔（分鐘）</label>
+                    <input id="interval" type="number" min="1" max="1440" @bind="newInterval" />
+                </div>
+                <div class="field">
+                    <label for="importDays">首次匯入天數</label>
+                    <input id="importDays" type="number" min="1" max="90" @bind="newImportDays" />
+                </div>
+                <label class="inline-checkbox full"><input type="checkbox" @bind="newIncludeInAi" /> 允許提供給 AI</label>
+            </div>
+        </details>
         <div class="form-actions">
             <label class="inline-checkbox"><input type="checkbox" @bind="newEnabled" /> 儲存後啟用</label>
-            <label class="inline-checkbox"><input type="checkbox" @bind="newIncludeInAi" /> 允許提供給 AI</label>
             <button class="button button-primary" @onclick="SaveSourceAsync">@(editingSourceId is null ? "新增來源" : "儲存來源設定")</button>
             @if (editingSourceId is not null)
             {
@@ -283,7 +296,8 @@
     private IReadOnlyList<ActivitySource> sources = [];
     private IReadOnlyList<Project> projects = [];
     private string newName = string.Empty;
-    private ActivitySourceType newType = DefaultSourceType;
+    private SourceKind newKind = SourceKind.Git;
+    private SourceLocation newLocation = SourceLocation.Native;
     private string newDistro = string.Empty;
     private string newCodexHome = string.Empty;
     private List<string> repositoryPaths = [];
@@ -317,6 +331,7 @@
 
     private async Task SaveSourceAsync()
     {
+        var newType = SelectedSourceType;
         if (IsGitType(newType))
         {
             CommitAuthorEmailInput();
@@ -328,12 +343,6 @@
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
         var configuredAuthorEmails = SourceSettingsSerializer.NormalizeAuthorEmails(authorEmails).ToList();
-        if (string.IsNullOrWhiteSpace(newName))
-        {
-            SetError("來源名稱不可空白。");
-            return;
-        }
-
         if (IsGitType(newType) && paths.Count == 0)
         {
             SetError("Git 來源至少需要一個 repository 路徑。");
@@ -371,7 +380,7 @@
         var source = new ActivitySource
         {
             Id = existing?.Id ?? Guid.NewGuid(),
-            DisplayName = newName,
+            DisplayName = string.IsNullOrWhiteSpace(newName) ? SuggestedSourceName : newName,
             SourceType = newType,
             Enabled = newEnabled,
             IsArchived = existing?.IsArchived ?? false,
@@ -409,7 +418,7 @@
     {
         editingSourceId = source.Id;
         newName = source.DisplayName;
-        newType = source.SourceType;
+        (newKind, newLocation) = ToSourceSelection(source.SourceType);
         if (IsGitType(source.SourceType))
         {
             var settings = SourceSettingsSerializer.DeserializeGit(source.SettingsJson);
@@ -763,7 +772,8 @@
     private void ResetForm()
     {
         newName = string.Empty;
-        newType = DefaultSourceType;
+        newKind = SourceKind.Git;
+        newLocation = SourceLocation.Native;
         newDistro = string.Empty;
         newCodexHome = string.Empty;
         repositoryPaths.Clear();
@@ -797,8 +807,46 @@
         _ => type.ToString()
     };
 
-    private static ActivitySourceType DefaultSourceType =>
-        OperatingSystem.IsMacOS() ? ActivitySourceType.MacOsGit : ActivitySourceType.WindowsGit;
+    private ActivitySourceType SelectedSourceType => (newKind, newLocation) switch
+    {
+        (SourceKind.Git, SourceLocation.Wsl) => ActivitySourceType.WslGit,
+        (SourceKind.Codex, SourceLocation.Wsl) => ActivitySourceType.WslCodex,
+        (SourceKind.Git, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsGit,
+        (SourceKind.Codex, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsCodex,
+        (SourceKind.Git, _) => ActivitySourceType.WindowsGit,
+        _ => ActivitySourceType.WindowsCodex
+    };
+
+    private string SuggestedSourceName => (newKind, newLocation) switch
+    {
+        (SourceKind.Git, SourceLocation.Wsl) => "Git－WSL",
+        (SourceKind.Codex, SourceLocation.Wsl) => "Codex－WSL",
+        (SourceKind.Git, _) => "Git－此電腦",
+        _ => "Codex－此電腦"
+    };
+
+    private static bool SupportsWsl => OperatingSystem.IsWindows();
+
+    private static (SourceKind Kind, SourceLocation Location) ToSourceSelection(ActivitySourceType type) => type switch
+    {
+        ActivitySourceType.WindowsGit or ActivitySourceType.MacOsGit => (SourceKind.Git, SourceLocation.Native),
+        ActivitySourceType.WslGit => (SourceKind.Git, SourceLocation.Wsl),
+        ActivitySourceType.WindowsCodex or ActivitySourceType.MacOsCodex => (SourceKind.Codex, SourceLocation.Native),
+        ActivitySourceType.WslCodex => (SourceKind.Codex, SourceLocation.Wsl),
+        _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
+    };
+
+    private enum SourceKind
+    {
+        Git,
+        Codex
+    }
+
+    private enum SourceLocation
+    {
+        Native,
+        Wsl
+    }
 
     private enum SourceWorkspace
     {

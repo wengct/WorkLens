@@ -14,6 +14,7 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         await db.Database.EnsureCreatedAsync(cancellationToken);
         await EnsureSchedulingSchemaAsync(db, cancellationToken);
+        await EnsureColumnAsync(db, "AiProviders", "ProviderType", "TEXT NOT NULL DEFAULT 'ask-bridge'", cancellationToken);
         await EnsureUseHeadlessColumnAsync(db, cancellationToken);
         await EnsureWorkEntryTitleColumnAsync(db, cancellationToken);
         await RecoverInterruptedSourceCollectionsAsync(db, cancellationToken);

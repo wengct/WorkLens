@@ -136,6 +136,14 @@ p { color: var(--muted); line-height: 1.65; }
 .pill-remove:hover { background: #dce0ff; }
 .hint { color: #8490a4; font-size: 11px; line-height: 1.5; }
 .form-actions { display: flex; justify-content: flex-end; gap: 9px; grid-column: 1 / -1; padding-top: 4px; }
+.ai-install-steps { display: grid; gap: 9px; margin: 0; padding-left: 24px; color: var(--muted); }
+.ai-install-steps code { color: #405070; font-family: Consolas, "Noto Sans Mono", monospace; font-size: 12px; overflow-wrap: anywhere; }
+.inline-link { color: var(--primary); font-weight: 650; text-underline-offset: 2px; }
+.inline-link:hover { color: var(--primary-dark); }
+.source-advanced { border: 1px solid #e1e6ef; border-radius: 9px; background: #fbfcff; }
+.source-advanced > summary { padding: 11px 13px; color: #53617a; cursor: pointer; font-size: 12px; font-weight: 700; }
+.source-advanced[open] > summary { border-bottom: 1px solid #e1e6ef; }
+.source-advanced > .form-grid { padding: 14px; }
 .alert { margin: 0 0 18px; padding: 12px 14px; border-radius: 9px; font-size: 13px; line-height: 1.55; }
 .alert-success { color: #196f4a; background: #ebfaf2; border: 1px solid #bde7ce; }
 

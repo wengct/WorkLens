@@ -25,7 +25,7 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
             "curl -fsSL https://raw.githubusercontent.com/doggy8088/ask-bridge/main/install.sh | bash",
             "確認 ~/.local/bin 已加入 PATH。",
             "驗證：command -v ask-bridge && ask-bridge --version",
-            "回到 WorkLens 按「重新偵測」，再執行 Provider 登入。"
+            "回到 WorkLens 按「重新偵測」，再執行 AI 服務登入。"
         ]
         :
         [
@@ -35,7 +35,7 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
             "irm https://raw.githubusercontent.com/doggy8088/ask-bridge/main/install.ps1 | iex",
             "驗證：where.exe ask-bridge",
             "驗證：ask-bridge --version",
-            "回到 WorkLens 按「重新偵測」，再執行 Provider 登入。"
+            "回到 WorkLens 按「重新偵測」，再執行 AI 服務登入。"
         ];
 
     public async Task<AiDetectionResult> DetectAsync(
@@ -174,18 +174,6 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
         AiProviderConfiguration configuration,
         CancellationToken cancellationToken) =>
         (await DetectAsync(configuration, cancellationToken)).Validation;
-
-    public Task<AiReportResult> GenerateAsync(
-        AiReportRequest request,
-        CancellationToken cancellationToken) =>
-        GenerateAsync(
-            new AiProviderConfiguration
-            {
-                Provider = request.Provider,
-                ExecutablePath = request.ExecutablePath
-            },
-            request,
-            cancellationToken);
 
     public async Task<bool> StartLoginAsync(
         AiProviderConfiguration configuration,
@@ -346,7 +334,7 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
             return new AiReportResult(false, null, null, "找不到 ask-bridge，請先完成安裝指引。");
         }
 
-        if (!IsSafeProvider(request.Provider))
+        if (!IsSafeProvider(request.Target))
         {
             return new AiReportResult(false, null, null, "不支援的 AI Provider。");
         }
@@ -371,7 +359,7 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
         try
         {
             arguments.AddRange([
-                "--provider", request.Provider,
+                "--provider", request.Target,
                 "--new",
                 HeadlessArgument(configuration.UseHeadless),
                 "--timeout", ReportGenerationCliTimeoutSeconds.ToString(),

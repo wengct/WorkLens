@@ -89,6 +89,8 @@ builder.Services.AddSingleton<IProcessRunner>(serviceProvider =>
 builder.Services.AddSingleton<AskBridgeService>();
 builder.Services.AddSingleton<IAiProviderAdapter>(serviceProvider =>
     serviceProvider.GetRequiredService<AskBridgeService>());
+builder.Services.AddSingleton<AiProviderRegistry>();
+builder.Services.AddSingleton<AiProviderOrchestrator>();
 builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
     new GitSourceAdapter(
         serviceProvider.GetRequiredService<ProcessRunner>(),

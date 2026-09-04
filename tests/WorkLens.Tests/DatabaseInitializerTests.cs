@@ -8,7 +8,7 @@ namespace WorkLens.Tests;
 public sealed class DatabaseInitializerTests
 {
     [Fact]
-    public async Task Initialize_adds_headless_setting_to_an_existing_database()
+    public async Task Initialize_adds_provider_type_and_headless_setting_to_an_existing_database()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -45,6 +45,7 @@ public sealed class DatabaseInitializerTests
 
         await using var db = new WorkLensDbContext(options);
         var configuration = await db.AiProviders.SingleAsync();
+        Assert.Equal("ask-bridge", configuration.ProviderType);
         Assert.True(configuration.UseHeadless);
         Assert.Equal("整理", configuration.GeneralReportPrompt);
         Assert.Equal("整理", (await db.PromptTemplates.SingleAsync()).Content);

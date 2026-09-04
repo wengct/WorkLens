@@ -1,0 +1,4 @@
+interface:
+  display_name: "WorkLens 專案規範"
+  short_description: "依循 WorkLens 的架構、測試、資料與發行規範"
+  default_prompt: "使用 $worklens-project-guidelines 依照專案規範完成這項 WorkLens 開發工作。"

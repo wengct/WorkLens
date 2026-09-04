@@ -54,6 +54,27 @@ if [[ -f "$agent_plist" ]] && grep -Fq "$install_dir" "$agent_plist"; then had_a
 
 mkdir -p "$versions_dir" "$bin_dir"
 staging_dir="${versions_dir}/.staging-$$"
+
+add_worklens_bin_to_path() {
+  case ":${PATH:-}:" in
+    *":${bin_dir}:"*) ;;
+    *) export PATH="${bin_dir}:${PATH:-}" ;;
+  esac
+
+  case "${SHELL##*/}" in
+    zsh) profile_file="${ZDOTDIR:-$HOME}/.zprofile" ;;
+    bash) profile_file="${HOME}/.bash_profile" ;;
+    *) profile_file="${HOME}/.profile" ;;
+  esac
+  mkdir -p "$(dirname "$profile_file")"
+  touch "$profile_file"
+  printf -v quoted_bin '%q' "$bin_dir"
+  path_line="export PATH=${quoted_bin}:\"\$PATH\""
+  if ! grep -Fqx "$path_line" "$profile_file"; then
+    printf '\n# WorkLens command path\n%s\n' "$path_line" >> "$profile_file"
+  fi
+}
+
 cleanup() {
   if [[ -d "$staging_dir" ]]; then
     rm -rf "$staging_dir"
@@ -106,6 +127,7 @@ printf '%s\n' "$bin_dir" > "${install_dir}/bin-dir.txt"
 manager="${installed_scripts}/manage.sh"
 printf '#!/usr/bin/env bash\nexec %q "$@"\n' "$manager" > "${bin_dir}/worklens"
 chmod +x "${bin_dir}/worklens"
+add_worklens_bin_to_path
 
 if [[ "$autostart" -eq 1 ]]; then "$manager" register; else "$manager" unregister; fi
 "$manager" start
@@ -125,3 +147,4 @@ for candidate in "$versions_dir"/*; do
 done
 
 echo "WorkLens ${version} is installed and running at http://127.0.0.1:${port}"
+echo "The 'worklens' command is available now and in new terminal windows."

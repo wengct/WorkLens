@@ -8,7 +8,7 @@ namespace WorkLens.Services;
 
 public sealed class ReportService(
     IDbContextFactory<WorkLensDbContext> factory,
-    AskBridgeService askBridge,
+    AiProviderOrchestrator aiProviders,
     PromptTemplateService promptTemplates,
     ILogger<ReportService> logger)
 {
@@ -156,10 +156,10 @@ public sealed class ReportService(
         {
             return new AiReportResult(false, null, null, "AI 報告整理尚未啟用，請先到設定開啟。");
         }
-        var detection = await askBridge.DetectAsync(configuration, cancellationToken);
-        if (!detection.Validation.IsValid || detection.ExecutablePath is null)
+        var validation = await aiProviders.ValidateAsync(configuration, cancellationToken);
+        if (!validation.IsValid)
         {
-            return new AiReportResult(false, null, null, detection.Validation.Summary);
+            return new AiReportResult(false, null, null, validation.Summary);
         }
 
         var aiProjects = await db.Projects.AsNoTracking()
@@ -206,6 +206,7 @@ public sealed class ReportService(
         var effectivePrompt = promptTemplate?.Content ?? ResolvePrompt(configuration, report.Kind);
         var job = new AiJob
         {
+            ProviderType = configuration.ProviderType,
             Provider = configuration.Provider,
             Status = "Running",
             StartedAt = DateTimeOffset.UtcNow,
@@ -226,7 +227,7 @@ public sealed class ReportService(
             report.Kind,
             report.PeriodKey);
 
-        var result = await askBridge.GenerateAsync(
+        var result = await aiProviders.GenerateAsync(
             configuration,
             new AiReportRequest(
                 report.Id,

@@ -59,12 +59,13 @@ public sealed record AiProviderValidationResult(
 
 public sealed record AiProviderConfigurationSnapshot(
     bool Enabled,
+    string ProviderType,
     string Provider,
     string? ExecutablePath);
 
 public sealed record AiReportRequest(
     Guid ReportId,
-    string Provider,
+    string Target,
     string InputMarkdown,
     IReadOnlyList<Guid> WorkEntryIds,
     double TotalHours,
@@ -98,6 +99,7 @@ public interface IAiProviderAdapter
         CancellationToken cancellationToken);
 
     Task<AiReportResult> GenerateAsync(
+        AiProviderConfiguration configuration,
         AiReportRequest request,
         CancellationToken cancellationToken);
 }

@@ -1,43 +1,53 @@
-# Changelog
+# 變更紀錄
 
-All notable changes to WorkLens are documented in this file.
+WorkLens 的所有重要變更皆記錄於此文件。
 
-## [Unreleased]
+## [尚未發布]
+
+### 變更
+
+- AI 整理現在透過 Provider Adapter registry 與統一執行入口選擇執行環境，並將 ask-bridge 與其 ChatGPT、Gemini、Claude 目標服務分開建模，為後續加入其他 Provider 保留擴充點。
+- 原「AI 整理」設定頁更名為「AI 設定」，並重新區分報告整理、Provider、AI 服務與 ask-bridge 執行選項。
+- AI 設定頁新增依作業系統顯示的 ask-bridge 安裝步驟、驗證方式與官方 GitHub 套件來源。
+- 將來源設定由六種平台專屬選項簡化為 Git 或 Codex，並可選填 WSL 位置；系統會自動對應原生平台，並以漸進方式顯示進階設定。
+- 來源名稱現在為選填；省略時，系統會自動提供具描述性的預設名稱。
+- Windows 與 macOS 的一鍵安裝程式現在會將 `worklens` 命令目錄加入使用者的 `PATH`，重新安裝時不會產生重複項目。
 
 ## [1.1.0] - 2026-09-04
 
-### Added
+### 新增
 
-- Prompt template library with create, edit, duplicate, test, default, and archive actions.
-- Configurable daily report, weekly report, daily backup, and weekly backup schedules.
-- Schedule execution history with stage status, error details, next-run time, and manual execution.
-- Per-schedule and manual AI Prompt selection with Prompt snapshots retained in AI job history.
-- Runtime-configurable backup folder with write validation and a native folder picker.
-- Release version display in the sidebar, sourced from the GitHub Release build version.
-- Domain glossary for Prompt templates, schedule definitions, and schedule executions.
+- 提示詞範本庫，提供建立、編輯、複製、測試、設為預設及封存等操作。
+- 可設定每日報告、每週報告、每日備份及每週備份的排程。
+- 排程執行紀錄，包含階段狀態、錯誤詳細資訊、下次執行時間及手動執行功能。
+- 每個排程與手動執行皆可選擇 AI 提示詞，並在 AI 工作紀錄中保留提示詞快照。
+- 可在執行期間設定備份資料夾，並提供寫入驗證及原生資料夾選擇器。
+- 在側邊欄顯示發布版本，版本資訊取自 GitHub Release 的建置版本。
+- 提示詞範本、排程定義及排程執行的領域詞彙表。
 
-### Changed
+### 變更
 
-- Scheduled reports now create the deterministic report first, then run AI organization and save the result automatically.
-- AI failures preserve the deterministic report and record the failure instead of discarding usable output.
-- Existing general, daily, and weekly Prompt settings are migrated into Prompt templates automatically.
-- Report actions now use a compact aligned toolbar, clearer “重產制式摘要” wording, and an explicit saved-success message.
-- GitHub and version information now share one compact sidebar footer row.
-- Destructive and overwrite actions use reusable modal confirmation dialogs.
-- Checkpoint reset, work-entry deletion, manual-source deletion, and report period changes prevent duplicate submissions.
+- 排程報告現在會先建立制式報告，再由 AI 整理內容並自動儲存結果。
+- AI 執行失敗時會保留制式報告並記錄失敗資訊，不再捨棄仍可使用的輸出。
+- 現有的一般、每日及每週提示詞設定會自動移轉為提示詞範本。
+- 報告操作現在採用精簡且對齊的工具列、語意更清楚的「重產制式摘要」文字，以及明確的儲存成功訊息。
+- GitHub 與版本資訊現在共用側邊欄底部的同一個精簡列。
+- 破壞性及覆寫操作改用可重複使用的互動視窗進行確認。
+- 重設檢查點、刪除工作項目、刪除手動來源及變更報告期間時，會防止重複送出。
 
-### Database
+### 資料庫
 
-- Adds `PromptTemplates`, `ScheduleDefinitions`, and `ScheduleExecutions` tables.
-- Adds Prompt identity and content snapshot fields to `AiJobs`.
-- Database changes are additive and applied automatically on first startup; existing work entries, evidence, reports, and backups are retained.
+- 新增 `PromptTemplates`、`ScheduleDefinitions` 及 `ScheduleExecutions` 資料表。
+- 在 `AiJobs` 中新增提示詞識別資訊與內容快照欄位。
+- 資料庫變更皆採新增方式，並會在首次啟動時自動套用；現有的工作項目、佐證資料、報告及備份均會保留。
 
-### Fixed
+### 修正
 
-- Restored interrupted schedule executions are marked clearly instead of remaining in a running state.
-- Windows backup folder selection is brought to the foreground with a topmost owner window.
-- SQLite schedule history ordering no longer attempts an unsupported `DateTimeOffset` server-side sort.
-- Sidebar release versions render as values instead of Razor expression text.
+- Windows 背景排程不再因切換至電池供電而停止，且在使用電池時仍可啟動。
+- 還原中斷的排程執行時，現在會清楚標示其狀態，不再持續顯示為執行中。
+- Windows 備份資料夾選擇視窗會透過置頂的擁有者視窗顯示於最前方。
+- SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
+- 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[Unreleased]: https://github.com/wengct/WorkLens/compare/v1.1.0...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.1.0...HEAD
 [1.1.0]: https://github.com/wengct/WorkLens/compare/v1.0.3...v1.1.0

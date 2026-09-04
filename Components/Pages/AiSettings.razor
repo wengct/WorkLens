@@ -3,9 +3,9 @@
 @inject AskBridgeService AskBridge
 @inject ToastService Toasts
 
-<PageTitle>AI 整理｜WorkLens</PageTitle>
+<PageTitle>AI 設定｜WorkLens</PageTitle>
 
-<div class="page-heading"><div><p class="eyebrow">Settings</p><h1>AI 整理</h1><p>設定 AI Provider 與執行環境；整理指令請至 Prompt 範本管理。</p></div><a class="button button-secondary" href="/prompts">管理 Prompt</a></div>
+<div class="page-heading"><div><p class="eyebrow">Settings</p><h1>AI 設定</h1><p>選擇工作摘要使用的 AI Provider、目標服務與執行方式。</p></div><a class="button button-secondary" href="/prompts">管理 Prompt</a></div>
 
 @if (activeOperation is not null)
 {
@@ -13,13 +13,20 @@
 }
 
 <div class="panel">
-    <div class="panel-heading"><div><h2>Provider</h2><p>設定與偵測 AI 執行環境。</p></div><span class="badge @StatusClass(configuration.Status)">@StatusText(configuration.Status)</span></div>
+    <div class="panel-heading"><div><h2>報告整理</h2><p>啟用後，可以手動或透過排程使用 AI 整理工作摘要。</p></div></div>
     <div class="form-grid">
-        <div class="field"><label>Provider</label><select @bind="configuration.Provider"><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option><option value="claude">Claude</option></select></div>
-        <div class="field"><label>ask-bridge 路徑（選填）</label><input @bind="configuration.ExecutablePath" placeholder="留白則自動尋找" /></div>
-        <div class="field full"><label class="inline-checkbox"><input type="checkbox" @bind="configuration.Enabled" /> 啟用 AI 報告整理</label></div>
+        <div class="field full"><label class="inline-checkbox"><input type="checkbox" @bind="configuration.Enabled" /> 啟用 AI 報告整理</label><span class="hint">整理前仍會先建立制式摘要；AI 執行失敗時會保留原內容。</span></div>
+    </div>
+</div>
+
+<div class="panel">
+    <div class="panel-heading"><div><h2>Provider 設定</h2><p>Provider 負責連接 AI；AI 服務則是 Provider 實際使用的目標。</p></div><span class="badge @StatusClass(configuration.Status)">@StatusText(configuration.Status)</span></div>
+    <div class="form-grid">
+        <div class="field"><label for="ai-provider">Provider</label><select id="ai-provider" @bind="configuration.ProviderType"><option value="ask-bridge">ask-bridge</option></select><span class="hint">目前提供 ask-bridge；後續可加入其他 Provider。</span></div>
+        <div class="field"><label for="ai-service">AI 服務</label><select id="ai-service" @bind="configuration.Provider"><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option><option value="claude">Claude</option></select><span class="hint">選擇 ask-bridge 要操作的網站服務。</span></div>
+        <div class="field full"><label for="ask-bridge-path">ask-bridge 執行檔路徑（選填）</label><input id="ask-bridge-path" @bind="configuration.ExecutablePath" placeholder="留白則自動尋找" /><span class="hint">通常不需設定；只有自動偵測不到時才指定完整路徑。</span></div>
         <div class="field full"><label class="inline-checkbox"><input type="checkbox" @bind="configuration.UseHeadless" /> 背景執行瀏覽器（--headless=true）</label><span class="hint">登入流程固定顯示瀏覽器；測試或整理報告時會依此設定切換模式。ask-bridge 專用瀏覽器會在作業完成後自動關閉。</span></div>
-        <div class="form-actions"><button class="button button-secondary" @onclick="SaveAsync" disabled="@IsBusy">儲存設定</button><button class="button button-primary" @onclick="DetectAsync" disabled="@IsBusy">@(activeOperation == "detect" ? "偵測中…" : "重新偵測")</button><button class="button button-secondary" @onclick="LoginAsync" disabled="@(detection?.Validation.IsValid != true || IsBusy)">開啟登入</button><button class="button button-secondary" @onclick="TestConnectionAsync" disabled="@(detection?.Validation.IsValid != true || IsBusy)">@(activeOperation == "connection" ? "測試中…" : "測試連線")</button></div>
+        <div class="form-actions"><button class="button button-primary" @onclick="SaveAsync" disabled="@IsBusy">儲存設定</button><button class="button button-secondary" @onclick="DetectAsync" disabled="@IsBusy">@(activeOperation == "detect" ? "偵測中…" : "重新偵測")</button><button class="button button-secondary" @onclick="LoginAsync" disabled="@(detection?.Validation.IsValid != true || IsBusy)">開啟 AI 服務登入</button><button class="button button-secondary" @onclick="TestConnectionAsync" disabled="@(detection?.Validation.IsValid != true || IsBusy)">@(activeOperation == "connection" ? "測試中…" : "測試連線")</button></div>
     </div>
 </div>
 
@@ -27,6 +34,20 @@
 {
     <div class="panel"><div class="panel-heading"><div><h2>環境診斷</h2><p>@detection.Validation.Summary</p></div></div><div class="form-grid"><div class="field"><label>執行檔</label><div class="hint">@(detection.ExecutablePath ?? "未找到")</div></div><div class="field"><label>版本</label><div class="hint">@(detection.Version ?? "未取得")</div></div><div class="field"><label>Node.js</label><div class="hint">@(detection.NodeAvailable ? "可用" : "不可用")</div></div><div class="field"><label>Chrome</label><div class="hint">@(detection.ChromeAvailable ? "可用" : "不可用")</div></div></div></div>
 }
+
+<div class="panel">
+    <div class="panel-heading">
+        <div><h2>安裝 ask-bridge</h2><p>依目前作業系統完成安裝後，再回到上方重新偵測。</p></div>
+        <a class="button button-secondary" href="https://github.com/doggy8088/ask-bridge" target="_blank" rel="noopener noreferrer">查看套件來源</a>
+    </div>
+    <ol class="ai-install-steps">
+        @foreach (var step in AskBridge.InstallSteps)
+        {
+            <li><code>@step</code></li>
+        }
+    </ol>
+    <p class="hint">安裝來源：<a class="inline-link" href="https://github.com/doggy8088/ask-bridge" target="_blank" rel="noopener noreferrer">github.com/doggy8088/ask-bridge</a></p>
+</div>
 
 @code {
     private AiProviderConfiguration configuration = new();
@@ -40,7 +61,7 @@
         {
             await AiConfig.SaveAsync(configuration);
             configuration = await AiConfig.GetAsync();
-            Toasts.Success("AI Provider 設定已儲存。");
+            Toasts.Success("AI 設定已儲存。");
         }
         catch (ArgumentException exception)
         {
@@ -96,7 +117,7 @@
     private string ActiveOperationTitle() => activeOperation switch
     {
         "detect" => "正在偵測 AI 執行環境…",
-        "login" => "正在等待 Provider 登入…",
+        "login" => "正在等待 AI 服務登入…",
         "connection" => "正在測試 AI 連線…",
         _ => "正在處理…"
     };

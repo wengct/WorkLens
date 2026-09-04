@@ -38,6 +38,28 @@ $HadAutostart = $null -ne ($ExistingTask.Actions | Where-Object { $_.Arguments -
 
 New-Item -ItemType Directory -Force -Path $VersionsDir, $BinDir | Out-Null
 $StagingDir = Join-Path $VersionsDir (".staging-" + [Guid]::NewGuid().ToString("N"))
+
+function Add-WorkLensBinToPath {
+    $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    $UserEntries = @($UserPath -split ";" | Where-Object { ![string]::IsNullOrWhiteSpace($_) })
+    $BinDirKey = $BinDir.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+    $IsInUserPath = $UserEntries | Where-Object {
+        $_.Trim().TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) -ieq $BinDirKey
+    }
+    if (!$IsInUserPath) {
+        $NewUserPath = (@($UserEntries) + $BinDir) -join ";"
+        [Environment]::SetEnvironmentVariable("Path", $NewUserPath, "User")
+    }
+
+    $ProcessEntries = @($env:Path -split ";" | Where-Object { ![string]::IsNullOrWhiteSpace($_) })
+    $IsInProcessPath = $ProcessEntries | Where-Object {
+        $_.Trim().TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) -ieq $BinDirKey
+    }
+    if (!$IsInProcessPath) {
+        $env:Path = (@($ProcessEntries) + $BinDir) -join ";"
+    }
+}
+
 try {
     if ($PreviousVersion -ne $Version -or !(Test-Path -LiteralPath $VersionDir)) {
         New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
@@ -67,6 +89,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$EscapedInstallDir\scri
 exit /b %ERRORLEVEL%
 "@
     Set-Content -LiteralPath (Join-Path $BinDir "worklens.cmd") -Value $Shim -Encoding ASCII
+    Add-WorkLensBinToPath
 
     $Manager = Join-Path $InstalledScripts "manage.ps1"
     if ($NoAutostart) { & $Manager unregister -InstallDir $InstallDir }
@@ -87,6 +110,7 @@ exit /b %ERRORLEVEL%
     } | Remove-Item -Recurse -Force
 
     Write-Host "WorkLens $Version is installed and running at http://127.0.0.1:$Port"
+    Write-Host "The 'worklens' command is available now and in new terminal windows."
 } catch {
     $Failure = $_
     try {
