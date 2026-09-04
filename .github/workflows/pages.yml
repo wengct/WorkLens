@@ -46,6 +46,17 @@ jobs:
           NEXT_PUBLIC_BASE_PATH: /${{ github.event.repository.name }}
         run: npm run build
 
+      - name: Normalize GitHub Pages asset paths
+        working-directory: site
+        shell: bash
+        run: |
+          repository_name="${GITHUB_REPOSITORY#*/}"
+          prefixed_assets="dist/client/${repository_name}/_next"
+          if [[ -d "$prefixed_assets" ]]; then
+            mv "$prefixed_assets" dist/client/_next
+            rmdir "dist/client/${repository_name}"
+          fi
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4
         with:
