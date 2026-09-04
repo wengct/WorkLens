@@ -4,6 +4,12 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [尚未發布]
 
+## [1.2.1] - 2026-09-04
+
+### 修正
+
+- 修正 Windows 更新安裝停止背景排程時可能遺留舊版行程、刪除 PID 檔並持續占用連接埠，導致新版啟動及 rollback 皆失敗。
+
 ## [1.2.0] - 2026-09-04
 
 ### 變更
@@ -63,6 +69,7 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.2.0...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/wengct/WorkLens/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/wengct/WorkLens/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/wengct/WorkLens/compare/v1.0.3...v1.1.0

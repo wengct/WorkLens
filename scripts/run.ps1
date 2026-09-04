@@ -29,6 +29,9 @@ try {
     $Process.WaitForExit()
     exit $Process.ExitCode
 } finally {
+    if ($Process) {
+        Stop-Process -Id $Process.Id -Force -ErrorAction SilentlyContinue
+    }
     if (Test-Path -LiteralPath $PidFile) {
         Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
     }

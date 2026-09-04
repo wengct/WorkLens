@@ -40,6 +40,14 @@ try {
     if ($Asset.StatusCode -ne 200 -or $Asset.RawContentLength -eq 0) { throw "Installed WorkLens did not serve app.css." }
     if (!(Test-Path -LiteralPath (Join-Path $RuntimeDir "worklens.db"))) { throw "WorkLens did not create its SQLite database." }
 
+    # Stopping must still find the installed process if its PID file was lost.
+    $InstalledManagerPath = Join-Path $InstallDir "scripts\manage.ps1"
+    Remove-Item -LiteralPath (Join-Path $InstallDir "app.pid") -Force
+    & $InstalledManagerPath stop -InstallDir $InstallDir
+    $RemainingListener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+    if ($RemainingListener) { throw "Stopping left an installed WorkLens process listening after its PID file was lost." }
+    & $InstalledManagerPath start -InstallDir $InstallDir
+
     # Reinstalling the same version must be safe and must preserve the database.
     & $InstallScript -InstallDir $InstallDir -BinDir $BinDir -Port $Port -NoAutostart -NoOpenBrowser
     $PathEntries = @([Environment]::GetEnvironmentVariable("Path", "User") -split ";")

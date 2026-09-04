@@ -13,6 +13,7 @@ $InstallDir = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($
 $RunScript = Join-Path $InstallDir "scripts\run.ps1"
 $PortFile = Join-Path $InstallDir "port.txt"
 $PidFile = Join-Path $InstallDir "app.pid"
+$VersionsDir = Join-Path $InstallDir "versions"
 
 function Get-WorkLensPort {
     if (!(Test-Path -LiteralPath $PortFile -PathType Leaf)) { throw "WorkLens port configuration is missing." }
@@ -44,6 +45,25 @@ function Get-WorkLensTask {
         return $Task
     }
     return $null
+}
+
+function Test-IsInstalledWorkLensProcess($Process) {
+    try {
+        $ExecutablePath = [IO.Path]::GetFullPath($Process.Path)
+        $VersionsRoot = [IO.Path]::GetFullPath($VersionsDir).TrimEnd(
+            [IO.Path]::DirectorySeparatorChar,
+            [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        return $ExecutablePath.StartsWith($VersionsRoot, [StringComparison]::OrdinalIgnoreCase) -and
+            [IO.Path]::GetFileName($ExecutablePath).Equals("WorkLens.exe", [StringComparison]::OrdinalIgnoreCase)
+    } catch {
+        return $false
+    }
+}
+
+function Get-InstalledWorkLensProcesses {
+    return @(Get-Process -Name "WorkLens" -ErrorAction SilentlyContinue | Where-Object {
+        Test-IsInstalledWorkLensProcess $_
+    })
 }
 
 function Register-WorkLensTask {
@@ -93,16 +113,31 @@ function Stop-WorkLens {
     if ($Task -and $Task.State -eq "Running") {
         Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
     }
+
+    $Processes = @(Get-InstalledWorkLensProcesses)
     if (Test-Path -LiteralPath $PidFile -PathType Leaf) {
         $AppPid = 0
         if ([int]::TryParse((Get-Content -LiteralPath $PidFile -Raw).Trim(), [ref]$AppPid)) {
-            Stop-Process -Id $AppPid -Force -ErrorAction SilentlyContinue
+            $TrackedProcess = Get-Process -Id $AppPid -ErrorAction SilentlyContinue
+            if ($TrackedProcess -and (Test-IsInstalledWorkLensProcess $TrackedProcess)) {
+                $Processes = @($Processes) + $TrackedProcess
+            }
         }
-        Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
     }
+
+    $Processes | Sort-Object Id -Unique | Stop-Process -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $PidFile -Force -ErrorAction SilentlyContinue
+
     $Deadline = [DateTime]::UtcNow.AddSeconds(10)
-    while ((Test-WorkLensHealth) -and [DateTime]::UtcNow -lt $Deadline) {
+    $RemainingProcesses = @(Get-InstalledWorkLensProcesses)
+    while ($RemainingProcesses.Count -gt 0 -and [DateTime]::UtcNow -lt $Deadline) {
+        $RemainingProcesses | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Milliseconds 250
+        $RemainingProcesses = @(Get-InstalledWorkLensProcesses)
+    }
+    if ($RemainingProcesses.Count -gt 0) {
+        $RemainingIds = ($RemainingProcesses.Id | Sort-Object) -join ", "
+        throw "WorkLens processes did not stop within 10 seconds (PID: $RemainingIds)."
     }
 }
 
