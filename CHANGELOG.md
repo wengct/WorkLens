@@ -4,6 +4,8 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [尚未發布]
 
+## [1.4.0] - 2026-09-07
+
 ### 新增
 
 - AI 傳送前新增必要的本機機敏資訊防護：WorkLens 以隨附且固定版本的官方 leak-hunter 掃描最終工作資料與 Prompt，並補充 Email、自訂敏感詞偵測；命中時只建立遮蔽副本，使用者確認「遮蔽後送出」後才傳送，原始來源資料不會被改寫。
@@ -112,7 +114,8 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.2.2...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/wengct/WorkLens/compare/v1.3.2...v1.4.0
 [1.2.2]: https://github.com/wengct/WorkLens/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/wengct/WorkLens/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/wengct/WorkLens/compare/v1.1.0...v1.2.0
