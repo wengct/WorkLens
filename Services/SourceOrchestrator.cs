@@ -281,7 +281,7 @@ public sealed class SourceOrchestrator(
         {
             if (lookup.TryGetValue((evidence.RepositoryKey, evidence.ExternalKey), out var current))
             {
-                if (ShouldKeepExistingCodexEvidence(current, evidence))
+                if (ShouldKeepExistingSessionEvidence(current, evidence))
                 {
                     current.LastObservedAt = DateTimeOffset.UtcNow;
                     result.Unchanged++;
@@ -342,20 +342,30 @@ public sealed class SourceOrchestrator(
         current.MetadataJson != incoming.MetadataJson ||
         current.ReachabilityStatus != incoming.ReachabilityStatus;
 
-    private static bool ShouldKeepExistingCodexEvidence(SourceEvidence current, SourceEvidence incoming)
+    private static bool ShouldKeepExistingSessionEvidence(SourceEvidence current, SourceEvidence incoming)
     {
-        if (current.Kind != EvidenceKind.CodexSession ||
-            incoming.Kind != EvidenceKind.CodexSession ||
+        if (!IsSessionEvidence(current.Kind) ||
+            current.Kind != incoming.Kind ||
             current.SourceId == incoming.SourceId)
         {
             return false;
         }
 
-        var currentMetadata = SourceSettingsSerializer.DeserializeCodexMetadata(current.MetadataJson);
-        var incomingMetadata = SourceSettingsSerializer.DeserializeCodexMetadata(incoming.MetadataJson);
-        return currentMetadata is not null && incomingMetadata is not null &&
-               incomingMetadata.UpdatedAt <= currentMetadata.UpdatedAt;
+        var currentUpdatedAt = SessionUpdatedAt(current);
+        var incomingUpdatedAt = SessionUpdatedAt(incoming);
+        return currentUpdatedAt is not null && incomingUpdatedAt is not null &&
+               incomingUpdatedAt <= currentUpdatedAt;
     }
+
+    private static bool IsSessionEvidence(EvidenceKind kind) =>
+        kind is EvidenceKind.CodexSession or EvidenceKind.ClaudeCodeSession;
+
+    private static DateTimeOffset? SessionUpdatedAt(SourceEvidence evidence) => evidence.Kind switch
+    {
+        EvidenceKind.CodexSession => SourceSettingsSerializer.DeserializeCodexMetadata(evidence.MetadataJson)?.UpdatedAt,
+        EvidenceKind.ClaudeCodeSession => SourceSettingsSerializer.DeserializeClaudeCodeMetadata(evidence.MetadataJson)?.UpdatedAt,
+        _ => null
+    };
 
     private sealed class EvidenceUpsertResult
     {

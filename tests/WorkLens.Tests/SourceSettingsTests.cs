@@ -55,6 +55,23 @@ public sealed class SourceSettingsTests
     }
 
     [Fact]
+    public void Claude_code_source_settings_round_trip()
+    {
+        var settings = new ClaudeCodeSourceSettings
+        {
+            ClaudeCodeHome = @"C:\Users\me\.claude",
+            Distro = "Ubuntu"
+        };
+
+        var json = SourceSettingsSerializer.Serialize(settings);
+        var restored = SourceSettingsSerializer.DeserializeClaudeCode(json);
+
+        Assert.Equal(settings.ClaudeCodeHome, restored.ClaudeCodeHome);
+        Assert.Equal(settings.Distro, restored.Distro);
+        Assert.DoesNotContain("token", json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Azure_devops_source_settings_normalize_org_branch_and_round_trip()
     {
         var settings = new AzureDevOpsSourceSettings

@@ -11,6 +11,7 @@ public sealed class SourceSetupUxTests
         Assert.Contains("資料位於哪裡？", razor, StringComparison.Ordinal);
         Assert.Contains("Git repository", razor, StringComparison.Ordinal);
         Assert.Contains("Codex 工作紀錄", razor, StringComparison.Ordinal);
+        Assert.Contains("Claude Code 工作紀錄", razor, StringComparison.Ordinal);
         Assert.DoesNotContain("<option value=\"WindowsGit\">", razor, StringComparison.Ordinal);
         Assert.DoesNotContain("<option value=\"MacOsGit\">", razor, StringComparison.Ordinal);
     }

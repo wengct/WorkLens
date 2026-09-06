@@ -66,6 +66,27 @@ public sealed class SourceConfigurationService(
 
             source.SettingsJson = SourceSettingsSerializer.Serialize(codexSettings);
         }
+        else if (source.SourceType is ActivitySourceType.WindowsClaudeCode or ActivitySourceType.WslClaudeCode or ActivitySourceType.MacOsClaudeCode)
+        {
+            var claudeSettings = SourceSettingsSerializer.DeserializeClaudeCode(source.SettingsJson);
+            claudeSettings.ClaudeCodeHome = string.IsNullOrWhiteSpace(claudeSettings.ClaudeCodeHome)
+                ? null
+                : claudeSettings.ClaudeCodeHome.Trim();
+            claudeSettings.Distro = string.IsNullOrWhiteSpace(claudeSettings.Distro)
+                ? null
+                : claudeSettings.Distro.Trim();
+            if (source.SourceType == ActivitySourceType.WslClaudeCode && claudeSettings.Distro is null)
+            {
+                throw new ArgumentException("WSL Claude Code 來源必須指定 Linux 環境名稱，例如 Ubuntu。", nameof(source));
+            }
+
+            if (source.SourceType is ActivitySourceType.WindowsClaudeCode or ActivitySourceType.MacOsClaudeCode)
+            {
+                claudeSettings.Distro = null;
+            }
+
+            source.SettingsJson = SourceSettingsSerializer.Serialize(claudeSettings);
+        }
         else if (source.SourceType == ActivitySourceType.AzureDevOpsPullRequest)
         {
             var settings = SourceSettingsSerializer.DeserializeAzureDevOps(source.SettingsJson);

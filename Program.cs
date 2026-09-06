@@ -131,6 +131,18 @@ builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
         serviceProvider.GetRequiredService<ProcessRunner>(),
         ActivitySourceType.MacOsCodex));
 builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new ClaudeCodeSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.WindowsClaudeCode));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new ClaudeCodeSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.WslClaudeCode));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new ClaudeCodeSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.MacOsClaudeCode));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
     new AzureDevOpsPullRequestSourceAdapter(
         serviceProvider.GetRequiredService<AzureDevOpsCliService>()));
 builder.Services.AddSingleton<SourceRegistry>();

@@ -52,6 +52,7 @@
             <select id="sourceKind" @bind="newKind" @bind:after="SourceKindChangedAsync">
                 <option value="Git">Git repository</option>
                 <option value="Codex">Codex 工作紀錄</option>
+                <option value="ClaudeCode">Claude Code 工作紀錄</option>
                 <option value="AzureDevOps">Azure DevOps PR</option>
             </select>
         </div>
@@ -69,7 +70,7 @@
         <div class="field">
             <label for="sourceName">來源名稱（選填）</label>
             <input id="sourceName" @bind="newName" placeholder="留空將使用「@SuggestedSourceName」" />
-            <span class="hint">可用來區分多組 repository 或不同的 Codex 資料目錄。</span>
+            <span class="hint">可用來區分多組 repository 或不同的 Codex／Claude Code 資料目錄。</span>
         </div>
         @if (newKind != SourceKind.AzureDevOps && newLocation == SourceLocation.Wsl)
         {
@@ -138,11 +139,18 @@
             <span class="hint">只會納入作者 email 完全符合這些設定的 commit；按 Enter、逗號或分號加入一組 pill。</span>
         </div>
         }
-        @if (newKind == SourceKind.Codex)
+        @if (newKind is SourceKind.Codex or SourceKind.ClaudeCode)
         {
             <div class="field full">
-                <label for="codexHome">Codex 資料目錄（選填）</label>
-                <input id="codexHome" @bind="newCodexHome" placeholder="留空即自動偵測 CODEX_HOME 或 ~/.codex" />
+                <label for="aiCodeHome">@(newKind == SourceKind.Codex ? "Codex" : "Claude Code") 資料目錄（選填）</label>
+                @if (newKind == SourceKind.Codex)
+                {
+                    <input id="aiCodeHome" @bind="newCodexHome" placeholder="留空即自動偵測 CODEX_HOME 或 ~/.codex" />
+                }
+                else
+                {
+                    <input id="aiCodeHome" @bind="newClaudeCodeHome" placeholder="留空即自動偵測 CLAUDE_CONFIG_DIR 或 ~/.claude" />
+                }
                 <span class="hint">Windows 與 macOS 請填本機路徑；WSL 請填該 Linux 環境內的路徑。</span>
             </div>
         }
@@ -318,7 +326,7 @@
     {
         <div class="empty-state">
             <h3>目前是純人工模式</h3>
-            <p>這是預設狀態。你可以稍後再新增目前平台的 Git、Codex 或 Azure DevOps PR 來源。</p>
+            <p>這是預設狀態。你可以稍後再新增目前平台的 Git、Codex、Claude Code 或 Azure DevOps PR 來源。</p>
             <button type="button" class="button button-primary" @onclick="BeginAdd">新增第一個來源</button>
         </div>
     }
@@ -387,7 +395,7 @@
                 @if (sourceIsCollecting)
                 {
                     <div class="collection-progress" aria-live="polite">
-                        <div><strong>@(sourceIsStopping ? "正在安全停止收集…" : "正在掃描與匯入來源資料…")</strong><span>@(sourceIsStopping ? "正在結束目前的檔案或程序，已完成的資料不會寫入。" : "Codex 首次匯入可能需要較長時間；完成後會顯示新增、更新與未變更筆數。")</span></div>
+                        <div><strong>@(sourceIsStopping ? "正在安全停止收集…" : "正在掃描與匯入來源資料…")</strong><span>@(sourceIsStopping ? "正在結束目前的檔案或程序，已完成的資料不會寫入。" : "首次匯入可能需要較長時間；完成後會顯示新增、更新與未變更筆數。")</span></div>
                         <div class="collection-progress-track"><span></span></div>
                     </div>
                 }
@@ -415,6 +423,7 @@
     private SourceLocation newLocation = SourceLocation.Native;
     private string newDistro = string.Empty;
     private string newCodexHome = string.Empty;
+    private string newClaudeCodeHome = string.Empty;
     private string newAdoOrganization = string.Empty;
     private List<string> repositoryPaths = [];
     private string repositoryPathInput = string.Empty;
@@ -482,9 +491,9 @@
             return;
         }
 
-        if (newType == ActivitySourceType.WslCodex && string.IsNullOrWhiteSpace(newDistro))
+        if ((newType is ActivitySourceType.WslCodex or ActivitySourceType.WslClaudeCode) && string.IsNullOrWhiteSpace(newDistro))
         {
-            SetError("WSL Codex 來源必須指定 Linux 環境名稱，例如 Ubuntu。");
+            SetError($"WSL {(newKind == SourceKind.Codex ? "Codex" : "Claude Code")} 來源必須指定 Linux 環境名稱，例如 Ubuntu。");
             return;
         }
 
@@ -554,11 +563,17 @@
                         OrganizationUrl = SourceSettingsSerializer.NormalizeAzureDevOpsOrganizationUrl(newAdoOrganization),
                         Scopes = adoScopes.Select(scope => scope.ToSettings()).ToList()
                     })
-                    : SourceSettingsSerializer.Serialize(new CodexSourceSettings
-                    {
-                        CodexHome = string.IsNullOrWhiteSpace(newCodexHome) ? null : newCodexHome.Trim(),
-                        Distro = newType == ActivitySourceType.WslCodex ? newDistro.Trim() : null
-                    })
+                    : IsCodexType(newType)
+                        ? SourceSettingsSerializer.Serialize(new CodexSourceSettings
+                        {
+                            CodexHome = string.IsNullOrWhiteSpace(newCodexHome) ? null : newCodexHome.Trim(),
+                            Distro = newType == ActivitySourceType.WslCodex ? newDistro.Trim() : null
+                        })
+                        : SourceSettingsSerializer.Serialize(new ClaudeCodeSourceSettings
+                        {
+                            ClaudeCodeHome = string.IsNullOrWhiteSpace(newClaudeCodeHome) ? null : newClaudeCodeHome.Trim(),
+                            Distro = newType == ActivitySourceType.WslClaudeCode ? newDistro.Trim() : null
+                        })
         };
         await SourceConfig.SaveAsync(source);
         Toasts.Success(existing is null
@@ -579,6 +594,7 @@
             var settings = SourceSettingsSerializer.DeserializeGit(source.SettingsJson);
             newDistro = settings.Distro ?? string.Empty;
             newCodexHome = string.Empty;
+            newClaudeCodeHome = string.Empty;
             repositoryPaths = settings.RepositoryPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             authorEmails = SourceSettingsSerializer.NormalizeAuthorEmails(settings.AuthorEmails).ToList();
         }
@@ -588,6 +604,7 @@
             newAdoOrganization = settings.OrganizationUrl;
             newDistro = string.Empty;
             newCodexHome = string.Empty;
+            newClaudeCodeHome = string.Empty;
             repositoryPaths.Clear();
             authorEmails.Clear();
             adoScopes.Clear();
@@ -601,11 +618,21 @@
                 adoScopes.Add(new AzureDevOpsScopeForm());
             }
         }
+        else if (IsClaudeCodeType(source.SourceType))
+        {
+            var settings = SourceSettingsSerializer.DeserializeClaudeCode(source.SettingsJson);
+            newDistro = settings.Distro ?? string.Empty;
+            newClaudeCodeHome = settings.ClaudeCodeHome ?? string.Empty;
+            newCodexHome = string.Empty;
+            repositoryPaths.Clear();
+            authorEmails.Clear();
+        }
         else
         {
             var settings = SourceSettingsSerializer.DeserializeCodex(source.SettingsJson);
             newDistro = settings.Distro ?? string.Empty;
             newCodexHome = settings.CodexHome ?? string.Empty;
+            newClaudeCodeHome = string.Empty;
             repositoryPaths.Clear();
             authorEmails.Clear();
         }
@@ -1127,6 +1154,7 @@
         newLocation = SourceLocation.Native;
         newDistro = string.Empty;
         newCodexHome = string.Empty;
+        newClaudeCodeHome = string.Empty;
         newAdoOrganization = string.Empty;
         adoDiagnostics = null;
         adoProjects = [];
@@ -1152,6 +1180,9 @@
     private static bool IsCodexType(ActivitySourceType type) =>
         type is ActivitySourceType.WindowsCodex or ActivitySourceType.WslCodex or ActivitySourceType.MacOsCodex;
 
+    private static bool IsClaudeCodeType(ActivitySourceType type) =>
+        type is ActivitySourceType.WindowsClaudeCode or ActivitySourceType.WslClaudeCode or ActivitySourceType.MacOsClaudeCode;
+
     private static bool IsAdoType(ActivitySourceType type) =>
         type == ActivitySourceType.AzureDevOpsPullRequest;
 
@@ -1164,6 +1195,9 @@
         ActivitySourceType.MacOsGit => "macOS Git",
         ActivitySourceType.MacOsCodex => "macOS Codex",
         ActivitySourceType.AzureDevOpsPullRequest => "Azure DevOps PR",
+        ActivitySourceType.WindowsClaudeCode => "Windows Claude Code",
+        ActivitySourceType.WslClaudeCode => "WSL Claude Code",
+        ActivitySourceType.MacOsClaudeCode => "macOS Claude Code",
         _ => type.ToString()
     };
 
@@ -1171,20 +1205,25 @@
     {
         (SourceKind.Git, SourceLocation.Wsl) => ActivitySourceType.WslGit,
         (SourceKind.Codex, SourceLocation.Wsl) => ActivitySourceType.WslCodex,
+        (SourceKind.ClaudeCode, SourceLocation.Wsl) => ActivitySourceType.WslClaudeCode,
         (SourceKind.AzureDevOps, _) => ActivitySourceType.AzureDevOpsPullRequest,
         (SourceKind.Git, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsGit,
         (SourceKind.Codex, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsCodex,
+        (SourceKind.ClaudeCode, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsClaudeCode,
         (SourceKind.Git, _) => ActivitySourceType.WindowsGit,
-        _ => ActivitySourceType.WindowsCodex
+        (SourceKind.Codex, _) => ActivitySourceType.WindowsCodex,
+        _ => ActivitySourceType.WindowsClaudeCode
     };
 
     private string SuggestedSourceName => (newKind, newLocation) switch
     {
         (SourceKind.Git, SourceLocation.Wsl) => "Git－WSL",
         (SourceKind.Codex, SourceLocation.Wsl) => "Codex－WSL",
+        (SourceKind.ClaudeCode, SourceLocation.Wsl) => "Claude Code－WSL",
         (SourceKind.AzureDevOps, _) => "Azure DevOps PR",
         (SourceKind.Git, _) => "Git－此電腦",
-        _ => "Codex－此電腦"
+        (SourceKind.Codex, _) => "Codex－此電腦",
+        _ => "Claude Code－此電腦"
     };
 
     private static bool SupportsWsl => OperatingSystem.IsWindows();
@@ -1195,6 +1234,8 @@
         ActivitySourceType.WslGit => (SourceKind.Git, SourceLocation.Wsl),
         ActivitySourceType.WindowsCodex or ActivitySourceType.MacOsCodex => (SourceKind.Codex, SourceLocation.Native),
         ActivitySourceType.WslCodex => (SourceKind.Codex, SourceLocation.Wsl),
+        ActivitySourceType.WindowsClaudeCode or ActivitySourceType.MacOsClaudeCode => (SourceKind.ClaudeCode, SourceLocation.Native),
+        ActivitySourceType.WslClaudeCode => (SourceKind.ClaudeCode, SourceLocation.Wsl),
         ActivitySourceType.AzureDevOpsPullRequest => (SourceKind.AzureDevOps, SourceLocation.Native),
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
     };
@@ -1203,6 +1244,7 @@
     {
         Git,
         Codex,
+        ClaudeCode,
         AzureDevOps
     }
 

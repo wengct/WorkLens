@@ -146,7 +146,7 @@ git push origin v1.0.0
 
 「工作摘要」將工作歷程與摘要放在同一頁：可用月曆選擇每日或每週期間、依專案與關鍵字篩選左側歷程，並在右側產生、編輯、AI 整理與匯出完整期間摘要。篩選不會改變摘要涵蓋的資料範圍；回補來源可針對單日或整週執行，且不會改變正常收集的 checkpoint。
 
-資料來源支援 Windows、macOS 與 WSL 的 Git 和 Codex，也支援以 Azure DevOps CLI 讀取 Azure DevOps Services 的 PR。Azure DevOps PR 來源只會納入 `az login` 目前使用者建立的 PR，並取得 PR 直接關聯的 work item 欄位與 relations。系統會從 `sessions` 與 `archived_sessions` 讀取本機會話、以 session id 去重，並保存 User／Codex 的可見文字對話；每日、每週及 AI 報告上下文只使用 User 訊息。Codex 資料目錄可自動偵測 `CODEX_HOME`／`~/.codex`，也可在來源設定中覆寫。
+資料來源支援 Windows、macOS 與 WSL 的 Git、Codex 和 Claude Code，也支援以 Azure DevOps CLI 讀取 Azure DevOps Services 的 PR。Azure DevOps PR 來源只會納入 `az login` 目前使用者建立的 PR，並取得 PR 直接關聯的 work item 欄位與 relations。Codex 會從 `sessions` 與 `archived_sessions` 讀取本機會話；Claude Code 會從 `projects/<project>/<session-id>.jsonl` 讀取主會話，排除子代理 transcript。兩者都以 session id 去重，保存 User／AI 可見文字對話；每日、每週及 AI 報告上下文只使用 User 訊息，工具呼叫、工具結果、思考區塊與附件內容不會匯入。Codex 資料目錄可自動偵測 `CODEX_HOME`／`~/.codex`；Claude Code 可自動偵測 `CLAUDE_CONFIG_DIR`／`~/.claude`，兩者都可在來源設定中覆寫。
 
 報告在人工紀錄或來源資料有實質異動時會標示為「需要重產」；重產會覆蓋同一期間的內容，並在覆蓋前要求確認。AI 整理可從 Prompt 範本庫選擇指令，系統仍固定驗證 JSON、工時與工作紀錄 ID；AI 完成後會直接儲存，手動修改文字時才需要另行儲存。
 

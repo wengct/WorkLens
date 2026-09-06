@@ -16,6 +16,12 @@ public sealed class CodexSourceSettings
     public string? Distro { get; set; }
 }
 
+public sealed class ClaudeCodeSourceSettings
+{
+    public string? ClaudeCodeHome { get; set; }
+    public string? Distro { get; set; }
+}
+
 public sealed class AzureDevOpsSourceSettings
 {
     public string OrganizationUrl { get; set; } = string.Empty;
@@ -95,6 +101,25 @@ public sealed class CodexSessionMessage
     public string Text { get; set; } = string.Empty;
 }
 
+public sealed class ClaudeCodeSessionMetadata
+{
+    public string SessionId { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; set; }
+    public string? Cwd { get; set; }
+    public string Platform { get; set; } = string.Empty;
+    public string? CliVersion { get; set; }
+    public int AttachmentCount { get; set; }
+    public List<ClaudeCodeSessionMessage> Messages { get; set; } = [];
+}
+
+public sealed class ClaudeCodeSessionMessage
+{
+    public string Id { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public DateTimeOffset Timestamp { get; set; }
+    public string Text { get; set; } = string.Empty;
+}
+
 public static class SourceSettingsSerializer
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
@@ -146,6 +171,27 @@ public static class SourceSettingsSerializer
     }
 
     public static string Serialize(CodexSourceSettings settings) =>
+        JsonSerializer.Serialize(settings, Options);
+
+    public static ClaudeCodeSourceSettings DeserializeClaudeCode(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new ClaudeCodeSourceSettings();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<ClaudeCodeSourceSettings>(json, Options)
+                ?? new ClaudeCodeSourceSettings();
+        }
+        catch (JsonException)
+        {
+            return new ClaudeCodeSourceSettings();
+        }
+    }
+
+    public static string Serialize(ClaudeCodeSourceSettings settings) =>
         JsonSerializer.Serialize(settings, Options);
 
     public static AzureDevOpsSourceSettings DeserializeAzureDevOps(string? json)
@@ -253,6 +299,33 @@ public static class SourceSettingsSerializer
         try
         {
             return JsonSerializer.Deserialize<CodexSessionMetadata>(json, Options);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    public static string SerializeClaudeCodeMetadata(ClaudeCodeSessionMetadata metadata) =>
+        JsonSerializer.Serialize(metadata, Options);
+
+    public static ClaudeCodeSessionMetadata? DeserializeClaudeCodeMetadata(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            var metadata = JsonSerializer.Deserialize<ClaudeCodeSessionMetadata>(json, Options);
+            if (metadata is null)
+            {
+                return null;
+            }
+
+            metadata.Messages ??= [];
+            return metadata;
         }
         catch (JsonException)
         {
