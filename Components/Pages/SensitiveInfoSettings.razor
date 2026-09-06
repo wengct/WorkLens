@@ -1,0 +1,130 @@
+@page "/sensitive-info"
+@using WorkLens.Domain
+@inject IAiContentSanitizer ContentSanitizer
+@inject SensitiveWordService SensitiveWords
+@inject ToastService Toasts
+
+<PageTitle>機敏資訊防護｜WorkLens</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <a class="page-back-link" href="/ai">← 返回 AI 設定</a>
+        <p class="eyebrow">Security</p>
+        <h1>機敏資訊防護</h1>
+        <p>管理 AI 傳送前的本機掃描與遮蔽規則；原始工作紀錄、Git、ADO 與 Prompt 範本不會被修改。</p>
+    </div>
+    <div class="button-row">
+        <button class="button button-secondary" type="button" @onclick="RefreshStatusAsync" disabled="@isBusy">@(isBusy ? "檢查中…" : "重新檢查")</button>
+    </div>
+</div>
+
+@if (isBusy)
+{
+    <div class="ai-operation-progress">
+        <OperationProgress Title="正在檢查機敏資訊防護" Detail="確認隨附的 leak-hunter 可用後，才允許 AI 傳送。" />
+    </div>
+}
+
+<section class="panel sensitive-settings-panel">
+    <div class="panel-heading">
+        <div><h2>必要防護狀態</h2><p>掃描失敗、執行檔缺失或遮蔽後仍有命中時，WorkLens 會停止這次 AI 傳送。</p></div>
+        @if (sanitizerStatus is not null)
+        {
+            <span class="badge @(sanitizerStatus.Available ? "badge-ready" : "badge-error")">@(sanitizerStatus.Available ? "可用" : "不可用")</span>
+        }
+    </div>
+    <div class="form-grid">
+        <div class="field"><label>leak-hunter</label><div class="hint">@(sanitizerStatus?.Available == true ? sanitizerStatus.Version : sanitizerStatus?.Summary ?? "檢查中…")<br />規則版本：@AiSanitizationRules.CurrentVersion</div></div>
+        <div class="field"><label>固定偵測</label><div class="hint">機敏憑證、台灣個人資料、Email 與自訂敏感詞</div></div>
+    </div>
+</section>
+
+<section class="panel sensitive-settings-panel">
+    <div class="panel-heading">
+        <div><h2>自訂敏感詞</h2><p>輸入客戶名稱、內部代號等詞彙。系統會去除前後空白、忽略大小寫並採字面比對。</p></div>
+    </div>
+    <div class="field">
+        <label for="sensitive-word">新增自訂敏感詞</label>
+        <div class="button-row">
+            <input id="sensitive-word" @bind="newSensitiveWord" @bind:event="oninput" placeholder="例如：客戶名稱或內部代號" />
+            <button class="button button-secondary" type="button" @onclick="AddSensitiveWordAsync" disabled="@isBusy">新增</button>
+        </div>
+    </div>
+    @if (sensitiveWords.Count > 0)
+    {
+        <div class="sensitive-word-list">
+            @foreach (var word in sensitiveWords)
+            {
+                <div class="sensitive-word-row"><span>@word.Value</span><button class="button button-danger button-small" type="button" @onclick="() => DeleteSensitiveWordAsync(word.Id)" disabled="@isBusy">刪除</button></div>
+            }
+        </div>
+    }
+    else
+    {
+        <p class="empty-state sensitive-word-empty">尚未設定自訂敏感詞。固定偵測仍會照常套用。</p>
+    }
+</section>
+
+@code {
+    private string newSensitiveWord = string.Empty;
+    private IReadOnlyList<SensitiveWord> sensitiveWords = [];
+    private AiSanitizerStatus? sanitizerStatus;
+    private bool isBusy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        sensitiveWords = await SensitiveWords.GetAllAsync();
+        await RefreshStatusAsync();
+    }
+
+    private async Task RefreshStatusAsync()
+    {
+        if (isBusy) return;
+        isBusy = true;
+        try
+        {
+            sanitizerStatus = await ContentSanitizer.GetStatusAsync();
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task AddSensitiveWordAsync()
+    {
+        if (isBusy) return;
+        try
+        {
+            isBusy = true;
+            await SensitiveWords.SaveAsync(new SensitiveWord { Value = newSensitiveWord });
+            newSensitiveWord = string.Empty;
+            sensitiveWords = await SensitiveWords.GetAllAsync();
+            Toasts.Success("自訂敏感詞已新增。");
+        }
+        catch (ArgumentException exception)
+        {
+            Toasts.Error(exception.Message);
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task DeleteSensitiveWordAsync(Guid id)
+    {
+        if (isBusy) return;
+        try
+        {
+            isBusy = true;
+            await SensitiveWords.DeleteAsync(id);
+            sensitiveWords = await SensitiveWords.GetAllAsync();
+            Toasts.Success("自訂敏感詞已刪除。");
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+}
