@@ -293,7 +293,8 @@ public sealed class ReportService(
         db.AiJobs.Add(job);
         await db.SaveChangesAsync(cancellationToken);
 
-        var contextBytes = GetUtf8ContextByteCount(prepared.Request.InputMarkdown);
+        var input = prepared.Request.InputMarkdown;
+        var contextBytes = GetUtf8ContextByteCount(input);
         var contextSizeKb = contextBytes / 1024d;
         logger.LogInformation(
             "AI 報告上下文大小：{ContextSizeKb:F2} KB（{ContextBytes} bytes），傳送方式={Transport}，ReportId={ReportId}，Kind={ReportKind}，Period={PeriodKey}",
