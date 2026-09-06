@@ -31,22 +31,29 @@ public sealed class ApiAiProviderAdapter(
         var entryId = Guid.Parse("22222222-2222-2222-2222-222222222222");
         var result = await GenerateAsync(
             configuration,
-            new AiReportRequest(
+            new AiPreparedRequest(
                 reportId,
                 configuration.ProviderType,
                 "工作項目：完成 API 連線測試。",
                 [entryId],
                 1,
-                EffectivePrompt: "只需以一句話表示連線測試成功。"),
+                null,
+                "只需以一句話表示連線測試成功。",
+                new AiSanitizationSummary(AiSanitizationStatus.Clean, "connection-test", [])),
             cancellationToken);
         return new AiConnectionTestResult(result.Succeeded, result.RawResponse, result.Error);
     }
 
     public async Task<AiReportResult> GenerateAsync(
         AiProviderConfiguration configuration,
-        AiReportRequest request,
+        AiPreparedRequest request,
         CancellationToken cancellationToken)
     {
+        if (!request.Sanitization.IsReady)
+        {
+            return new AiReportResult(false, null, null, "AI 請求未通過機敏資訊檢查，未傳送。", request.Sanitization);
+        }
+
         var validationError = ValidateConfiguration(configuration);
         if (validationError is not null)
         {
@@ -94,7 +101,7 @@ public sealed class ApiAiProviderAdapter(
         }
     }
 
-    private HttpRequestMessage BuildRequest(AiProviderConfiguration configuration, AiReportRequest request)
+    private HttpRequestMessage BuildRequest(AiProviderConfiguration configuration, AiPreparedRequest request)
     {
         var apiKey = string.IsNullOrWhiteSpace(configuration.ProtectedApiKey)
             ? string.Empty
@@ -330,7 +337,7 @@ public sealed class ApiAiProviderAdapter(
             : $"{normalized}/{path}";
     }
 
-    private static string BuildPrompt(AiReportRequest request) =>
+    private static string BuildPrompt(AiPreparedRequest request) =>
         "請根據以下工作資料產生工時回報。只輸出 JSON，不要輸出 markdown code fence。" +
         "JSON 必須包含 reportId、workEntryIds、totalHours、body；不得虛構、變更或省略輸入的工時與工作紀錄 ID。\n" +
         $"reportId={request.ReportId}\nworkEntryIds={JsonSerializer.Serialize(request.WorkEntryIds)}\n" +

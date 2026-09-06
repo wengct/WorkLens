@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using WorkLens.Data;
@@ -182,7 +183,7 @@ public sealed class ScheduleRunner(
                 IsManual = isManual,
                 PromptTemplateId = prompt?.Id,
                 PromptNameSnapshot = prompt?.Name ?? string.Empty,
-                PromptTextSnapshot = prompt?.Content ?? string.Empty
+                PromptTextSnapshot = string.Empty
             };
             db.ScheduleExecutions.Add(execution);
             try
@@ -209,7 +210,14 @@ public sealed class ScheduleRunner(
                     db.ScheduleExecutions.Update(execution);
                     await db.SaveChangesAsync(cancellationToken);
                     var result = await reports.GenerateWithAiAsync(report.Id, prompt!.Id, cancellationToken);
-                    execution.AiStatus = result.Succeeded ? "Succeeded" : "Failed";
+                    execution.SanitizationStatus = result.Sanitization?.Status.ToString() ?? "NotRun";
+                    execution.SanitizedFindingCount = result.Sanitization?.TotalCount ?? 0;
+                    execution.SanitizedCategoriesJson = JsonSerializer.Serialize(result.Sanitization?.Notices ?? []);
+                    execution.SanitizerVersion = result.Sanitization?.ScannerVersion ?? string.Empty;
+                    execution.SanitizerRuleVersion = result.Sanitization?.RuleVersion ?? AiSanitizationRules.CurrentVersion;
+                    execution.AiStatus = result.Sanitization?.Status == AiSanitizationStatus.Failed
+                        ? "Blocked"
+                        : result.Succeeded ? "Succeeded" : "Failed";
                     execution.Status = result.Succeeded ? "Succeeded" : "Failed";
                     execution.Error = result.Error;
                 }

@@ -1,4 +1,5 @@
 @page "/schedules"
+@using System.Text.Json
 @inject ScheduleService ScheduleManager
 @inject PromptTemplateService PromptTemplates
 @inject RuntimeSettingsService RuntimeSettings
@@ -162,5 +163,35 @@
     }
     private static string StatusText(ScheduleExecution? execution) => execution?.Status switch { "Succeeded" => "成功", "Failed" => "失敗", "Running" => "執行中", "Cancelled" => "已取消", "Interrupted" => "已中斷", _ => "尚未執行" };
     private static string StatusClass(ScheduleExecution? execution) => execution?.Status switch { "Succeeded" => "badge-ready", "Failed" or "Interrupted" => "badge-error", "Running" => "badge-running", _ => "badge-disabled" };
-    private static string ExecutionSummary(ScheduleExecution? execution) => execution is null ? "尚無執行紀錄" : $"上次執行：{execution.StartedAt.LocalDateTime:yyyy/MM/dd HH:mm}｜規則式 {execution.DeterministicStatus}｜AI {execution.AiStatus}｜備份 {execution.BackupStatus}";
+    private static string ExecutionSummary(ScheduleExecution? execution)
+    {
+        if (execution is null) return "尚無執行紀錄";
+
+        var summary = $"上次執行：{execution.StartedAt.LocalDateTime:yyyy/MM/dd HH:mm}｜規則式 {execution.DeterministicStatus}｜AI {execution.AiStatus}｜備份 {execution.BackupStatus}";
+        if (execution.SanitizedFindingCount <= 0) return summary;
+
+        var categories = string.Empty;
+        try
+        {
+            var notices = JsonSerializer.Deserialize<List<AiRedactionNotice>>(execution.SanitizedCategoriesJson) ?? [];
+            categories = string.Join("、", notices
+                .GroupBy(x => x.Category)
+                .Select(group => $"{SensitiveCategoryText(group.Key)} {group.Sum(x => x.Count)}處"));
+        }
+        catch (JsonException)
+        {
+            // The count remains useful even if an old record has no category details.
+        }
+
+        return string.IsNullOrWhiteSpace(categories)
+            ? $"{summary}｜已遮蔽機敏資訊 {execution.SanitizedFindingCount}處"
+            : $"{summary}｜已遮蔽機敏資訊：{categories}";
+    }
+
+    private static string SensitiveCategoryText(AiSensitiveDataCategory category) => category switch
+    {
+        AiSensitiveDataCategory.Credential => "機敏憑證",
+        AiSensitiveDataCategory.PersonalData => "個人資料",
+        _ => "自訂敏感詞"
+    };
 }

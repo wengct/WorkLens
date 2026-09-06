@@ -20,17 +20,29 @@ $ReleaseDir = Split-Path -Parent $PSScriptRoot
 $VersionFile = Join-Path $ReleaseDir "VERSION"
 $Executable = Join-Path $ReleaseDir "WorkLens.exe"
 $ReleaseManager = Join-Path $ReleaseDir "scripts\manage.ps1"
+$LeakHunterExecutable = Join-Path $ReleaseDir "tools\leak-hunter\leak-hunter.exe"
+$LeakHunterVersionFile = Join-Path $ReleaseDir "scripts\leak-hunter.version"
 if (!(Test-Path -LiteralPath $VersionFile -PathType Leaf) -or !(Test-Path -LiteralPath $Executable -PathType Leaf)) {
     throw "Run install.ps1 from an extracted WorkLens Windows release package."
 }
 if (!(Test-Path -LiteralPath $ReleaseManager -PathType Leaf)) {
     throw "The WorkLens release package does not contain scripts\manage.ps1."
 }
+if (!(Test-Path -LiteralPath $LeakHunterExecutable -PathType Leaf) -or !(Test-Path -LiteralPath $LeakHunterVersionFile -PathType Leaf)) {
+    throw "The WorkLens release package does not contain the verified leak-hunter executable and version marker."
+}
+$ExpectedLeakHunterVersion = (Get-Content -LiteralPath $LeakHunterVersionFile -Raw).Trim().TrimStart('v')
+$ActualLeakHunterVersion = (& $LeakHunterExecutable --version 2>$null | Out-String).Trim()
+$EscapedLeakHunterVersion = [Regex]::Escape($ExpectedLeakHunterVersion)
+if ([string]::IsNullOrWhiteSpace($ActualLeakHunterVersion) -or $ActualLeakHunterVersion -notmatch "(?i)(?<![0-9A-Za-z.-])v?$EscapedLeakHunterVersion(?![0-9A-Za-z.-])") {
+    throw "The bundled leak-hunter version does not match the release marker."
+}
 
 $Version = (Get-Content -LiteralPath $VersionFile -Raw).Trim().TrimStart('v')
 if ($Version -notmatch '^[0-9A-Za-z][0-9A-Za-z._-]*$') { throw "The release VERSION is invalid." }
 $VersionsDir = Join-Path $InstallDir "versions"
 $VersionDir = Join-Path $VersionsDir $Version
+$InstalledLeakHunter = Join-Path $VersionDir "tools\leak-hunter\leak-hunter.exe"
 $CurrentFile = Join-Path $InstallDir "current.txt"
 $PortFile = Join-Path $InstallDir "port.txt"
 $InstalledScripts = Join-Path $InstallDir "scripts"
@@ -65,7 +77,7 @@ function Add-WorkLensBinToPath {
 }
 
 try {
-    if ($PreviousVersion -ne $Version -or !(Test-Path -LiteralPath $VersionDir)) {
+    if ($PreviousVersion -ne $Version -or !(Test-Path -LiteralPath $VersionDir) -or !(Test-Path -LiteralPath $InstalledLeakHunter)) {
         New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
         Copy-Item -Path (Join-Path $ReleaseDir "*") -Destination $StagingDir -Recurse -Force
     }

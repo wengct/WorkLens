@@ -6,6 +6,9 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ### 新增
 
+- AI 傳送前新增必要的本機機敏資訊防護：WorkLens 以隨附且固定版本的官方 leak-hunter 掃描最終工作資料與 Prompt，並補充 Email、自訂敏感詞偵測；命中時只建立遮蔽副本，使用者確認「遮蔽後送出」後才傳送，原始來源資料不會被改寫。
+- AI 設定頁新增 leak-hunter 狀態、偵測類型與自訂敏感詞管理；手動、排程及 Prompt 測試共用同一條遮蔽與重掃流程，檢查失敗時會阻止 AI 傳送。
+- 發行包現在會依平台隨附官方 leak-hunter 執行檔、SHA-256 驗證及版本檢查；WorkLens 升級與回滾會連同掃描器版本處理。
 - 形象網站新增 Azure DevOps Services、Git、Codex、Claude Code 與 GitHub Copilot 的資料來源品牌圖示列，並補充人工紀錄說明。
 - 形象網站的快速安裝指令新增靠右對齊的複製按鈕，只複製指令、不包含 `$` 提示符號，並提供成功與失敗提示。
 - 新增 Claude Code 工作紀錄來源，支援 Windows、macOS 與 WSL；唯讀匯入本機主會話 JSONL，排除子代理、工具內容、思考區塊與附件。

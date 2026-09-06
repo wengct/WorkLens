@@ -67,8 +67,42 @@
                ConfirmText="確認覆蓋"
                BusyText="整理中…"
                IsBusy="isGeneratingAi"
-               OnConfirm="GenerateAiAsync"
+               OnConfirm="PrepareAiAndMaybeSendAsync"
                OnCancel="CancelAiOverwrite" />
+
+@if (pendingAiPreparation is not null)
+{
+    <div class="modal-backdrop sensitive-preview-backdrop" role="presentation">
+        <section class="modal-dialog sensitive-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="sensitive-preview-title">
+            <div class="modal-heading">
+                <div><p class="eyebrow">送出前檢查</p><h2 id="sensitive-preview-title">已自動遮蔽機敏資訊</h2></div>
+                <button class="modal-close" type="button" aria-label="取消" @onclick="CancelSensitivePreview" disabled="@isGeneratingAi">×</button>
+            </div>
+            <p class="confirm-dialog-message">原始工作紀錄與來源資料未修改。以下內容只會以遮蔽副本送出 AI。</p>
+            <ul class="sensitive-notice-list">
+                @foreach (var notice in pendingAiPreparation.Request.Sanitization.Notices)
+                {
+                    <li>@SensitiveSegmentText(notice.Segment)：@SensitiveCategoryText(notice.Category) @notice.Count 處</li>
+                }
+            </ul>
+            <details class="sensitive-preview-section" open>
+                <summary>工作資料預覽</summary>
+                <pre class="sensitive-preview">@pendingAiPreparation.Request.InputMarkdown</pre>
+            </details>
+            @if (!string.IsNullOrWhiteSpace(pendingAiPreparation.Request.EffectivePrompt))
+            {
+                <details class="sensitive-preview-section">
+                    <summary>Prompt 預覽</summary>
+                    <pre class="sensitive-preview">@pendingAiPreparation.Request.EffectivePrompt</pre>
+                </details>
+            }
+            <div class="modal-actions">
+                <button class="button button-secondary" type="button" @onclick="CancelSensitivePreview" disabled="@isGeneratingAi">取消</button>
+                <button class="button button-primary" type="button" @onclick="SendPreparedAiAsync" disabled="@isGeneratingAi">@(isGeneratingAi ? "整理中…" : "遮蔽後送出")</button>
+            </div>
+        </section>
+    </div>
+}
 
 @code {
     [Parameter, EditorRequired] public ReportKind Kind { get; set; }
@@ -83,6 +117,7 @@
     private bool isGeneratingAi;
     private bool confirmOverwrite;
     private bool confirmAiOverwrite;
+    private AiPreparedReport? pendingAiPreparation;
     private CancellationTokenSource? aiCancellation;
     private IReadOnlyList<PromptTemplate> promptOptions = [];
     private Guid? selectedPromptId;
@@ -193,10 +228,10 @@
     private Task PrepareAiAsync()
     {
         confirmAiOverwrite = !string.IsNullOrWhiteSpace(report?.Body);
-        return confirmAiOverwrite ? Task.CompletedTask : GenerateAiAsync();
+        return confirmAiOverwrite ? Task.CompletedTask : PrepareAiAndMaybeSendAsync();
     }
 
-    private async Task GenerateAiAsync()
+    private async Task PrepareAiAndMaybeSendAsync()
     {
         if (report is null || isGeneratingAi) return;
         confirmAiOverwrite = false;
@@ -206,21 +241,23 @@
         await Task.Yield();
         try
         {
-            var result = await ReportService.GenerateWithAiAsync(report.Id, selectedPromptId, aiCancellation.Token);
+            var preparation = await ReportService.PrepareWithAiAsync(report.Id, selectedPromptId, aiCancellation.Token);
             if (aiCancellation.IsCancellationRequested)
             {
                 Toasts.Info("已取消 AI 整理，原內容已保留。");
             }
-            else if (result.Succeeded)
+            else if (!preparation.Succeeded)
             {
-                report = await ReportService.GetAsync(report.Id);
-                savedBody = report?.Body ?? string.Empty;
-                Toasts.Success("AI 整理完成並已儲存，請確認內容。");
-                await OnReportChanged.InvokeAsync();
+                Toasts.Error(preparation.Error ?? "機敏資訊檢查未完成，原內容已保留。");
+            }
+            else if (preparation.Sanitization.Status == AiSanitizationStatus.Redacted)
+            {
+                pendingAiPreparation = preparation.PreparedReport;
             }
             else
             {
-                Toasts.Error(result.Error ?? "AI 整理失敗，原內容已保留。");
+                pendingAiPreparation = preparation.PreparedReport;
+                await SendPreparedAiCoreAsync();
             }
         }
         catch (Exception exception)
@@ -236,9 +273,67 @@
         }
     }
 
+    private async Task SendPreparedAiAsync()
+    {
+        if (pendingAiPreparation is null || isGeneratingAi) return;
+        isGeneratingAi = true;
+        aiCancellation = new CancellationTokenSource();
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        try
+        {
+            await SendPreparedAiCoreAsync();
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "Sending prepared AI report failed");
+            Toasts.Error("AI 整理發生未預期錯誤，原內容已保留。");
+        }
+        finally
+        {
+            aiCancellation.Dispose();
+            aiCancellation = null;
+            isGeneratingAi = false;
+        }
+    }
+
+    private async Task SendPreparedAiCoreAsync()
+    {
+        if (pendingAiPreparation is null) return;
+        var prepared = pendingAiPreparation;
+        pendingAiPreparation = null;
+        var result = await ReportService.SendPreparedWithAiAsync(prepared, aiCancellation?.Token ?? CancellationToken.None);
+        if (aiCancellation?.IsCancellationRequested == true)
+        {
+            Toasts.Info("已取消 AI 整理，原內容已保留。");
+        }
+        else if (result.Succeeded)
+        {
+            report = await ReportService.GetAsync(prepared.ReportId);
+            savedBody = report?.Body ?? string.Empty;
+            var suffix = result.Sanitization?.Status == AiSanitizationStatus.Redacted
+                ? "（已自動遮蔽機敏資訊）"
+                : string.Empty;
+            Toasts.Success($"AI 整理完成並已儲存{suffix}，請確認內容。");
+            await OnReportChanged.InvokeAsync();
+        }
+        else
+        {
+            Toasts.Error(result.Error ?? "AI 整理失敗，原內容已保留。");
+        }
+    }
+
     private void CancelAiGeneration() => aiCancellation?.Cancel();
     private void SetSelectedPrompt(ChangeEventArgs args) => selectedPromptId = Guid.TryParse(args.Value?.ToString(), out var id) ? id : null;
     private void CancelOverwrite() => confirmOverwrite = false;
     private void CancelAiOverwrite() => confirmAiOverwrite = false;
+    private void CancelSensitivePreview() => pendingAiPreparation = null;
+    private static string SensitiveSegmentText(string segment) => segment;
+    private static string SensitiveCategoryText(AiSensitiveDataCategory category) => category switch
+    {
+        AiSensitiveDataCategory.Credential => "機敏憑證",
+        AiSensitiveDataCategory.PersonalData => "個人資料",
+        _ => "自訂敏感詞"
+    };
     private static DateOnly StartOfWeek(DateOnly day) => day.AddDays(-(int)day.DayOfWeek + (day.DayOfWeek == DayOfWeek.Sunday ? -6 : 1));
 }

@@ -2,18 +2,52 @@ using WorkLens.Domain;
 
 namespace WorkLens.Services;
 
-public sealed class AiProviderOrchestrator(AiProviderRegistry registry)
+public sealed class AiProviderOrchestrator(
+    AiProviderRegistry registry,
+    IAiContentSanitizer sanitizer)
 {
     public Task<AiProviderValidationResult> ValidateAsync(
         AiProviderConfiguration configuration,
         CancellationToken cancellationToken = default) =>
         registry.Get(configuration).ValidateAsync(configuration, cancellationToken);
 
-    public Task<AiReportResult> GenerateAsync(
+    public async Task<AiReportResult> GenerateAsync(
         AiProviderConfiguration configuration,
         AiReportRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var prepared = await PrepareAsync(request, cancellationToken);
+        if (!prepared.Succeeded)
+        {
+            return new AiReportResult(false, null, null, prepared.Summary.Error, prepared.Summary);
+        }
+
+        return await GeneratePreparedAsync(configuration, prepared.PreparedRequest!, cancellationToken);
+    }
+
+    public Task<AiSanitizationResult> PrepareAsync(
+        AiReportRequest request,
         CancellationToken cancellationToken = default) =>
-        registry.Get(configuration).GenerateAsync(configuration, request, cancellationToken);
+        sanitizer.PrepareAsync(request, cancellationToken);
+
+    public async Task<AiReportResult> GeneratePreparedAsync(
+        AiProviderConfiguration configuration,
+        AiPreparedRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (!request.Sanitization.IsReady)
+        {
+            return new AiReportResult(
+                false,
+                null,
+                null,
+                "AI 請求未通過機敏資訊檢查，未傳送。",
+                request.Sanitization);
+        }
+
+        var result = await registry.Get(configuration).GenerateAsync(configuration, request, cancellationToken);
+        return result with { Sanitization = request.Sanitization };
+    }
 
     public Task<AiConnectionTestResult> TestConnectionAsync(
         AiProviderConfiguration configuration,

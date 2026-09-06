@@ -49,6 +49,7 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
         await EnsureColumnAsync(db, "AiProviders", "UpdatedAt", "TEXT NOT NULL DEFAULT '0001-01-01 00:00:00+00:00'", cancellationToken);
         await EnsureAiFeatureSettingsSchemaAsync(db, cancellationToken);
         await EnsureAiFeatureSettingsAsync(db, legacyAiEnabled, cancellationToken);
+        await EnsureSensitiveWordsSchemaAsync(db, cancellationToken);
         await RemoveLegacyAiProviderEnabledColumnAsync(db, cancellationToken);
         await EnsureUseHeadlessColumnAsync(db, cancellationToken);
         await EnsureWorkEntryTitleColumnAsync(db, cancellationToken);
@@ -270,6 +271,33 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
         await EnsureColumnAsync(db, "AiJobs", "PromptTemplateId", "TEXT NULL", cancellationToken);
         await EnsureColumnAsync(db, "AiJobs", "PromptNameSnapshot", "TEXT NOT NULL DEFAULT ''", cancellationToken);
         await EnsureColumnAsync(db, "AiJobs", "PromptTextSnapshot", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await EnsureColumnAsync(db, "AiJobs", "SanitizationStatus", "TEXT NOT NULL DEFAULT 'NotRun'", cancellationToken);
+        await EnsureColumnAsync(db, "AiJobs", "SanitizedFindingCount", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+        await EnsureColumnAsync(db, "AiJobs", "SanitizedCategoriesJson", "TEXT NOT NULL DEFAULT '[]'", cancellationToken);
+        await EnsureColumnAsync(db, "AiJobs", "SanitizerVersion", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await EnsureColumnAsync(db, "AiJobs", "SanitizerRuleVersion", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await EnsureColumnAsync(db, "ScheduleExecutions", "SanitizationStatus", "TEXT NOT NULL DEFAULT 'NotRun'", cancellationToken);
+        await EnsureColumnAsync(db, "ScheduleExecutions", "SanitizedFindingCount", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+        await EnsureColumnAsync(db, "ScheduleExecutions", "SanitizedCategoriesJson", "TEXT NOT NULL DEFAULT '[]'", cancellationToken);
+        await EnsureColumnAsync(db, "ScheduleExecutions", "SanitizerVersion", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await EnsureColumnAsync(db, "ScheduleExecutions", "SanitizerRuleVersion", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+    }
+
+    private static async Task EnsureSensitiveWordsSchemaAsync(
+        WorkLensDbContext db,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            CREATE TABLE IF NOT EXISTS "SensitiveWords" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_SensitiveWords" PRIMARY KEY,
+                "Value" TEXT NOT NULL,
+                "Enabled" INTEGER NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                "UpdatedAt" TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_SensitiveWords_Value" ON "SensitiveWords" ("Value" COLLATE NOCASE);
+            """;
+        await db.Database.ExecuteSqlRawAsync(sql, cancellationToken);
     }
 
     private static async Task EnsureColumnAsync(

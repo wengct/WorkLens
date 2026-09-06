@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using WorkLens.Data;
 using WorkLens.Domain;
@@ -144,29 +145,43 @@ public sealed class ReportService(
         Guid? promptTemplateId,
         CancellationToken cancellationToken = default)
     {
+        var preparation = await PrepareWithAiAsync(reportId, promptTemplateId, cancellationToken);
+        if (!preparation.Succeeded)
+        {
+            return new AiReportResult(false, null, null, preparation.Error, preparation.Sanitization);
+        }
+
+        return await SendPreparedWithAiAsync(preparation.PreparedReport!, cancellationToken);
+    }
+
+    public async Task<AiReportPreparationResult> PrepareWithAiAsync(
+        Guid reportId,
+        Guid? promptTemplateId,
+        CancellationToken cancellationToken = default)
+    {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         var report = await db.Reports.SingleOrDefaultAsync(x => x.Id == reportId, cancellationToken);
         if (report is null)
         {
-            return new AiReportResult(false, null, null, "找不到報告。");
+            return PreparationFailure("找不到報告。");
         }
 
         var featureSettings = await db.AiFeatureSettings.AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == AiFeatureSettings.SingletonId, cancellationToken);
         if (featureSettings?.Enabled != true)
         {
-            return new AiReportResult(false, null, null, "AI 報告整理尚未啟用，請先到設定開啟。");
+            return PreparationFailure("AI 報告整理尚未啟用，請先到設定開啟。");
         }
         var configuration = await db.AiProviders.AsNoTracking()
             .SingleOrDefaultAsync(x => x.IsDefault, cancellationToken);
         if (configuration is null)
         {
-            return new AiReportResult(false, null, null, "找不到預設 AI 設定，請先到 AI 設定指定預設組。");
+            return PreparationFailure("找不到預設 AI 設定，請先到 AI 設定指定預設組。");
         }
         var validation = await aiProviders.ValidateAsync(configuration, cancellationToken);
         if (!validation.IsValid)
         {
-            return new AiReportResult(false, null, null, validation.Summary);
+            return PreparationFailure(validation.Summary);
         }
 
         var aiProjects = await db.Projects.AsNoTracking()
@@ -217,32 +232,8 @@ public sealed class ReportService(
         var providerTarget = configuration.ProviderType == "ask-bridge"
             ? configuration.Provider
             : configuration.Model ?? configuration.ProviderType;
-        var job = new AiJob
-        {
-            ProviderType = configuration.ProviderType,
-            Provider = providerTarget,
-            Status = "Running",
-            StartedAt = DateTimeOffset.UtcNow,
-            PromptTemplateId = promptTemplate?.Id,
-            PromptNameSnapshot = promptTemplate?.Name ?? "舊版 Prompt",
-            PromptTextSnapshot = effectivePrompt
-        };
-        db.AiJobs.Add(job);
-        await db.SaveChangesAsync(cancellationToken);
 
-        var contextBytes = GetUtf8ContextByteCount(input);
-        var contextSizeKb = contextBytes / 1024d;
-        logger.LogInformation(
-            "AI 報告上下文大小：{ContextSizeKb:F2} KB（{ContextBytes} bytes），傳送方式={Transport}，ReportId={ReportId}，Kind={ReportKind}，Period={PeriodKey}",
-            contextSizeKb,
-            contextBytes,
-            configuration.ProviderType == "ask-bridge" ? "檔案附件" : "HTTP JSON",
-            report.Id,
-            report.Kind,
-            report.PeriodKey);
-
-        var result = await aiProviders.GenerateAsync(
-            configuration,
+        var sanitization = await aiProviders.PrepareAsync(
             new AiReportRequest(
                 report.Id,
                 providerTarget,
@@ -252,6 +243,72 @@ public sealed class ReportService(
                 configuration.ExecutablePath,
                 effectivePrompt),
             cancellationToken);
+        if (!sanitization.Succeeded)
+        {
+            return new AiReportPreparationResult(
+                null,
+                sanitization.Summary,
+                sanitization.Summary.Error ?? "機敏資訊檢查未完成，本次未傳送 AI。");
+        }
+
+        var preparedRequest = sanitization.PreparedRequest!;
+        return new AiReportPreparationResult(
+            new AiPreparedReport(
+                report.Id,
+                configuration,
+                preparedRequest,
+                promptTemplate?.Id,
+                promptTemplate?.Name ?? "舊版 Prompt",
+                preparedRequest.EffectivePrompt),
+            sanitization.Summary,
+            null);
+    }
+
+    public async Task<AiReportResult> SendPreparedWithAiAsync(
+        AiPreparedReport prepared,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        var report = await db.Reports.SingleOrDefaultAsync(x => x.Id == prepared.ReportId, cancellationToken);
+        if (report is null)
+        {
+            return new AiReportResult(false, null, null, "找不到報告。", prepared.Request.Sanitization);
+        }
+
+        var job = new AiJob
+        {
+            ProviderType = prepared.Configuration.ProviderType,
+            Provider = prepared.Request.Target,
+            Status = "Running",
+            StartedAt = DateTimeOffset.UtcNow,
+            PromptTemplateId = prepared.PromptTemplateId,
+            PromptNameSnapshot = prepared.PromptNameSnapshot,
+            PromptTextSnapshot = prepared.PromptTextSnapshot,
+            SanitizationStatus = prepared.Request.Sanitization.Status.ToString(),
+            SanitizedFindingCount = prepared.Request.Sanitization.TotalCount,
+            SanitizedCategoriesJson = JsonSerializer.Serialize(prepared.Request.Sanitization.Notices),
+            SanitizerVersion = prepared.Request.Sanitization.ScannerVersion,
+            SanitizerRuleVersion = prepared.Request.Sanitization.RuleVersion
+        };
+        db.AiJobs.Add(job);
+        await db.SaveChangesAsync(cancellationToken);
+
+        var contextBytes = GetUtf8ContextByteCount(prepared.Request.InputMarkdown);
+        var contextSizeKb = contextBytes / 1024d;
+        logger.LogInformation(
+            "AI 報告上下文大小：{ContextSizeKb:F2} KB（{ContextBytes} bytes），傳送方式={Transport}，ReportId={ReportId}，Kind={ReportKind}，Period={PeriodKey}",
+            contextSizeKb,
+            contextBytes,
+            prepared.Configuration.ProviderType == "ask-bridge" ? "檔案附件" : "HTTP JSON",
+            prepared.ReportId,
+            report.Kind,
+            report.PeriodKey);
+
+        var result = await aiProviders.GeneratePreparedAsync(
+            prepared.Configuration,
+            prepared.Request,
+            cancellationToken);
+        result = result with { Sanitization = prepared.Request.Sanitization };
 
         job.CompletedAt = DateTimeOffset.UtcNow;
         job.RawResponse = result.RawResponse;
@@ -277,6 +334,12 @@ public sealed class ReportService(
 
         return result;
     }
+
+    private static AiReportPreparationResult PreparationFailure(string error) =>
+        new(
+            null,
+            new AiSanitizationSummary(AiSanitizationStatus.Failed, string.Empty, [], error),
+            error);
 
     public static int GetUtf8ContextByteCount(string input) =>
         Encoding.UTF8.GetByteCount(input);

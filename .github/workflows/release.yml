@@ -72,6 +72,7 @@ jobs:
           $package = Join-Path $env:RUNNER_TEMP "package"
           $artifact = "worklens-$($env:GITHUB_REF_NAME)-${{ matrix.rid }}.zip"
           dotnet publish WorkLens.csproj --configuration Release --runtime "${{ matrix.rid }}" --self-contained true -p:Version=$version -p:InformationalVersion=$version --output $package
+          & ./scripts/stage-leak-hunter.ps1 -PackageDir $package -Rid "${{ matrix.rid }}"
           Copy-Item scripts $package -Recurse
           Copy-Item README.md, LICENSE $package
           Set-Content -LiteralPath (Join-Path $package "VERSION") -Value $version -Encoding ASCII
@@ -88,6 +89,7 @@ jobs:
           package="$RUNNER_TEMP/package"
           artifact="worklens-${GITHUB_REF_NAME}-${{ matrix.rid }}.tar.gz"
           dotnet publish WorkLens.csproj --configuration Release --runtime "${{ matrix.rid }}" --self-contained true -p:Version="$version" -p:InformationalVersion="$version" --output "$package"
+          bash ./scripts/stage-leak-hunter.sh "$package" "${{ matrix.rid }}"
           cp -R scripts "$package/scripts"
           cp README.md LICENSE "$package/"
           printf '%s\n' "$version" > "$package/VERSION"

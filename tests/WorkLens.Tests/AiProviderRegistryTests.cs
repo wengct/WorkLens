@@ -36,7 +36,7 @@ public sealed class AiProviderRegistryTests
 
         public Task<AiReportResult> GenerateAsync(
             AiProviderConfiguration configuration,
-            AiReportRequest request,
+            AiPreparedRequest request,
             CancellationToken cancellationToken) =>
             Task.FromResult(new AiReportResult(true, "Body", null, null));
 

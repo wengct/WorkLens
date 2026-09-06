@@ -90,6 +90,12 @@ builder.Services.AddSingleton<DatabaseInitializer>();
 builder.Services.AddSingleton<ProcessRunner>();
 builder.Services.AddSingleton<IProcessRunner>(serviceProvider =>
     serviceProvider.GetRequiredService<ProcessRunner>());
+builder.Services.AddSingleton<IAiContentSanitizer>(serviceProvider =>
+    new SensitiveContentSanitizer(
+        paths,
+        serviceProvider.GetRequiredService<IProcessRunner>(),
+        serviceProvider.GetRequiredService<IDbContextFactory<WorkLensDbContext>>(),
+        serviceProvider.GetRequiredService<ILogger<SensitiveContentSanitizer>>()));
 builder.Services.AddSingleton<AzureDevOpsCliService>();
 builder.Services.AddSingleton<AskBridgeService>();
 builder.Services.AddSingleton<IAiSecretProtector, AiSecretProtector>();
@@ -180,6 +186,7 @@ builder.Services.AddScoped<ActivityQueryService>();
 builder.Services.AddScoped<ManualSourceService>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<AiConfigurationService>();
+builder.Services.AddScoped<SensitiveWordService>();
 builder.Services.AddScoped<BackupService>();
 builder.Services.AddScoped<PromptTemplateService>();
 builder.Services.AddScoped<ScheduleRunner>();

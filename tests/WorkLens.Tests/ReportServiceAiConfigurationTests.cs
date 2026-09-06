@@ -38,7 +38,7 @@ public sealed class ReportServiceAiConfigurationTests
         var factory = new Factory(options);
         var service = new ReportService(
             factory,
-            new AiProviderOrchestrator(new AiProviderRegistry([unused, selected])),
+            new AiProviderOrchestrator(new AiProviderRegistry([unused, selected]), new TestSanitizer()),
             new PromptTemplateService(factory),
             NullLogger<ReportService>.Instance);
 
@@ -66,7 +66,7 @@ public sealed class ReportServiceAiConfigurationTests
         var factory = new Factory(options);
         var service = new ReportService(
             factory,
-            new AiProviderOrchestrator(new AiProviderRegistry([])),
+            new AiProviderOrchestrator(new AiProviderRegistry([]), new TestSanitizer()),
             new PromptTemplateService(factory),
             NullLogger<ReportService>.Instance);
 
@@ -122,7 +122,7 @@ public sealed class ReportServiceAiConfigurationTests
         var factory = new Factory(options);
         var service = new ReportService(
             factory,
-            new AiProviderOrchestrator(new AiProviderRegistry([selected])),
+            new AiProviderOrchestrator(new AiProviderRegistry([selected]), new TestSanitizer()),
             new PromptTemplateService(factory),
             NullLogger<ReportService>.Instance);
 
@@ -137,7 +137,7 @@ public sealed class ReportServiceAiConfigurationTests
     {
         public string ProviderType => providerType;
         public bool WasCalled { get; private set; }
-        public AiReportRequest? CapturedRequest { get; private set; }
+        public AiPreparedRequest? CapturedRequest { get; private set; }
 
         public Task<AiProviderValidationResult> ValidateAsync(
             AiProviderConfiguration configuration,
@@ -146,7 +146,7 @@ public sealed class ReportServiceAiConfigurationTests
 
         public Task<AiReportResult> GenerateAsync(
             AiProviderConfiguration configuration,
-            AiReportRequest request,
+            AiPreparedRequest request,
             CancellationToken cancellationToken)
         {
             WasCalled = true;
@@ -158,6 +158,30 @@ public sealed class ReportServiceAiConfigurationTests
             AiProviderConfiguration configuration,
             CancellationToken cancellationToken) =>
             Task.FromResult(new AiConnectionTestResult(true, "ok", null));
+    }
+
+    private sealed class TestSanitizer : IAiContentSanitizer
+    {
+        public Task<AiSanitizationResult> PrepareAsync(
+            AiReportRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            var summary = new AiSanitizationSummary(AiSanitizationStatus.Clean, "test", []);
+            return Task.FromResult(new AiSanitizationResult(
+                new AiPreparedRequest(
+                    request.ReportId,
+                    request.Target,
+                    request.InputMarkdown,
+                    request.WorkEntryIds,
+                    request.TotalHours,
+                    request.ExecutablePath,
+                    request.EffectivePrompt,
+                    summary),
+                summary));
+        }
+
+        public Task<AiSanitizerStatus> GetStatusAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new AiSanitizerStatus(true, "test", "測試掃描器"));
     }
 
     private sealed class Factory(DbContextOptions<WorkLensDbContext> options)

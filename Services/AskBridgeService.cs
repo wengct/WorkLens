@@ -297,21 +297,27 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
         var reportId = Guid.Parse("11111111-1111-1111-1111-111111111111");
         var entryId = Guid.Parse("22222222-2222-2222-2222-222222222222");
         const string sample = "# 每日工作回報 範例\n\n確認工時：1 小時\n\n## 工作項目\n- 完成範例功能與測試。";
-        return GenerateAsync(configuration, new AiReportRequest(
+        return GenerateAsync(configuration, new AiPreparedRequest(
             reportId,
             configuration.Provider,
             sample,
             [entryId],
             1,
             configuration.ExecutablePath,
-            effectivePrompt), cancellationToken);
+            effectivePrompt,
+            new AiSanitizationSummary(AiSanitizationStatus.Clean, "connection-test", [])), cancellationToken);
     }
 
     public async Task<AiReportResult> GenerateAsync(
         AiProviderConfiguration configuration,
-        AiReportRequest request,
+        AiPreparedRequest request,
         CancellationToken cancellationToken = default)
     {
+        if (!request.Sanitization.IsReady)
+        {
+            return new AiReportResult(false, null, null, "AI 請求未通過機敏資訊檢查，未傳送。", request.Sanitization);
+        }
+
         await aiLock.WaitAsync(cancellationToken);
         try
         {
@@ -325,7 +331,7 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
 
     private async Task<AiReportResult> GenerateCoreAsync(
         AiProviderConfiguration configuration,
-        AiReportRequest request,
+        AiPreparedRequest request,
         CancellationToken cancellationToken = default)
     {
         var executable = FindExecutable(configuration.ExecutablePath);
@@ -468,7 +474,7 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
     }
 
     private static async Task<string> CreateContextFileAsync(
-        AiReportRequest request,
+        AiPreparedRequest request,
         CancellationToken cancellationToken)
     {
         var directory = Path.Combine(Path.GetTempPath(), "WorkLens", "ai-context");

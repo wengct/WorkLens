@@ -40,7 +40,7 @@ public sealed class AskBridgeServiceTests
                     ExecutablePath = executable,
                     UseHeadless = true
                 },
-                new AiReportRequest(
+                PreparedRequest(
                     reportId,
                     "chatgpt",
                     "context",
@@ -135,7 +135,7 @@ public sealed class AskBridgeServiceTests
                     ExecutablePath = executable,
                     UseHeadless = false
                 },
-                new AiReportRequest(
+                PreparedRequest(
                     Guid.NewGuid(),
                     "chatgpt",
                     input,
@@ -161,4 +161,75 @@ public sealed class AskBridgeServiceTests
             Directory.Delete(testDirectory, recursive: true);
         }
     }
+
+    [Fact]
+    public async Task Report_generation_attachment_contains_only_the_prepared_masked_context()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var testDirectory = Path.Combine(Path.GetTempPath(), $"worklens-ai-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(testDirectory);
+        var executable = Path.Combine(testDirectory, "ask-bridge.cmd");
+        await File.WriteAllTextAsync(executable, """
+            @echo off
+            if /I "%~1"=="close" exit /b 0
+            :loop
+            if "%~1"=="" goto done
+            if /I "%~1"=="--file" (
+              type "%~2"
+              goto done
+            )
+            shift
+            goto loop
+            :done
+            echo {"reportId":"11111111-1111-1111-1111-111111111111","workEntryIds":["22222222-2222-2222-2222-222222222222"],"totalHours":1,"body":"ok"}
+            """);
+
+        try
+        {
+            const string marker = "[已遮蔽：機敏憑證]";
+            var result = await new AskBridgeService(new ProcessRunner()).GenerateAsync(
+                new AiProviderConfiguration
+                {
+                    Provider = "chatgpt",
+                    ExecutablePath = executable,
+                    UseHeadless = false
+                },
+                PreparedRequest(
+                    Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                    "chatgpt",
+                    $"工作資料：{marker}",
+                    [Guid.Parse("22222222-2222-2222-2222-222222222222")],
+                    1,
+                    executable,
+                    $"請整理：{marker}"));
+
+            Assert.True(result.Succeeded, result.Error);
+            Assert.Contains(marker, result.RawResponse, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(testDirectory, recursive: true);
+        }
+    }
+
+    private static AiPreparedRequest PreparedRequest(
+        Guid reportId,
+        string target,
+        string input,
+        IReadOnlyList<Guid> entryIds,
+        double totalHours,
+        string? executablePath,
+        string prompt) => new(
+        reportId,
+        target,
+        input,
+        entryIds,
+        totalHours,
+        executablePath,
+        prompt,
+        new AiSanitizationSummary(AiSanitizationStatus.Clean, "test", []));
 }

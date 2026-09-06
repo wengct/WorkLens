@@ -203,6 +203,11 @@ public sealed class AiJob
     public Guid? PromptTemplateId { get; set; }
     public string PromptNameSnapshot { get; set; } = string.Empty;
     public string PromptTextSnapshot { get; set; } = string.Empty;
+    public string SanitizationStatus { get; set; } = "NotRun";
+    public int SanitizedFindingCount { get; set; }
+    public string SanitizedCategoriesJson { get; set; } = "[]";
+    public string SanitizerVersion { get; set; } = string.Empty;
+    public string SanitizerRuleVersion { get; set; } = string.Empty;
 }
 
 public sealed class AiProviderConfiguration
@@ -236,6 +241,15 @@ public sealed class AiFeatureSettings
 
     public Guid Id { get; set; } = SingletonId;
     public bool Enabled { get; set; }
+}
+
+public sealed class SensitiveWord
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Value { get; set; } = string.Empty;
+    public bool Enabled { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public enum AiReasoningLevel
@@ -320,6 +334,11 @@ public sealed class ScheduleExecution
     public Guid? PromptTemplateId { get; set; }
     public string PromptNameSnapshot { get; set; } = string.Empty;
     public string PromptTextSnapshot { get; set; } = string.Empty;
+    public string SanitizationStatus { get; set; } = "NotRun";
+    public int SanitizedFindingCount { get; set; }
+    public string SanitizedCategoriesJson { get; set; } = "[]";
+    public string SanitizerVersion { get; set; } = string.Empty;
+    public string SanitizerRuleVersion { get; set; } = string.Empty;
     public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? CompletedAt { get; set; }
     public string? Error { get; set; }

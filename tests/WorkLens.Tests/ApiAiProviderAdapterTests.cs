@@ -73,6 +73,29 @@ public sealed class ApiAiProviderAdapterTests
         Assert.Contains("未通過", result.Error, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Generate_sends_the_prepared_masked_content_without_the_raw_value()
+    {
+        const string marker = "[已遮蔽：機敏憑證]";
+        var handler = new RecordingHandler(ProviderResponse("openai", ValidReportJson()));
+        var adapter = new ApiAiProviderAdapter("openai", new HttpClient(handler), new StubSecretProtector());
+        var request = new AiPreparedRequest(
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            "test",
+            $"工作資料：{marker}",
+            [Guid.Parse("22222222-2222-2222-2222-222222222222")],
+            1,
+            null,
+            $"整理偏好：{marker}",
+            new AiSanitizationSummary(AiSanitizationStatus.Redacted, "test", [new AiRedactionNotice("工作資料", AiSensitiveDataCategory.Credential, 1)]));
+
+        var result = await adapter.GenerateAsync(Configuration("openai"), request, CancellationToken.None);
+
+        Assert.True(result.Succeeded, result.Error);
+        using var document = JsonDocument.Parse(handler.Body);
+        Assert.Contains(marker, document.RootElement.GetProperty("input").GetString(), StringComparison.Ordinal);
+    }
+
     private static AiProviderConfiguration Configuration(string providerType) => new()
     {
         ProviderType = providerType,
@@ -87,13 +110,15 @@ public sealed class ApiAiProviderAdapterTests
         Model = providerType == "azure-openai" ? "gpt-5-deployment" : "test-model"
     };
 
-    private static AiReportRequest Request() => new(
+    private static AiPreparedRequest Request() => new(
         Guid.Parse("11111111-1111-1111-1111-111111111111"),
         "test",
         "工作資料",
         [Guid.Parse("22222222-2222-2222-2222-222222222222")],
         1,
-        EffectivePrompt: "整理");
+        null,
+        "整理",
+        new AiSanitizationSummary(AiSanitizationStatus.Clean, "test", []));
 
     private static string ValidReportJson() =>
         "{\"reportId\":\"11111111-1111-1111-1111-111111111111\",\"workEntryIds\":[\"22222222-2222-2222-2222-222222222222\"],\"totalHours\":1,\"body\":\"整理完成\"}";

@@ -35,12 +35,25 @@ release_dir="$(cd "${script_dir}/.." && pwd)"
   echo "Run install.sh from an extracted WorkLens macOS release package." >&2
   exit 1
 }
+[[ -x "${release_dir}/tools/leak-hunter/leak-hunter" && -f "${release_dir}/scripts/leak-hunter.version" ]] || {
+  echo "The WorkLens release package does not contain the verified leak-hunter executable and version marker." >&2
+  exit 1
+}
+expected_leak_hunter_version="$(tr -d '\r\n' < "${release_dir}/scripts/leak-hunter.version")"
+expected_leak_hunter_version="${expected_leak_hunter_version#v}"
+actual_leak_hunter_version="$(${release_dir}/tools/leak-hunter/leak-hunter --version 2>/dev/null || true)"
+expected_leak_hunter_pattern="${expected_leak_hunter_version//./\\.}"
+printf '%s\n' "$actual_leak_hunter_version" | grep -Eiq "(^|[^[:alnum:].-])v?${expected_leak_hunter_pattern}([^[:alnum:].-]|$)" || {
+  echo "The bundled leak-hunter version does not match the release marker." >&2
+  exit 1
+}
 version="$(tr -d '\r\n' < "${release_dir}/VERSION")"
 version="${version#v}"
 [[ "$version" =~ ^[0-9A-Za-z][0-9A-Za-z._-]*$ ]] || { echo "The release VERSION is invalid." >&2; exit 1; }
 
 versions_dir="${install_dir}/versions"
 version_dir="${versions_dir}/${version}"
+installed_leak_hunter="${version_dir}/tools/leak-hunter/leak-hunter"
 current_file="${install_dir}/current.txt"
 port_file="${install_dir}/port.txt"
 installed_scripts="${install_dir}/scripts"
@@ -82,7 +95,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ "$previous_version" != "$version" || ! -d "$version_dir" ]]; then
+if [[ "$previous_version" != "$version" || ! -d "$version_dir" || ! -x "$installed_leak_hunter" ]]; then
   mkdir -p "$staging_dir"
   cp -R "${release_dir}/." "$staging_dir/"
 fi

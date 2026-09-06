@@ -4,7 +4,7 @@ namespace WorkLens.Services;
 
 public static class AiReportResponseParser
 {
-    public static AiReportResult Parse(string raw, AiReportRequest request)
+    public static AiReportResult Parse(string raw, AiPreparedRequest request)
     {
         try
         {

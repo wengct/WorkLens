@@ -274,10 +274,18 @@ p { color: var(--muted); line-height: 1.65; }
 .confirm-dialog-message { margin: 0; color: #536078; font-size: 14px; line-height: 1.7; }
 .confirm-dialog .modal-actions { flex-wrap: wrap; }
 .confirm-dialog-backdrop > .focus-sentinel { position: fixed; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+.sensitive-preview-dialog { width: min(860px, 100%); }
+.sensitive-notice-list { display: grid; gap: 5px; margin: 14px 0 0; padding-left: 20px; color: #344361; font-size: 13px; }
+.sensitive-preview-section { margin-top: 16px; border: 1px solid var(--line); border-radius: 10px; background: #f8f9fc; }
+.sensitive-preview-section summary { padding: 10px 13px; cursor: pointer; color: #344361; font-size: 13px; font-weight: 700; }
+.sensitive-preview { max-height: 260px; margin: 0; padding: 13px; overflow: auto; border-top: 1px solid var(--line); color: #475571; background: white; font: 12px/1.6 Consolas, "Noto Sans Mono", monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 .settings-split { display: grid; grid-template-columns: minmax(260px, .75fr) minmax(420px, 1.5fr); gap: 18px; align-items: start; }
 .settings-split > .panel { margin-top: 0; }
 .ai-settings-stack { display: grid; gap: 18px; }
 .ai-settings-stack > .panel { margin-top: 0; }
+.sensitive-settings-panel { margin-bottom: 18px; }
+.sensitive-word-list { display: grid; gap: 8px; margin-top: 16px; }
+.sensitive-word-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; color: #344361; background: #f8f9fc; border: 1px solid var(--line); border-radius: 9px; font-size: 13px; }
 .prompt-library { display: grid; gap: 8px; }
 .ai-provider-library { display: grid; gap: 8px; }
 .ai-provider-library .panel-heading { margin-bottom: 4px; }

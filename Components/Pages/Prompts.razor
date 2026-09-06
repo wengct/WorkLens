@@ -143,7 +143,9 @@
             if (result.Succeeded)
             {
                 promptResult = result.Body ?? "範例 Prompt 未產生內容。";
-                Toasts.Success("Prompt 測試完成。");
+                Toasts.Success(result.Sanitization?.Status == AiSanitizationStatus.Redacted
+                    ? "Prompt 測試完成（已自動遮蔽機敏資訊）。"
+                    : "Prompt 測試完成。");
             }
             else Toasts.Error(result.Error ?? "Prompt 測試失敗。");
         }
