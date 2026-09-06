@@ -22,6 +22,23 @@ public sealed class ClaudeCodeSourceSettings
     public string? Distro { get; set; }
 }
 
+public sealed class CopilotSourceSettings
+{
+    public string? CopilotHome { get; set; }
+    public string? Distro { get; set; }
+}
+
+public sealed class VsCodeCopilotSourceSettings
+{
+    public List<string> WorkspaceStoragePaths { get; set; } = [];
+    public string? Distro { get; set; }
+}
+
+public sealed class VisualStudioCopilotSourceSettings
+{
+    public List<string> SolutionPaths { get; set; } = [];
+}
+
 public sealed class AzureDevOpsSourceSettings
 {
     public string OrganizationUrl { get; set; } = string.Empty;
@@ -120,6 +137,27 @@ public sealed class ClaudeCodeSessionMessage
     public string Text { get; set; } = string.Empty;
 }
 
+public sealed class CopilotSessionMetadata
+{
+    public string SessionId { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; set; }
+    public string? Cwd { get; set; }
+    public string Platform { get; set; } = string.Empty;
+    public string SourceFormat { get; set; } = string.Empty;
+    public string Client { get; set; } = "GitHub Copilot";
+    public string? SourcePath { get; set; }
+    public bool IsComplete { get; set; } = true;
+    public List<CopilotSessionMessage> Messages { get; set; } = [];
+}
+
+public sealed class CopilotSessionMessage
+{
+    public string Id { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public DateTimeOffset Timestamp { get; set; }
+    public string Text { get; set; } = string.Empty;
+}
+
 public static class SourceSettingsSerializer
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web)
@@ -192,6 +230,73 @@ public static class SourceSettingsSerializer
     }
 
     public static string Serialize(ClaudeCodeSourceSettings settings) =>
+        JsonSerializer.Serialize(settings, Options);
+
+    public static CopilotSourceSettings DeserializeCopilot(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new CopilotSourceSettings();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<CopilotSourceSettings>(json, Options)
+                ?? new CopilotSourceSettings();
+        }
+        catch (JsonException)
+        {
+            return new CopilotSourceSettings();
+        }
+    }
+
+    public static string Serialize(CopilotSourceSettings settings) =>
+        JsonSerializer.Serialize(settings, Options);
+
+    public static VsCodeCopilotSourceSettings DeserializeVsCodeCopilot(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new VsCodeCopilotSourceSettings();
+        }
+
+        try
+        {
+            var settings = JsonSerializer.Deserialize<VsCodeCopilotSourceSettings>(json, Options)
+                ?? new VsCodeCopilotSourceSettings();
+            settings.WorkspaceStoragePaths ??= [];
+            return settings;
+        }
+        catch (JsonException)
+        {
+            return new VsCodeCopilotSourceSettings();
+        }
+    }
+
+    public static string Serialize(VsCodeCopilotSourceSettings settings) =>
+        JsonSerializer.Serialize(settings, Options);
+
+    public static VisualStudioCopilotSourceSettings DeserializeVisualStudioCopilot(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new VisualStudioCopilotSourceSettings();
+        }
+
+        try
+        {
+            var settings = JsonSerializer.Deserialize<VisualStudioCopilotSourceSettings>(json, Options)
+                ?? new VisualStudioCopilotSourceSettings();
+            settings.SolutionPaths ??= [];
+            return settings;
+        }
+        catch (JsonException)
+        {
+            return new VisualStudioCopilotSourceSettings();
+        }
+    }
+
+    public static string Serialize(VisualStudioCopilotSourceSettings settings) =>
         JsonSerializer.Serialize(settings, Options);
 
     public static AzureDevOpsSourceSettings DeserializeAzureDevOps(string? json)
@@ -319,6 +424,33 @@ public static class SourceSettingsSerializer
         try
         {
             var metadata = JsonSerializer.Deserialize<ClaudeCodeSessionMetadata>(json, Options);
+            if (metadata is null)
+            {
+                return null;
+            }
+
+            metadata.Messages ??= [];
+            return metadata;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    public static string SerializeCopilotMetadata(CopilotSessionMetadata metadata) =>
+        JsonSerializer.Serialize(metadata, Options);
+
+    public static CopilotSessionMetadata? DeserializeCopilotMetadata(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            var metadata = JsonSerializer.Deserialize<CopilotSessionMetadata>(json, Options);
             if (metadata is null)
             {
                 return null;

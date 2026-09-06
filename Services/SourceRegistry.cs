@@ -28,6 +28,13 @@ public sealed class SourceRegistry(IEnumerable<IActivitySourceAdapter> adapters)
                     ActivitySourceType.WindowsClaudeCode => "Windows Claude Code",
                     ActivitySourceType.WslClaudeCode => "WSL Claude Code",
                     ActivitySourceType.MacOsClaudeCode => "macOS Claude Code",
+                    ActivitySourceType.WindowsCopilot => "Windows GitHub Copilot CLI／App",
+                    ActivitySourceType.WslCopilot => "WSL GitHub Copilot CLI／App",
+                    ActivitySourceType.MacOsCopilot => "macOS GitHub Copilot CLI／App",
+                    ActivitySourceType.WindowsVsCodeCopilot => "Windows VS Code Copilot Chat",
+                    ActivitySourceType.WslVsCodeCopilot => "WSL VS Code Copilot Chat",
+                    ActivitySourceType.MacOsVsCodeCopilot => "macOS VS Code Copilot Chat",
+                    ActivitySourceType.WindowsVisualStudioCopilot => "Visual Studio Copilot Chat",
                     _ => x.Key.ToString()
                 },
                 x.Value.Capabilities))

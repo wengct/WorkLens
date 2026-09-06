@@ -53,6 +53,9 @@
                 <option value="Git">Git repository</option>
                 <option value="Codex">Codex 工作紀錄</option>
                 <option value="ClaudeCode">Claude Code 工作紀錄</option>
+                <option value="Copilot">GitHub Copilot CLI／App 工作紀錄</option>
+                <option value="VsCodeCopilot">VS Code Copilot Chat 工作紀錄</option>
+                <option value="VisualStudioCopilot">Visual Studio Copilot Chat（Visual Studio 2026）</option>
                 <option value="AzureDevOps">Azure DevOps PR</option>
             </select>
         </div>
@@ -139,19 +142,42 @@
             <span class="hint">只會納入作者 email 完全符合這些設定的 commit；按 Enter、逗號或分號加入一組 pill。</span>
         </div>
         }
-        @if (newKind is SourceKind.Codex or SourceKind.ClaudeCode)
+        @if (newKind is SourceKind.Codex or SourceKind.ClaudeCode or SourceKind.Copilot or SourceKind.VsCodeCopilot or SourceKind.VisualStudioCopilot)
         {
             <div class="field full">
-                <label for="aiCodeHome">@(newKind == SourceKind.Codex ? "Codex" : "Claude Code") 資料目錄（選填）</label>
+                <label for="aiCodeHome">@SourcePathLabel(newKind)</label>
                 @if (newKind == SourceKind.Codex)
                 {
                     <input id="aiCodeHome" @bind="newCodexHome" placeholder="留空即自動偵測 CODEX_HOME 或 ~/.codex" />
                 }
-                else
+                else if (newKind == SourceKind.ClaudeCode)
                 {
                     <input id="aiCodeHome" @bind="newClaudeCodeHome" placeholder="留空即自動偵測 CLAUDE_CONFIG_DIR 或 ~/.claude" />
                 }
-                <span class="hint">Windows 與 macOS 請填本機路徑；WSL 請填該 Linux 環境內的路徑。</span>
+                else if (newKind == SourceKind.Copilot)
+                {
+                    <input id="aiCodeHome" @bind="newCopilotHome" placeholder="留空即自動偵測 COPILOT_HOME 或 ~/.copilot" />
+                }
+                else if (newKind == SourceKind.VisualStudioCopilot)
+                {
+                    <input id="aiCodeHome" @bind="newVisualStudioPaths" placeholder="填入方案目錄；多個路徑請以分號分隔" />
+                }
+                else
+                {
+                    <input id="aiCodeHome" @bind="newVsCodePaths" placeholder="留空即自動偵測 Stable／Insiders workspaceStorage" />
+                }
+                @if (newKind == SourceKind.VsCodeCopilot)
+                {
+                    <span class="hint">可填一或多個 workspaceStorage 根目錄，以分號分隔；每個 workspace 下會掃描 chatSessions。</span>
+                }
+                else if (newKind == SourceKind.VisualStudioCopilot)
+                {
+                    <span class="hint">WorkLens 會從方案目錄尋找 .vs/copilot-chat；支援 Visual Studio 2026 Chat 與 Agent（Preview）。</span>
+                }
+                else
+                {
+                    <span class="hint">Windows 與 macOS 請填本機路徑；WSL 請填該 Linux 環境內的路徑。</span>
+                }
             </div>
         }
         @if (newKind == SourceKind.AzureDevOps)
@@ -326,7 +352,7 @@
     {
         <div class="empty-state">
             <h3>目前是純人工模式</h3>
-            <p>這是預設狀態。你可以稍後再新增目前平台的 Git、Codex、Claude Code 或 Azure DevOps PR 來源。</p>
+            <p>這是預設狀態。你可以稍後再新增目前平台的 Git、Codex、Claude Code、GitHub Copilot、VS Code Copilot 或 Azure DevOps PR 來源。</p>
             <button type="button" class="button button-primary" @onclick="BeginAdd">新增第一個來源</button>
         </div>
     }
@@ -366,6 +392,21 @@
                             <span> · @adoSettings.Scopes.Count 組 · @adoSettings.OrganizationUrl</span>
                         }
                     </div>
+                    @if (validationResults.TryGetValue(source.Id, out var validation))
+                    {
+                        <div class="source-validation @(validation.IsValid ? "source-validation-valid" : "source-validation-error")">
+                            <strong>@validation.Summary</strong>
+                            @if (validation.Details.Count > 0)
+                            {
+                                <ul>
+                                    @foreach (var detail in validation.Details)
+                                    {
+                                        <li>@detail</li>
+                                    }
+                                </ul>
+                            }
+                        </div>
+                    }
                 </div>
                 <div class="source-actions">
                     <button class="button button-secondary button-small" @onclick="() => BeginEditAsync(source)" disabled="@sourceIsBusy">編輯</button>
@@ -424,6 +465,9 @@
     private string newDistro = string.Empty;
     private string newCodexHome = string.Empty;
     private string newClaudeCodeHome = string.Empty;
+    private string newCopilotHome = string.Empty;
+    private string newVsCodePaths = string.Empty;
+    private string newVisualStudioPaths = string.Empty;
     private string newAdoOrganization = string.Empty;
     private List<string> repositoryPaths = [];
     private string repositoryPathInput = string.Empty;
@@ -449,6 +493,7 @@
     private readonly HashSet<Guid> collectingSourceIds = [];
     private readonly HashSet<Guid> stoppingSourceIds = [];
     private readonly HashSet<Guid> validatingSourceIds = [];
+    private readonly Dictionary<Guid, SourceValidationResult> validationResults = [];
     private CancellationTokenSource? backfillCancellation;
     private readonly CancellationTokenSource refreshCancellation = new();
     private Task? refreshTask;
@@ -491,9 +536,15 @@
             return;
         }
 
-        if ((newType is ActivitySourceType.WslCodex or ActivitySourceType.WslClaudeCode) && string.IsNullOrWhiteSpace(newDistro))
+        if ((newType is ActivitySourceType.WslCodex or ActivitySourceType.WslClaudeCode or ActivitySourceType.WslCopilot or ActivitySourceType.WslVsCodeCopilot) && string.IsNullOrWhiteSpace(newDistro))
         {
-            SetError($"WSL {(newKind == SourceKind.Codex ? "Codex" : "Claude Code")} 來源必須指定 Linux 環境名稱，例如 Ubuntu。");
+            SetError($"WSL {SourceKindText(newKind)} 來源必須指定 Linux 環境名稱，例如 Ubuntu。");
+            return;
+        }
+
+        if (newType == ActivitySourceType.WindowsVisualStudioCopilot && ParsePathList(newVisualStudioPaths).Count == 0)
+        {
+            SetError("Visual Studio Copilot Chat 來源至少需要一個方案目錄。");
             return;
         }
 
@@ -563,17 +614,34 @@
                         OrganizationUrl = SourceSettingsSerializer.NormalizeAzureDevOpsOrganizationUrl(newAdoOrganization),
                         Scopes = adoScopes.Select(scope => scope.ToSettings()).ToList()
                     })
-                    : IsCodexType(newType)
-                        ? SourceSettingsSerializer.Serialize(new CodexSourceSettings
+                     : IsCodexType(newType)
+                         ? SourceSettingsSerializer.Serialize(new CodexSourceSettings
                         {
                             CodexHome = string.IsNullOrWhiteSpace(newCodexHome) ? null : newCodexHome.Trim(),
                             Distro = newType == ActivitySourceType.WslCodex ? newDistro.Trim() : null
-                        })
-                        : SourceSettingsSerializer.Serialize(new ClaudeCodeSourceSettings
-                        {
-                            ClaudeCodeHome = string.IsNullOrWhiteSpace(newClaudeCodeHome) ? null : newClaudeCodeHome.Trim(),
-                            Distro = newType == ActivitySourceType.WslClaudeCode ? newDistro.Trim() : null
-                        })
+                         })
+                         : IsClaudeCodeType(newType)
+                             ? SourceSettingsSerializer.Serialize(new ClaudeCodeSourceSettings
+                             {
+                                 ClaudeCodeHome = string.IsNullOrWhiteSpace(newClaudeCodeHome) ? null : newClaudeCodeHome.Trim(),
+                                 Distro = newType == ActivitySourceType.WslClaudeCode ? newDistro.Trim() : null
+                             })
+                              : IsCopilotType(newType)
+                                 ? SourceSettingsSerializer.Serialize(new CopilotSourceSettings
+                                 {
+                                     CopilotHome = string.IsNullOrWhiteSpace(newCopilotHome) ? null : newCopilotHome.Trim(),
+                                     Distro = newType == ActivitySourceType.WslCopilot ? newDistro.Trim() : null
+                                 })
+                                 : IsVsCodeCopilotType(newType)
+                                     ? SourceSettingsSerializer.Serialize(new VsCodeCopilotSourceSettings
+                                     {
+                                         WorkspaceStoragePaths = ParsePathList(newVsCodePaths),
+                                         Distro = newType == ActivitySourceType.WslVsCodeCopilot ? newDistro.Trim() : null
+                                     })
+                                     : SourceSettingsSerializer.Serialize(new VisualStudioCopilotSourceSettings
+                                     {
+                                         SolutionPaths = ParsePathList(newVisualStudioPaths)
+                                     })
         };
         await SourceConfig.SaveAsync(source);
         Toasts.Success(existing is null
@@ -595,6 +663,9 @@
             newDistro = settings.Distro ?? string.Empty;
             newCodexHome = string.Empty;
             newClaudeCodeHome = string.Empty;
+            newCopilotHome = string.Empty;
+            newVsCodePaths = string.Empty;
+            newVisualStudioPaths = string.Empty;
             repositoryPaths = settings.RepositoryPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             authorEmails = SourceSettingsSerializer.NormalizeAuthorEmails(settings.AuthorEmails).ToList();
         }
@@ -605,6 +676,9 @@
             newDistro = string.Empty;
             newCodexHome = string.Empty;
             newClaudeCodeHome = string.Empty;
+            newCopilotHome = string.Empty;
+            newVsCodePaths = string.Empty;
+            newVisualStudioPaths = string.Empty;
             repositoryPaths.Clear();
             authorEmails.Clear();
             adoScopes.Clear();
@@ -624,6 +698,45 @@
             newDistro = settings.Distro ?? string.Empty;
             newClaudeCodeHome = settings.ClaudeCodeHome ?? string.Empty;
             newCodexHome = string.Empty;
+            newCopilotHome = string.Empty;
+            newVsCodePaths = string.Empty;
+            newVisualStudioPaths = string.Empty;
+            repositoryPaths.Clear();
+            authorEmails.Clear();
+        }
+        else if (IsCopilotType(source.SourceType))
+        {
+            var settings = SourceSettingsSerializer.DeserializeCopilot(source.SettingsJson);
+            newDistro = settings.Distro ?? string.Empty;
+            newCopilotHome = settings.CopilotHome ?? string.Empty;
+            newCodexHome = string.Empty;
+            newClaudeCodeHome = string.Empty;
+            newVsCodePaths = string.Empty;
+            newVisualStudioPaths = string.Empty;
+            repositoryPaths.Clear();
+            authorEmails.Clear();
+        }
+        else if (IsVsCodeCopilotType(source.SourceType))
+        {
+            var settings = SourceSettingsSerializer.DeserializeVsCodeCopilot(source.SettingsJson);
+            newDistro = settings.Distro ?? string.Empty;
+            newVsCodePaths = string.Join(";", settings.WorkspaceStoragePaths);
+            newCodexHome = string.Empty;
+            newClaudeCodeHome = string.Empty;
+            newCopilotHome = string.Empty;
+            newVisualStudioPaths = string.Empty;
+            repositoryPaths.Clear();
+            authorEmails.Clear();
+        }
+        else if (source.SourceType == ActivitySourceType.WindowsVisualStudioCopilot)
+        {
+            var settings = SourceSettingsSerializer.DeserializeVisualStudioCopilot(source.SettingsJson);
+            newVisualStudioPaths = string.Join(";", settings.SolutionPaths);
+            newDistro = string.Empty;
+            newCodexHome = string.Empty;
+            newClaudeCodeHome = string.Empty;
+            newCopilotHome = string.Empty;
+            newVsCodePaths = string.Empty;
             repositoryPaths.Clear();
             authorEmails.Clear();
         }
@@ -633,6 +746,9 @@
             newDistro = settings.Distro ?? string.Empty;
             newCodexHome = settings.CodexHome ?? string.Empty;
             newClaudeCodeHome = string.Empty;
+            newCopilotHome = string.Empty;
+            newVsCodePaths = string.Empty;
+            newVisualStudioPaths = string.Empty;
             repositoryPaths.Clear();
             authorEmails.Clear();
         }
@@ -901,6 +1017,7 @@
         try
         {
             var result = await Orchestrator.ValidateAsync(id);
+            validationResults[id] = result;
             if (result.IsValid)
             {
                 Toasts.Success(result.Summary);
@@ -1155,6 +1272,9 @@
         newDistro = string.Empty;
         newCodexHome = string.Empty;
         newClaudeCodeHome = string.Empty;
+        newCopilotHome = string.Empty;
+        newVsCodePaths = string.Empty;
+        newVisualStudioPaths = string.Empty;
         newAdoOrganization = string.Empty;
         adoDiagnostics = null;
         adoProjects = [];
@@ -1174,6 +1294,31 @@
 
     private void SetError(string value) => Toasts.Error(value);
 
+    private static string SourceKindText(SourceKind kind) => kind switch
+    {
+        SourceKind.Codex => "Codex",
+        SourceKind.ClaudeCode => "Claude Code",
+        SourceKind.Copilot => "GitHub Copilot",
+        SourceKind.VsCodeCopilot => "VS Code Copilot",
+        SourceKind.VisualStudioCopilot => "Visual Studio Copilot",
+        _ => kind.ToString()
+    };
+
+    private static string SourcePathLabel(SourceKind kind) => kind switch
+    {
+        SourceKind.VsCodeCopilot => "VS Code workspaceStorage 根目錄（選填）",
+        SourceKind.VisualStudioCopilot => "Visual Studio 方案目錄",
+        SourceKind.Copilot => "GitHub Copilot 資料目錄（選填）",
+        SourceKind.Codex => "Codex 資料目錄（選填）",
+        SourceKind.ClaudeCode => "Claude Code 資料目錄（選填）",
+        _ => "資料目錄（選填）"
+    };
+
+    private static List<string> ParsePathList(string value) =>
+        value.Split([';', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
     private static bool IsGitType(ActivitySourceType type) =>
         type is ActivitySourceType.WindowsGit or ActivitySourceType.WslGit or ActivitySourceType.MacOsGit;
 
@@ -1182,6 +1327,12 @@
 
     private static bool IsClaudeCodeType(ActivitySourceType type) =>
         type is ActivitySourceType.WindowsClaudeCode or ActivitySourceType.WslClaudeCode or ActivitySourceType.MacOsClaudeCode;
+
+    private static bool IsCopilotType(ActivitySourceType type) =>
+        type is ActivitySourceType.WindowsCopilot or ActivitySourceType.WslCopilot or ActivitySourceType.MacOsCopilot;
+
+    private static bool IsVsCodeCopilotType(ActivitySourceType type) =>
+        type is ActivitySourceType.WindowsVsCodeCopilot or ActivitySourceType.WslVsCodeCopilot or ActivitySourceType.MacOsVsCodeCopilot;
 
     private static bool IsAdoType(ActivitySourceType type) =>
         type == ActivitySourceType.AzureDevOpsPullRequest;
@@ -1198,6 +1349,13 @@
         ActivitySourceType.WindowsClaudeCode => "Windows Claude Code",
         ActivitySourceType.WslClaudeCode => "WSL Claude Code",
         ActivitySourceType.MacOsClaudeCode => "macOS Claude Code",
+        ActivitySourceType.WindowsCopilot => "Windows GitHub Copilot CLI／App",
+        ActivitySourceType.WslCopilot => "WSL GitHub Copilot CLI／App",
+        ActivitySourceType.MacOsCopilot => "macOS GitHub Copilot CLI／App",
+        ActivitySourceType.WindowsVsCodeCopilot => "Windows VS Code Copilot Chat",
+        ActivitySourceType.WslVsCodeCopilot => "WSL VS Code Copilot Chat",
+        ActivitySourceType.MacOsVsCodeCopilot => "macOS VS Code Copilot Chat",
+        ActivitySourceType.WindowsVisualStudioCopilot => "Visual Studio Copilot Chat",
         _ => type.ToString()
     };
 
@@ -1206,13 +1364,21 @@
         (SourceKind.Git, SourceLocation.Wsl) => ActivitySourceType.WslGit,
         (SourceKind.Codex, SourceLocation.Wsl) => ActivitySourceType.WslCodex,
         (SourceKind.ClaudeCode, SourceLocation.Wsl) => ActivitySourceType.WslClaudeCode,
+        (SourceKind.Copilot, SourceLocation.Wsl) => ActivitySourceType.WslCopilot,
+        (SourceKind.VsCodeCopilot, SourceLocation.Wsl) => ActivitySourceType.WslVsCodeCopilot,
+        (SourceKind.VisualStudioCopilot, _) => ActivitySourceType.WindowsVisualStudioCopilot,
         (SourceKind.AzureDevOps, _) => ActivitySourceType.AzureDevOpsPullRequest,
         (SourceKind.Git, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsGit,
         (SourceKind.Codex, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsCodex,
         (SourceKind.ClaudeCode, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsClaudeCode,
+        (SourceKind.Copilot, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsCopilot,
+        (SourceKind.VsCodeCopilot, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsVsCodeCopilot,
         (SourceKind.Git, _) => ActivitySourceType.WindowsGit,
         (SourceKind.Codex, _) => ActivitySourceType.WindowsCodex,
-        _ => ActivitySourceType.WindowsClaudeCode
+        (SourceKind.ClaudeCode, _) => ActivitySourceType.WindowsClaudeCode,
+        (SourceKind.Copilot, _) => ActivitySourceType.WindowsCopilot,
+        (SourceKind.VsCodeCopilot, _) => ActivitySourceType.WindowsVsCodeCopilot,
+        _ => ActivitySourceType.WindowsVisualStudioCopilot
     };
 
     private string SuggestedSourceName => (newKind, newLocation) switch
@@ -1220,10 +1386,15 @@
         (SourceKind.Git, SourceLocation.Wsl) => "Git－WSL",
         (SourceKind.Codex, SourceLocation.Wsl) => "Codex－WSL",
         (SourceKind.ClaudeCode, SourceLocation.Wsl) => "Claude Code－WSL",
+        (SourceKind.Copilot, SourceLocation.Wsl) => "GitHub Copilot－WSL",
+        (SourceKind.VsCodeCopilot, SourceLocation.Wsl) => "VS Code Copilot－WSL",
         (SourceKind.AzureDevOps, _) => "Azure DevOps PR",
         (SourceKind.Git, _) => "Git－此電腦",
         (SourceKind.Codex, _) => "Codex－此電腦",
-        _ => "Claude Code－此電腦"
+        (SourceKind.ClaudeCode, _) => "Claude Code－此電腦",
+        (SourceKind.Copilot, _) => "GitHub Copilot－此電腦",
+        (SourceKind.VsCodeCopilot, _) => "VS Code Copilot－此電腦",
+        _ => "Visual Studio Copilot－此電腦"
     };
 
     private static bool SupportsWsl => OperatingSystem.IsWindows();
@@ -1236,6 +1407,11 @@
         ActivitySourceType.WslCodex => (SourceKind.Codex, SourceLocation.Wsl),
         ActivitySourceType.WindowsClaudeCode or ActivitySourceType.MacOsClaudeCode => (SourceKind.ClaudeCode, SourceLocation.Native),
         ActivitySourceType.WslClaudeCode => (SourceKind.ClaudeCode, SourceLocation.Wsl),
+        ActivitySourceType.WindowsCopilot or ActivitySourceType.MacOsCopilot => (SourceKind.Copilot, SourceLocation.Native),
+        ActivitySourceType.WslCopilot => (SourceKind.Copilot, SourceLocation.Wsl),
+        ActivitySourceType.WindowsVsCodeCopilot or ActivitySourceType.MacOsVsCodeCopilot => (SourceKind.VsCodeCopilot, SourceLocation.Native),
+        ActivitySourceType.WslVsCodeCopilot => (SourceKind.VsCodeCopilot, SourceLocation.Wsl),
+        ActivitySourceType.WindowsVisualStudioCopilot => (SourceKind.VisualStudioCopilot, SourceLocation.Native),
         ActivitySourceType.AzureDevOpsPullRequest => (SourceKind.AzureDevOps, SourceLocation.Native),
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
     };
@@ -1245,6 +1421,9 @@
         Git,
         Codex,
         ClaudeCode,
+        Copilot,
+        VsCodeCopilot,
+        VisualStudioCopilot,
         AzureDevOps
     }
 

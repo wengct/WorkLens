@@ -87,6 +87,65 @@ public sealed class SourceConfigurationService(
 
             source.SettingsJson = SourceSettingsSerializer.Serialize(claudeSettings);
         }
+        else if (source.SourceType is ActivitySourceType.WindowsCopilot or ActivitySourceType.WslCopilot or ActivitySourceType.MacOsCopilot)
+        {
+            var copilotSettings = SourceSettingsSerializer.DeserializeCopilot(source.SettingsJson);
+            copilotSettings.CopilotHome = string.IsNullOrWhiteSpace(copilotSettings.CopilotHome)
+                ? null
+                : copilotSettings.CopilotHome.Trim();
+            copilotSettings.Distro = string.IsNullOrWhiteSpace(copilotSettings.Distro)
+                ? null
+                : copilotSettings.Distro.Trim();
+            if (source.SourceType == ActivitySourceType.WslCopilot && copilotSettings.Distro is null)
+            {
+                throw new ArgumentException("WSL GitHub Copilot 來源必須指定 Linux 環境名稱，例如 Ubuntu。", nameof(source));
+            }
+
+            if (source.SourceType is ActivitySourceType.WindowsCopilot or ActivitySourceType.MacOsCopilot)
+            {
+                copilotSettings.Distro = null;
+            }
+
+            source.SettingsJson = SourceSettingsSerializer.Serialize(copilotSettings);
+        }
+        else if (source.SourceType is ActivitySourceType.WindowsVsCodeCopilot or ActivitySourceType.WslVsCodeCopilot or ActivitySourceType.MacOsVsCodeCopilot)
+        {
+            var vsCodeSettings = SourceSettingsSerializer.DeserializeVsCodeCopilot(source.SettingsJson);
+            vsCodeSettings.WorkspaceStoragePaths = vsCodeSettings.WorkspaceStoragePaths
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            vsCodeSettings.Distro = string.IsNullOrWhiteSpace(vsCodeSettings.Distro)
+                ? null
+                : vsCodeSettings.Distro.Trim();
+            if (source.SourceType == ActivitySourceType.WslVsCodeCopilot && vsCodeSettings.Distro is null)
+            {
+                throw new ArgumentException("WSL VS Code Copilot 來源必須指定 Linux 環境名稱，例如 Ubuntu。", nameof(source));
+            }
+
+            if (source.SourceType is ActivitySourceType.WindowsVsCodeCopilot or ActivitySourceType.MacOsVsCodeCopilot)
+            {
+                vsCodeSettings.Distro = null;
+            }
+
+            source.SettingsJson = SourceSettingsSerializer.Serialize(vsCodeSettings);
+        }
+        else if (source.SourceType == ActivitySourceType.WindowsVisualStudioCopilot)
+        {
+            var visualStudioSettings = SourceSettingsSerializer.DeserializeVisualStudioCopilot(source.SettingsJson);
+            visualStudioSettings.SolutionPaths = visualStudioSettings.SolutionPaths
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Select(path => path.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (visualStudioSettings.SolutionPaths.Count == 0)
+            {
+                throw new ArgumentException("Visual Studio Copilot Chat 來源至少需要一個方案目錄。", nameof(source));
+            }
+
+            source.SettingsJson = SourceSettingsSerializer.Serialize(visualStudioSettings);
+        }
         else if (source.SourceType == ActivitySourceType.AzureDevOpsPullRequest)
         {
             var settings = SourceSettingsSerializer.DeserializeAzureDevOps(source.SettingsJson);

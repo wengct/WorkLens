@@ -16,11 +16,21 @@ import {
   Terminal,
 } from 'lucide-react';
 
+import { InstallCommand } from '@/components/install-command';
+
 export const dynamic = 'force-static';
 
 const windowsCommand = 'irm https://raw.githubusercontent.com/wengct/WorkLens/main/scripts/get.ps1 | iex';
 const macCommand = 'curl -fsSL https://raw.githubusercontent.com/wengct/WorkLens/main/scripts/get.sh | bash';
 const assetPrefix = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
+
+const supportedSources = [
+  { name: 'Azure DevOps Services', image: 'azure-devops.svg' },
+  { name: 'Git', image: 'git.svg' },
+  { name: 'Codex', image: 'codex-color.svg' },
+  { name: 'Claude Code', image: 'claudecode-color.svg' },
+  { name: 'GitHub Copilot', image: 'githubcopilot.svg' },
+];
 
 function Brand() {
   return (
@@ -33,7 +43,7 @@ function Brand() {
 
 const traces = [
   { icon: GitCommitHorizontal, type: 'GIT COMMIT', text: '程式碼改變的軌跡', time: '09:42' },
-  { icon: MessageSquareText, type: 'CODEX SESSION', text: '來回推敲的思考脈絡', time: '11:18' },
+  { icon: MessageSquareText, type: 'CODING AGENT SESSION', text: '來回推敲的思考脈絡', time: '11:18' },
   { icon: Search, type: 'ISSUE TRACE', text: '反覆追查才找到的答案', time: '14:07' },
   { icon: PenLine, type: 'MANUAL NOTE', text: '會議、決定與未寫下的片刻', time: '16:35' },
 ];
@@ -55,12 +65,12 @@ export default function Home() {
         <div className="hero-index" aria-hidden="true">WORK / 001</div>
         <div className="hero-main">
           <p className="kicker"><span /> A LENS FOR YOUR WORKDAY</p>
-          <h1>每日的辛勞，<br />其實從未真正消失。</h1>
+          <h1><span className="heading-line">每日的辛勞，</span><span className="heading-line">其實從未真正消失。</span></h1>
           <p className="hero-intro">它們只是安靜地沉澱在你的設備裡，<br />等待有一天，再次被看見。</p>
         </div>
         <div className="hero-aside">
           <div className="focus-mark" aria-hidden="true"><span /><span /><span /><span /></div>
-          <p>WorkLens 讓 AI 沿著 Git、Codex 與日常紀錄留下的痕跡，辨認關聯、還原脈絡，更快找回你真正推進的工作。</p>
+          <p>WorkLens 讓 AI 沿著程式碼變更、PR、AI 對話與日常紀錄留下的痕跡，辨認關聯、還原脈絡，更快找回你真正推進的工作。</p>
           <a href="#story">沿著痕跡往回走 <ArrowRight size={17} /></a>
         </div>
       </section>
@@ -69,7 +79,7 @@ export default function Home() {
         <div className="page-width trace-layout">
           <div className="section-label"><span>01</span><p>散落的痕跡</p></div>
           <div className="trace-copy">
-            <h2>一天，留下許多<br />沒有名字的片刻。</h2>
+            <h2><span className="heading-line">一天，留下許多</span><span className="heading-line">沒有名字的片刻。</span></h2>
             <p>一筆 commit、一段對話、一次問題排查、一場會議、一個決定——它們散落在一天的不同角落，留下痕跡，卻未必留下名字。</p>
           </div>
           <div className="trace-list">
@@ -100,7 +110,7 @@ export default function Home() {
           <div className="product-heading">
             <div className="section-label light-label"><span>02</span><p>重新聚焦</p></div>
             <div>
-              <p className="overline">因此，我做了 WorkLens。</p>
+              <p className="overline">讓工作留下的痕跡，有了脈絡。</p>
               <h2>讓散落的工作碎片，<br />重新聚在一起。</h2>
             </div>
             <p>WorkLens 是一套以 local-first 為核心的個人工作歷程與工時回報工具。它先依日期與專案整理紀錄，再讓 AI 從零散線索中發掘工作、重建脈絡。</p>
@@ -113,10 +123,25 @@ export default function Home() {
           </figure>
 
           <div className="product-flow">
-            <article><span>01</span><Code2 size={22} /><h3>拾起</h3><p>Git 留下程式碼的改變，Codex 留下思考與討論；工具不知道的部分，再由你補上。</p></article>
+            <article><span>01</span><Code2 size={22} /><h3>拾起</h3><p>從 Git 的程式碼變更、Azure DevOps 的 PR，到 Codex、Claude Code 與 GitHub Copilot 的對話；再由你補上會議與日常紀錄。</p></article>
             <article><span>02</span><CalendarDays size={22} /><h3>聚焦</h3><p>依日期與專案重組紀錄，透過專案與關鍵字，找回每一段工作的前因後果。</p></article>
             <article><span>03</span><Sparkles size={22} /><h3>成稿</h3><p>由 AI 將一天或一週的推進整理成完整摘要，再由你編修、匯出與回報。</p></article>
           </div>
+
+        <section className="source-brands" aria-labelledby="source-brands-title">
+          <h3 id="source-brands-title">支援的資料來源</h3>
+          <ul className="source-brand-list">
+            {supportedSources.map(({ name, image }) => (
+              <li key={name}>
+                <span className="source-brand-icon">
+                  <img src={`${assetPrefix}/source-brands/${image}`} alt="" width="32" height="32" />
+                </span>
+                <span>{name}</span>
+              </li>
+            ))}
+          </ul>
+          <p><PenLine size={18} aria-hidden="true" /><span>也支援手動補充會議、討論與工作紀錄。</span></p>
+        </section>
         </div>
       </section>
 
@@ -139,7 +164,7 @@ export default function Home() {
           <div className="section-label light-label"><span>04</span><p>Local-first</p></div>
           <div className="privacy-statement">
             <p className="overline">A PRINCIPLE, NOT A FEATURE</p>
-            <h2>工作紀錄，首先應該<br />屬於工作的人。</h2>
+            <h2><span className="heading-line">工作紀錄，</span><span className="heading-line">首先應該屬於</span><span className="heading-line">工作的人。</span></h2>
             <p>WorkLens 完整運行在你的電腦上，不依賴遠端雲端伺服器；工作紀錄與應用服務都留在本機。只有當你主動使用 AI 時，才會依照你的設定，交由你指定的 AI 模型處理。</p>
           </div>
           <div className="privacy-rules">
@@ -179,8 +204,8 @@ export default function Home() {
           </div>
           <div className="terminal-card">
             <div className="terminal-head"><span><Terminal size={14} /> QUICK INSTALL</span></div>
-            <div className="terminal-command"><span>Windows / PowerShell</span><code><i>$</i> {windowsCommand}</code></div>
-            <div className="terminal-command"><span>macOS / Terminal</span><code><i>$</i> {macCommand}</code></div>
+            <InstallCommand label="Windows / PowerShell" command={windowsCommand} />
+            <InstallCommand label="macOS / Terminal" command={macCommand} />
             <p><Check size={14} /> 自動選擇系統版本並完成健康檢查</p>
           </div>
         </div>

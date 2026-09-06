@@ -146,7 +146,22 @@ git push origin v1.0.0
 
 「工作摘要」將工作歷程與摘要放在同一頁：可用月曆選擇每日或每週期間、依專案與關鍵字篩選左側歷程，並在右側產生、編輯、AI 整理與匯出完整期間摘要。篩選不會改變摘要涵蓋的資料範圍；回補來源可針對單日或整週執行，且不會改變正常收集的 checkpoint。
 
-資料來源支援 Windows、macOS 與 WSL 的 Git、Codex 和 Claude Code，也支援以 Azure DevOps CLI 讀取 Azure DevOps Services 的 PR。Azure DevOps PR 來源只會納入 `az login` 目前使用者建立的 PR，並取得 PR 直接關聯的 work item 欄位與 relations。Codex 會從 `sessions` 與 `archived_sessions` 讀取本機會話；Claude Code 會從 `projects/<project>/<session-id>.jsonl` 讀取主會話，排除子代理 transcript。兩者都以 session id 去重，保存 User／AI 可見文字對話；每日、每週及 AI 報告上下文只使用 User 訊息，工具呼叫、工具結果、思考區塊與附件內容不會匯入。Codex 資料目錄可自動偵測 `CODEX_HOME`／`~/.codex`；Claude Code 可自動偵測 `CLAUDE_CONFIG_DIR`／`~/.claude`，兩者都可在來源設定中覆寫。
+資料來源支援 Windows、macOS 與 WSL 的 Git、Codex、Claude Code、GitHub Copilot CLI／App，以及 VS Code Copilot Chat，也支援以 Azure DevOps CLI 讀取 Azure DevOps Services 的 PR。Azure DevOps PR 來源只會納入 `az login` 目前使用者建立的 PR，並取得 PR 直接關聯的 work item 欄位與 relations。Codex 會從 `sessions` 與 `archived_sessions` 讀取本機會話；Claude Code 會從 `projects/<project>/<session-id>.jsonl` 讀取主會話；GitHub Copilot CLI／App 會從 `~/.copilot/session-state/<session-id>/events.jsonl` 讀取會話；三者都排除子代理 transcript、工具內容、思考區塊與附件。VS Code Copilot Chat 會自動探索 Stable／Insiders 的 `workspaceStorage/*/chatSessions`，重建 JSON 快照或 JSONL 操作紀錄；自訂、可攜版與 VS Code Server 位置可在來源設定中填入多個根目錄。這些來源以來源格式、正規化資料根目錄、session id 去重；VS Code 另外區分 workspace，保存 User／AI 可見文字對話；每日、每週及 AI 報告上下文只使用 User 訊息。GitHub Copilot 整合不收集 Token、費用或用量統計。Codex 資料目錄可自動偵測 `CODEX_HOME`／`~/.codex`；Claude Code 可自動偵測 `CLAUDE_CONFIG_DIR`／`~/.claude`；Copilot CLI／App 可自動偵測 `COPILOT_HOME`／`~/.copilot`；這些路徑都可在來源設定中覆寫。
+
+Visual Studio Copilot Chat 已支援 Visual Studio 2026 Chat 與 Agent（Preview）。非空 session 是 MessagePack 二進位串流，包含 `TimeCreated`、`TimeUpdated` 與巢狀訊息內容；同一個 Session GUID 的 before／after 樣本已確認檔案會持續更新，Agent（Preview）則以 `CopilotCliResponder` 辨識。日期會以 session 的建立／更新欄位為準，沒有逐則訊息時間時不會自行推算細分時間。
+
+VS Code Copilot Chat 的自動探索位置如下；只會檢查這些 `workspaceStorage` 根目錄，不會掃描整台電腦：
+
+- Windows Stable：`%APPDATA%\Code\User\workspaceStorage`
+- Windows Insiders：`%APPDATA%\Code - Insiders\User\workspaceStorage`
+- macOS Stable：`~/Library/Application Support/Code/User/workspaceStorage`
+- macOS Insiders：`~/Library/Application Support/Code - Insiders/User/workspaceStorage`
+- WSL Stable：`${XDG_CONFIG_HOME:-$HOME/.config}/Code/User/workspaceStorage`
+- WSL Insiders：`${XDG_CONFIG_HOME:-$HOME/.config}/Code - Insiders/User/workspaceStorage`
+
+每個 workspace 目錄下的 `chatSessions` 會被讀取；自訂、可攜版與 VS Code Server 位置請在來源設定填入多個根目錄。Visual Studio 2026 來源則以方案目錄為單位搜尋 `<方案目錄>/.vs/<方案名稱>/copilot-chat/<識別碼>/sessions/`，不需要使用者填入內部識別碼目錄。
+
+各用戶端的實際格式驗證與 Visual Studio 關卡狀態記錄於 [`docs/copilot-format-validation.md`](docs/copilot-format-validation.md)。
 
 報告在人工紀錄或來源資料有實質異動時會標示為「需要重產」；重產會覆蓋同一期間的內容，並在覆蓋前要求確認。AI 整理可從 Prompt 範本庫選擇指令，系統仍固定驗證 JSON、工時與工作紀錄 ID；AI 完成後會直接儲存，手動修改文字時才需要另行儲存。
 

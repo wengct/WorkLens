@@ -346,7 +346,17 @@ public sealed class SourceOrchestrator(
     {
         if (!IsSessionEvidence(current.Kind) ||
             current.Kind != incoming.Kind ||
-            current.SourceId == incoming.SourceId)
+            (current.SourceId == incoming.SourceId && incoming.Kind != EvidenceKind.CopilotSession))
+        {
+            return false;
+        }
+
+        if (IsComplete(current) && !IsComplete(incoming))
+        {
+            return true;
+        }
+
+        if (!IsComplete(current) && IsComplete(incoming))
         {
             return false;
         }
@@ -358,13 +368,20 @@ public sealed class SourceOrchestrator(
     }
 
     private static bool IsSessionEvidence(EvidenceKind kind) =>
-        kind is EvidenceKind.CodexSession or EvidenceKind.ClaudeCodeSession;
+        kind is EvidenceKind.CodexSession or EvidenceKind.ClaudeCodeSession or EvidenceKind.CopilotSession;
 
     private static DateTimeOffset? SessionUpdatedAt(SourceEvidence evidence) => evidence.Kind switch
     {
         EvidenceKind.CodexSession => SourceSettingsSerializer.DeserializeCodexMetadata(evidence.MetadataJson)?.UpdatedAt,
         EvidenceKind.ClaudeCodeSession => SourceSettingsSerializer.DeserializeClaudeCodeMetadata(evidence.MetadataJson)?.UpdatedAt,
+        EvidenceKind.CopilotSession => SourceSettingsSerializer.DeserializeCopilotMetadata(evidence.MetadataJson)?.UpdatedAt,
         _ => null
+    };
+
+    private static bool IsComplete(SourceEvidence evidence) => evidence.Kind switch
+    {
+        EvidenceKind.CopilotSession => SourceSettingsSerializer.DeserializeCopilotMetadata(evidence.MetadataJson)?.IsComplete ?? true,
+        _ => true
     };
 
     private sealed class EvidenceUpsertResult

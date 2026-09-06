@@ -202,6 +202,10 @@ p { color: var(--muted); line-height: 1.65; }
 .source-card:first-of-type { border-top: 0; padding-top: 0; }
 .source-title { display: flex; align-items: center; gap: 9px; }
 .source-meta { margin: 7px 0 0; color: var(--muted); font-size: 12px; white-space: pre-line; }
+.source-validation { margin-top: 10px; padding: 9px 11px; border-radius: 8px; font-size: 12px; line-height: 1.5; }
+.source-validation-valid { color: #27604b; background: #f1fbf5; border: 1px solid #cbead7; }
+.source-validation-error { color: #87434b; background: #fff3f4; border: 1px solid #efc9cd; }
+.source-validation ul { margin: 5px 0 0; padding-left: 18px; }
 .source-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .source-card > .collection-progress,
 .source-card > .operation-progress,

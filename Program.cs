@@ -143,6 +143,31 @@ builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
         serviceProvider.GetRequiredService<ProcessRunner>(),
         ActivitySourceType.MacOsClaudeCode));
 builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new CopilotSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.WindowsCopilot));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new CopilotSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.WslCopilot));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new CopilotSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.MacOsCopilot));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new VsCodeCopilotSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.WindowsVsCodeCopilot));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new VsCodeCopilotSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.WslVsCodeCopilot));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new VsCodeCopilotSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.MacOsVsCodeCopilot));
+builder.Services.AddSingleton<IActivitySourceAdapter, VisualStudioCopilotSourceAdapter>();
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
     new AzureDevOpsPullRequestSourceAdapter(
         serviceProvider.GetRequiredService<AzureDevOpsCliService>()));
 builder.Services.AddSingleton<SourceRegistry>();

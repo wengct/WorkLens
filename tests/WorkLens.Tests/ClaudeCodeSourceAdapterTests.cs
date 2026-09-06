@@ -104,7 +104,10 @@ public sealed class ClaudeCodeSourceAdapterTests : IDisposable
 
         Assert.Single(batch.Evidence);
         Assert.Contains(batch.Warnings, warning => warning.Contains("重試", StringComparison.Ordinal));
-        Assert.Contains(path.Replace("\\", "\\\\", StringComparison.Ordinal), batch.CheckpointJson, StringComparison.OrdinalIgnoreCase);
+        using var checkpoint = JsonDocument.Parse(batch.CheckpointJson);
+        Assert.Contains(
+            checkpoint.RootElement.GetProperty("RetryPaths").EnumerateArray(),
+            item => string.Equals(item.GetString(), path, StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

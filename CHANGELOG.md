@@ -6,7 +6,11 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ### 新增
 
+- 形象網站新增 Azure DevOps Services、Git、Codex、Claude Code 與 GitHub Copilot 的資料來源品牌圖示列，並補充人工紀錄說明。
+- 形象網站的快速安裝指令新增靠右對齊的複製按鈕，只複製指令、不包含 `$` 提示符號，並提供成功與失敗提示。
 - 新增 Claude Code 工作紀錄來源，支援 Windows、macOS 與 WSL；唯讀匯入本機主會話 JSONL，排除子代理、工具內容、思考區塊與附件。
+- 新增 GitHub Copilot CLI／App 與 VS Code Copilot Chat 工作紀錄來源，唯讀匯入本機可見的使用者提示詞與助理回覆；支援自動探索及自訂資料根目錄、JSON／JSONL session 重播、checkpoint、補收與重試，不收集 Token、費用或用量統計。
+- Visual Studio Copilot Chat 支援 Visual Studio 2026 Chat 與 Agent（Preview）：解析 MessagePack session、匯入可見 user／assistant 對話，並支援同一 Session GUID 的持續更新；不收集 reasoning、工具輸出、附件二進位或 Token／費用資料。
 
 ## [1.3.2] - 2026-09-05
 

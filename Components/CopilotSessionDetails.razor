@@ -1,0 +1,47 @@
+@using WorkLens.Domain
+
+@if (metadata is not null)
+{
+    <details class="codex-session-details copilot-session-details">
+        <summary>查看完整對話（@metadata.Messages.Count 則）</summary>
+        <div class="codex-session-meta">
+            <span>來源：@metadata.Client · @metadata.Platform</span>
+            <span>格式：@metadata.SourceFormat · Session：@metadata.SessionId</span>
+            @if (!string.IsNullOrWhiteSpace(metadata.Cwd))
+            {
+                <span>工作目錄：@metadata.Cwd</span>
+            }
+            <span>最近更新：@metadata.UpdatedAt.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</span>
+            @if (!metadata.IsComplete)
+            {
+                <span class="text-warning">讀取不完整，檔案更新後會重試</span>
+            }
+        </div>
+        <div class="codex-transcript">
+            @foreach (var message in metadata.Messages)
+            {
+                <div class="codex-message codex-message-@message.Role">
+                    <div class="codex-message-heading">
+                        <strong>@RoleText(message.Role)</strong>
+                        <span>@message.Timestamp.ToLocalTime().ToString("yyyy/MM/dd HH:mm")</span>
+                    </div>
+                    <div class="codex-message-body">@message.Text</div>
+                </div>
+            }
+        </div>
+    </details>
+}
+else if (!string.IsNullOrWhiteSpace(Evidence.CommitMessage))
+{
+    <div class="markdown-source">@Evidence.CommitMessage</div>
+}
+
+@code {
+    [Parameter, EditorRequired] public SourceEvidence Evidence { get; set; } = default!;
+    private CopilotSessionMetadata? metadata;
+
+    protected override void OnParametersSet() =>
+        metadata = SourceSettingsSerializer.DeserializeCopilotMetadata(Evidence.MetadataJson);
+
+    private static string RoleText(string role) => role == "user" ? "User" : "Copilot";
+}

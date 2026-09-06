@@ -72,6 +72,45 @@ public sealed class SourceSettingsTests
     }
 
     [Fact]
+    public void Copilot_source_settings_and_metadata_round_trip()
+    {
+        var settings = new CopilotSourceSettings
+        {
+            CopilotHome = @"C:\Users\me\.copilot",
+            Distro = "Ubuntu"
+        };
+        var restoredSettings = SourceSettingsSerializer.DeserializeCopilot(SourceSettingsSerializer.Serialize(settings));
+        Assert.Equal(settings.CopilotHome, restoredSettings.CopilotHome);
+        Assert.Equal(settings.Distro, restoredSettings.Distro);
+
+        var metadata = new CopilotSessionMetadata
+        {
+            SessionId = "session-1",
+            UpdatedAt = DateTimeOffset.Parse("2026-09-02T01:00:00Z"),
+            SourceFormat = "copilot-session-state",
+            Messages = [new CopilotSessionMessage { Id = "u1", Role = "user", Text = "問題" }]
+        };
+        var restoredMetadata = SourceSettingsSerializer.DeserializeCopilotMetadata(
+            SourceSettingsSerializer.SerializeCopilotMetadata(metadata));
+        Assert.NotNull(restoredMetadata);
+        Assert.Equal("session-1", restoredMetadata.SessionId);
+        Assert.Equal("問題", restoredMetadata.Messages[0].Text);
+    }
+
+    [Fact]
+    public void Vs_code_and_visual_studio_source_settings_round_trip()
+    {
+        var vsCode = SourceSettingsSerializer.DeserializeVsCodeCopilot(SourceSettingsSerializer.Serialize(
+            new VsCodeCopilotSourceSettings { WorkspaceStoragePaths = [@"C:\Code Storage", @"D:\Code"], Distro = "Ubuntu" }));
+        Assert.Equal([@"C:\Code Storage", @"D:\Code"], vsCode.WorkspaceStoragePaths);
+        Assert.Equal("Ubuntu", vsCode.Distro);
+
+        var visualStudio = SourceSettingsSerializer.DeserializeVisualStudioCopilot(SourceSettingsSerializer.Serialize(
+            new VisualStudioCopilotSourceSettings { SolutionPaths = [@"C:\Solutions\App"] }));
+        Assert.Equal([@"C:\Solutions\App"], visualStudio.SolutionPaths);
+    }
+
+    [Fact]
     public void Azure_devops_source_settings_normalize_org_branch_and_round_trip()
     {
         var settings = new AzureDevOpsSourceSettings

@@ -11,7 +11,14 @@ public enum ActivitySourceType
     AzureDevOpsPullRequest,
     WindowsClaudeCode,
     WslClaudeCode,
-    MacOsClaudeCode
+    MacOsClaudeCode,
+    WindowsCopilot,
+    WslCopilot,
+    MacOsCopilot,
+    WindowsVsCodeCopilot,
+    WslVsCodeCopilot,
+    MacOsVsCodeCopilot,
+    WindowsVisualStudioCopilot
 }
 
 public enum SourceHealthStatus
@@ -39,7 +46,8 @@ public enum EvidenceKind
     CodexSession,
     AzureDevOpsPullRequestCreated,
     AzureDevOpsPullRequestClosed,
-    ClaudeCodeSession
+    ClaudeCodeSession,
+    CopilotSession
 }
 
 public enum CommitReachabilityStatus

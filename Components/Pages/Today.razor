@@ -104,6 +104,10 @@
                         {
                             <ClaudeCodeSessionDetails Evidence="item" />
                         }
+                        else if (item.Kind == EvidenceKind.CopilotSession)
+                        {
+                            <CopilotSessionDetails Evidence="item" />
+                        }
                         else if (item.Kind is EvidenceKind.AzureDevOpsPullRequestCreated or EvidenceKind.AzureDevOpsPullRequestClosed)
                         {
                             <AzureDevOpsPullRequestDetails Evidence="item" />
