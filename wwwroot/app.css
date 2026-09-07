@@ -227,11 +227,11 @@ p { color: var(--muted); line-height: 1.65; }
 .inbox-actions select { min-width: 240px; max-width: 100%; padding: 8px 9px; color: var(--ink); background: white; border: 1px solid #d6ddea; border-radius: 7px; font-size: 12px; }
 .timeline { position: relative; padding-left: 26px; }
 .timeline::before { content: ""; position: absolute; top: 7px; bottom: 7px; left: 7px; width: 1px; background: #dbe1ed; }
-.timeline-item { position: relative; padding: 0 0 19px 14px; }
+.timeline-item { position: relative; min-width: 0; padding: 0 0 19px 14px; }
 .timeline-item::before { content: ""; position: absolute; top: 5px; left: -23px; width: 9px; height: 9px; border: 2px solid white; border-radius: 50%; background: #8290eb; box-shadow: 0 0 0 1px #8290eb; }
 .timeline-time { color: #8995a9; font-size: 11px; }
-.timeline-title { margin-top: 3px; color: #344361; font-size: 13px; font-weight: 650; }
-.timeline-detail { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; white-space: pre-line; }
+.timeline-title { margin-top: 3px; color: #344361; font-size: 13px; font-weight: 650; overflow-wrap: anywhere; }
+.timeline-detail { margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
 .report-list { display: grid; gap: 10px; }
 .report-list-scroll { max-height: 340px; padding-right: 5px; overflow-y: auto; scrollbar-gutter: stable; }
 .recent-report-picker { display: flex; }

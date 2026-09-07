@@ -5,6 +5,9 @@ import {
   Check,
   Code2,
   Database,
+  Eye,
+  FileSearch,
+  FileText,
   GitCommitHorizontal,
   GitFork,
   HardDrive,
@@ -56,6 +59,7 @@ export default function Home() {
         <nav aria-label="主要導覽">
           <a href="#story">為什麼</a>
           <a href="#product">如何運作</a>
+          <a href="#sensitive-protection">機敏防護</a>
           <a href="#privacy">Local-first</a>
         </nav>
         <a className="header-action" href="#install">下載使用 <ArrowRight size={16} /></a>
@@ -97,7 +101,7 @@ export default function Home() {
       <section className="question-section page-width">
         <div className="question-line"><span>一天結束</span><i /></div>
         <blockquote>
-          <p>今天，我究竟<br />完成了什麼？</p>
+          <p><span>今天，我究竟</span><span>完成了什麼？</span></p>
         </blockquote>
         <div className="question-answer">
           <span>於是</span>
@@ -159,13 +163,67 @@ export default function Home() {
         <div className="ai-outcome"><span>BEFORE</span><p>「今天好像很忙。」</p><i /><span>WITH WORKLENS AI</span><strong>「我知道自己推進了什麼，也知道它是如何完成的。」</strong></div>
       </section>
 
+      <section className="sensitive-section" id="sensitive-protection">
+        <div className="page-width sensitive-layout">
+          <div className="section-label sensitive-label"><span>04</span><p>機敏資訊防護</p></div>
+          <div className="sensitive-heading">
+            <p className="overline">A SAFETY CHECK BEFORE AI</p>
+            <h2><span className="heading-line">送出 AI 之前，</span><span className="heading-line">先把機敏資訊留在本機。</span></h2>
+            <p>每一次整理前，WorkLens 都會在本機檢查最終工作資料與有效 Prompt。命中內容只會從這次請求的副本遮蔽，原始紀錄不會被改寫。</p>
+          </div>
+
+          <div className="sensitive-flow" aria-label="機敏資訊防護流程">
+            <article>
+              <span className="sensitive-step-number">01 / PREPARE</span>
+              <FileText size={22} aria-hidden="true" />
+              <h3>整理待送內容</h3>
+              <p>將工作資料與本次有效的 Prompt 組成待檢查內容。</p>
+            </article>
+            <article>
+              <span className="sensitive-step-number">02 / SCAN</span>
+              <FileSearch size={22} aria-hidden="true" />
+              <h3>在本機偵測</h3>
+              <p>檢查機敏憑證、台灣個資、Email 與你的自訂敏感詞。</p>
+            </article>
+            <article>
+              <span className="sensitive-step-number">03 / REDACT</span>
+              <Eye size={22} aria-hidden="true" />
+              <h3>建立遮蔽副本</h3>
+              <p>只在記憶體中的請求副本取代命中內容，來源資料維持原樣。</p>
+            </article>
+            <article>
+              <span className="sensitive-step-number">04 / VERIFY</span>
+              <ShieldCheck size={22} aria-hidden="true" />
+              <h3>複查後才送出</h3>
+              <p>遮蔽副本必須再次通過檢查；任何失敗都會停止這次傳送。</p>
+            </article>
+          </div>
+
+          <div className="sensitive-preview" aria-label="遮蔽後送出的內容範例">
+            <div className="sensitive-preview-head"><span><i /> PREPARED REQUEST</span><strong>LOCAL ONLY</strong></div>
+            <div className="sensitive-preview-body">
+              <p><span>工作摘要</span>協助客戶 Alpha 排查登入異常，完成修正與測試。</p>
+              <p><span>聯絡資訊</span><mark>[已遮蔽：個人資料]</mark></p>
+              <p><span>存取憑證</span><mark>[已遮蔽：機敏憑證]</mark></p>
+              <p><span>專案代號</span><mark>[已遮蔽：自訂敏感詞]</mark></p>
+            </div>
+            <div className="sensitive-preview-foot"><ShieldCheck size={16} aria-hidden="true" /><span>遮蔽後重新掃描通過，才會交由你指定的 AI 模型處理。</span></div>
+          </div>
+
+          <div className="sensitive-notes">
+            <article><Eye size={20} aria-hidden="true" /><div><h3>你能先看見再決定</h3><p>手動整理時，WorkLens 會顯示遮蔽後預覽；你可以選擇「遮蔽後送出」或取消。</p></div></article>
+            <article><Bot size={20} aria-hidden="true" /><div><h3>排程也使用安全副本</h3><p>排程只會送出通過第二次掃描的遮蔽副本，無法完整檢查時便不傳送。</p></div></article>
+          </div>
+        </div>
+      </section>
+
       <section className="privacy-section" id="privacy">
         <div className="page-width privacy-layout">
-          <div className="section-label light-label"><span>04</span><p>Local-first</p></div>
+          <div className="section-label light-label"><span>05</span><p>Local-first</p></div>
           <div className="privacy-statement">
             <p className="overline">A PRINCIPLE, NOT A FEATURE</p>
             <h2><span className="heading-line">工作紀錄，</span><span className="heading-line">首先應該屬於</span><span className="heading-line">工作的人。</span></h2>
-            <p>WorkLens 完整運行在你的電腦上，不依賴遠端雲端伺服器；工作紀錄與應用服務都留在本機。只有當你主動使用 AI 時，才會依照你的設定，交由你指定的 AI 模型處理。</p>
+            <p>WorkLens 完整運行在你的電腦上，不依賴遠端雲端伺服器；工作紀錄與應用服務都留在本機。當你主動使用 AI 時，也會先通過本機的機敏資訊檢查，再依照你的設定交由指定模型處理。</p>
           </div>
           <div className="privacy-rules">
             <article><span><HardDrive size={20} /></span><div><h3>完整運行於本機</h3><p>WorkLens 沒有遠端雲端伺服器；程式、資料與工作紀錄都留在你的裝置上。</p></div></article>
