@@ -30,6 +30,39 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
 
         - ...
         """;
+    private const string PreviousMultiProjectGeneralReportPrompt = """
+        請將資料整理成清楚、可直接交付的工作回報，並依據工作內容自動歸類，按以下固定分類拆分章節：專案管理、UIUX相關、需求評估、功能開發、功能測試、BUG處理、文件相關、客服、其他。分類名稱、文字與順序不可更動；只建立有內容的章節。同一筆工作若涉及多個分類，歸入最主要的分類，避免重複。保留具體成果與處理過程；以繁體中文撰寫，內容精簡但不可遺漏重要脈絡。
+
+        格式如下：
+
+        # 每日工作回報
+
+        ## 日期：{{YYYY-MM-DD}}
+
+        ## 專案：{{專案1}}
+
+        ## 工作項目：{{專案1}}
+
+        ### 專案管理
+
+        - ...
+
+        ### UIUX相關
+
+        - ...
+
+        ## 專案：{{專案2}}
+
+        ## 工作項目
+
+        ### 專案管理
+
+        - ...
+
+        ### UIUX相關
+
+        - ...
+        """;
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -494,14 +527,16 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
             .Where(configuration =>
                 configuration.GeneralReportPrompt == PreviousGeneralReportPrompt ||
                 configuration.GeneralReportPrompt == PreviousCategorizedGeneralReportPrompt ||
-                configuration.GeneralReportPrompt == PreviousStructuredGeneralReportPrompt)
+                configuration.GeneralReportPrompt == PreviousStructuredGeneralReportPrompt ||
+                configuration.GeneralReportPrompt == PreviousMultiProjectGeneralReportPrompt)
             .ToListAsync(cancellationToken);
         var templates = await db.PromptTemplates
             .Where(template =>
                 template.IsDefault &&
                 (template.Content == PreviousGeneralReportPrompt ||
                  template.Content == PreviousCategorizedGeneralReportPrompt ||
-                 template.Content == PreviousStructuredGeneralReportPrompt))
+                 template.Content == PreviousStructuredGeneralReportPrompt ||
+                 template.Content == PreviousMultiProjectGeneralReportPrompt))
             .ToListAsync(cancellationToken);
 
         foreach (var configuration in configurations)

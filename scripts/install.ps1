@@ -28,6 +28,9 @@ if (!(Test-Path -LiteralPath $VersionFile -PathType Leaf) -or !(Test-Path -Liter
 if (!(Test-Path -LiteralPath $ReleaseManager -PathType Leaf)) {
     throw "The WorkLens release package does not contain scripts\manage.ps1."
 }
+if (!(Test-Path -LiteralPath (Join-Path $ReleaseDir "scripts\launch.vbs") -PathType Leaf)) {
+    throw "The WorkLens release package does not contain scripts\launch.vbs."
+}
 if (!(Test-Path -LiteralPath $LeakHunterExecutable -PathType Leaf) -or !(Test-Path -LiteralPath $LeakHunterVersionFile -PathType Leaf)) {
     throw "The WorkLens release package does not contain the verified leak-hunter executable and version marker."
 }
@@ -93,7 +96,7 @@ try {
     }
 
     New-Item -ItemType Directory -Force -Path $InstalledScripts | Out-Null
-    Copy-Item -Path (Join-Path $VersionDir "scripts\*.ps1") -Destination $InstalledScripts -Force
+    Copy-Item -Path (Join-Path $VersionDir "scripts\*.ps1"), (Join-Path $VersionDir "scripts\*.vbs") -Destination $InstalledScripts -Force
     Set-Content -LiteralPath "$CurrentFile.new" -Value $Version -Encoding ASCII
     Move-Item -LiteralPath "$CurrentFile.new" -Destination $CurrentFile -Force
     Set-Content -LiteralPath $PortFile -Value $Port -Encoding ASCII
@@ -151,6 +154,7 @@ exit $LASTEXITCODE
             Set-Content -LiteralPath $CurrentFile -Value $PreviousVersion -Encoding ASCII
             if ($PreviousPort) { Set-Content -LiteralPath $PortFile -Value $PreviousPort -Encoding ASCII }
             Copy-Item -Path (Join-Path $VersionsDir "$PreviousVersion\scripts\*.ps1") -Destination $InstalledScripts -Force
+            Get-ChildItem -LiteralPath (Join-Path $VersionsDir "$PreviousVersion\scripts") -Filter *.vbs | Copy-Item -Destination $InstalledScripts -Force
             $Manager = Join-Path $InstalledScripts "manage.ps1"
             if ($HadAutostart) { & $Manager register -InstallDir $InstallDir }
             else { & $Manager unregister -InstallDir $InstallDir }

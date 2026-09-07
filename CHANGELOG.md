@@ -4,6 +4,16 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [尚未發布]
 
+## [1.4.1] - 2026-09-07
+
+### 變更
+
+- 更新系統預設工作回報 Prompt，支援依專案分開整理、按固定分類歸類，並以 0.5 小時為單位自動預估工時。
+
+### 修正
+
+- 修正 Windows 安裝後及登入時，背景啟動排程仍跳出 Windows Terminal 視窗的問題；改由隱藏啟動器建立 PowerShell 程序，保留排程的結束碼與失敗重啟行為。
+
 ## [1.4.0] - 2026-09-07
 
 ### 新增
@@ -114,7 +124,8 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.4.0...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/wengct/WorkLens/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/wengct/WorkLens/compare/v1.3.2...v1.4.0
 [1.2.2]: https://github.com/wengct/WorkLens/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/wengct/WorkLens/compare/v1.2.0...v1.2.1

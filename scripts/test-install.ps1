@@ -20,6 +20,8 @@ $PreviousEnvironment = @{
     Log = $env:WorkLens__LogPath
 }
 
+& (Join-Path $PSScriptRoot "test-windows-launch.ps1") -ScriptsDir (Join-Path $ReleaseDir "scripts")
+
 try {
     New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
     $env:ConnectionStrings__WorkLens = "Data Source=$(Join-Path $RuntimeDir 'worklens.db')"

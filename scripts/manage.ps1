@@ -11,6 +11,7 @@ $ErrorActionPreference = "Stop"
 $TaskName = "WorkLens"
 $InstallDir = [IO.Path]::GetFullPath([Environment]::ExpandEnvironmentVariables($InstallDir))
 $RunScript = Join-Path $InstallDir "scripts\run.ps1"
+$Launcher = Join-Path $InstallDir "scripts\launch.vbs"
 $PortFile = Join-Path $InstallDir "port.txt"
 $PidFile = Join-Path $InstallDir "app.pid"
 $VersionsDir = Join-Path $InstallDir "versions"
@@ -72,9 +73,12 @@ function Register-WorkLensTask {
         throw "A scheduled task named WorkLens already exists and belongs to another installation."
     }
     $Identity = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-    $PowerShellExe = (Get-Command powershell.exe -ErrorAction Stop).Source
-    $Arguments = "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$RunScript`" -InstallDir `"$InstallDir`""
-    $Action = New-ScheduledTaskAction -Execute $PowerShellExe -Argument $Arguments -WorkingDirectory $InstallDir
+    if (!(Test-Path -LiteralPath $Launcher -PathType Leaf)) {
+        throw "WorkLens background launcher is missing: $Launcher"
+    }
+    $ScriptHost = Join-Path $env:SystemRoot "System32\wscript.exe"
+    $Arguments = "//B //Nologo `"$Launcher`" `"$RunScript`" `"$InstallDir`""
+    $Action = New-ScheduledTaskAction -Execute $ScriptHost -Argument $Arguments -WorkingDirectory $InstallDir
     $Trigger = New-ScheduledTaskTrigger -AtLogOn -User $Identity
     $Principal = New-ScheduledTaskPrincipal -UserId $Identity -LogonType Interactive -RunLevel Limited
     $Settings = New-ScheduledTaskSettingsSet `

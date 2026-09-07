@@ -219,6 +219,9 @@ public sealed class DatabaseInitializerTests
         Assert.Contains("# 每日工作回報", AiPromptDefaults.GeneralReportPrompt, StringComparison.Ordinal);
         Assert.Contains("## 日期：{{YYYY-MM-DD}}", AiPromptDefaults.GeneralReportPrompt, StringComparison.Ordinal);
         Assert.Contains("## 專案：{{專案1}}", AiPromptDefaults.GeneralReportPrompt, StringComparison.Ordinal);
+        Assert.Contains("自動預估工時，以 0.5 為單位", AiPromptDefaults.GeneralReportPrompt, StringComparison.Ordinal);
+        Assert.Contains("### 專案管理：{{hours:0.#}}", AiPromptDefaults.GeneralReportPrompt, StringComparison.Ordinal);
+        Assert.Contains("### UIUX相關：{{hours:0.#}}", AiPromptDefaults.GeneralReportPrompt, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -273,6 +276,70 @@ public sealed class DatabaseInitializerTests
         Assert.Equal(AiPromptDefaults.GeneralReportPrompt, (await verify.PromptTemplates.SingleAsync()).Content);
         Assert.Contains("## 專案：{{專案1}}", AiPromptDefaults.GeneralReportPrompt, StringComparison.Ordinal);
         Assert.Contains("## 專案：{{專案2}}", AiPromptDefaults.GeneralReportPrompt, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Initialize_upgrades_the_previous_multi_project_default_to_the_estimated_hours_format()
+    {
+        const string previousPrompt = """
+            請將資料整理成清楚、可直接交付的工作回報，並依據工作內容自動歸類，按以下固定分類拆分章節：專案管理、UIUX相關、需求評估、功能開發、功能測試、BUG處理、文件相關、客服、其他。分類名稱、文字與順序不可更動；只建立有內容的章節。同一筆工作若涉及多個分類，歸入最主要的分類，避免重複。保留具體成果與處理過程；以繁體中文撰寫，內容精簡但不可遺漏重要脈絡。
+
+            格式如下：
+
+            # 每日工作回報
+
+            ## 日期：{{YYYY-MM-DD}}
+
+            ## 專案：{{專案1}}
+
+            ## 工作項目：{{專案1}}
+
+            ### 專案管理
+
+            - ...
+
+            ### UIUX相關
+
+            - ...
+
+            ## 專案：{{專案2}}
+
+            ## 工作項目
+
+            ### 專案管理
+
+            - ...
+
+            ### UIUX相關
+
+            - ...
+            """;
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
+        await using (var setup = new WorkLensDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            setup.AiProviders.Add(new AiProviderConfiguration
+            {
+                Name = "預設 AI 設定",
+                IsDefault = true,
+                GeneralReportPrompt = previousPrompt
+            });
+            setup.PromptTemplates.Add(new PromptTemplate
+            {
+                Name = "預設工作回報",
+                Content = previousPrompt,
+                IsDefault = true
+            });
+            await setup.SaveChangesAsync();
+        }
+
+        await new DatabaseInitializer(new Factory(options)).InitializeAsync();
+
+        await using var verify = new WorkLensDbContext(options);
+        Assert.Equal(AiPromptDefaults.GeneralReportPrompt, (await verify.AiProviders.SingleAsync()).GeneralReportPrompt);
+        Assert.Equal(AiPromptDefaults.GeneralReportPrompt, (await verify.PromptTemplates.SingleAsync()).Content);
     }
 
     [Fact]
