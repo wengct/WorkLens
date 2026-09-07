@@ -57,6 +57,7 @@ public sealed class StaticAssetAvailabilityTests : IClassFixture<WorkLensApplica
         var project = await File.ReadAllTextAsync(FindRepositoryFile("WorkLens.csproj"));
 
         Assert.Contains("tools\\leak-hunter\\leak-hunter.exe", project, StringComparison.Ordinal);
+        Assert.Contains("Condition=\"Exists('tools\\leak-hunter\\leak-hunter.exe')\"", project, StringComparison.Ordinal);
         Assert.Contains("scripts\\leak-hunter.version", project, StringComparison.Ordinal);
         Assert.Contains("CopyToOutputDirectory=\"PreserveNewest\"", project, StringComparison.Ordinal);
     }

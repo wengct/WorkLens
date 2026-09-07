@@ -24,6 +24,7 @@
   <!-- The Windows development build uses the same verified scanner layout as the release package. -->
   <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
     <None Include="tools\leak-hunter\leak-hunter.exe"
+          Condition="Exists('tools\leak-hunter\leak-hunter.exe')"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="Always" />
     <None Include="scripts\leak-hunter.version"
