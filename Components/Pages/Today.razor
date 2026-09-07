@@ -130,53 +130,62 @@
         <div class="timeline">
             @foreach (var item in evidence)
             {
-                <div class="timeline-item" @key="item.Id">
-                    <div class="timeline-time">@item.OccurredAt.ToLocalTime().ToString("HH:mm") · @ProjectName(item.ProjectId)</div>
-                    <div class="timeline-title">@item.Title</div>
-                    <div class="timeline-detail">
-                        @if (item.Kind == EvidenceKind.CodexSession)
-                        {
-                            <CodexSessionDetails Evidence="item" />
-                        }
-                        else if (item.Kind == EvidenceKind.ClaudeCodeSession)
-                        {
-                            <ClaudeCodeSessionDetails Evidence="item" />
-                        }
-                        else if (item.Kind == EvidenceKind.CopilotSession)
-                        {
-                            <CopilotSessionDetails Evidence="item" />
-                        }
-                        else if (item.Kind is EvidenceKind.AzureDevOpsPullRequestCreated or EvidenceKind.AzureDevOpsPullRequestClosed)
-                        {
-                            <AzureDevOpsPullRequestDetails Evidence="item" />
-                        }
-                        else
-                        {
-                            @item.RepositoryKey
+                @if (item.Kind == EvidenceKind.Manual)
+                {
+                    <details class="timeline-item manual-source-item" @key="item.Id">
+                        <summary>
+                            <span class="timeline-time">@item.OccurredAt.ToLocalTime().ToString("HH:mm") · @ProjectName(item.ProjectId)</span>
+                            <span class="timeline-title">@item.Title</span>
+                        </summary>
+                        <div class="timeline-detail">
+                            @if (!string.IsNullOrWhiteSpace(item.RepositoryKey))
+                            {
+                                <div>@item.RepositoryKey</div>
+                            }
                             @if (!string.IsNullOrWhiteSpace(item.CommitMessage) && item.CommitMessage != item.Title)
                             {
-                                @if (item.Kind == EvidenceKind.Manual)
-                                {
-                                    <details class="manual-source-details">
-                                        <summary>內容明細</summary>
-                                        <div class="markdown-source">@item.CommitMessage</div>
-                                    </details>
-                                }
-                                else
+                                <div class="markdown-source">@item.CommitMessage</div>
+                            }
+                            <div class="button-row" style="margin-top: 8px">
+                                <button class="button button-secondary button-small" @onclick="() => BeginManualSourceEditAsync(item)">編輯</button>
+                                <button class="button button-danger button-small" @onclick="() => pendingManualDeleteId = item.Id">刪除</button>
+                            </div>
+                        </div>
+                    </details>
+                }
+                else
+                {
+                    <div class="timeline-item" @key="item.Id">
+                        <div class="timeline-time">@item.OccurredAt.ToLocalTime().ToString("HH:mm") · @ProjectName(item.ProjectId)</div>
+                        <div class="timeline-title">@item.Title</div>
+                        <div class="timeline-detail">
+                            @if (item.Kind == EvidenceKind.CodexSession)
+                            {
+                                <CodexSessionDetails Evidence="item" />
+                            }
+                            else if (item.Kind == EvidenceKind.ClaudeCodeSession)
+                            {
+                                <ClaudeCodeSessionDetails Evidence="item" />
+                            }
+                            else if (item.Kind == EvidenceKind.CopilotSession)
+                            {
+                                <CopilotSessionDetails Evidence="item" />
+                            }
+                            else if (item.Kind is EvidenceKind.AzureDevOpsPullRequestCreated or EvidenceKind.AzureDevOpsPullRequestClosed)
+                            {
+                                <AzureDevOpsPullRequestDetails Evidence="item" />
+                            }
+                            else
+                            {
+                                @item.RepositoryKey
+                                @if (!string.IsNullOrWhiteSpace(item.CommitMessage) && item.CommitMessage != item.Title)
                                 {
                                     <div class="markdown-source">@item.CommitMessage</div>
                                 }
                             }
-                            @if (item.Kind == EvidenceKind.Manual)
-                            {
-                                <div class="button-row" style="margin-top: 8px">
-                                    <button class="button button-secondary button-small" @onclick="() => BeginManualSourceEditAsync(item)">編輯</button>
-                                    <button class="button button-danger button-small" @onclick="() => pendingManualDeleteId = item.Id">刪除</button>
-                                </div>
-                                }
-                            }
+                        </div>
                     </div>
-                </div>
+                }
             }
         </div>
     }

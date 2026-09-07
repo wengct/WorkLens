@@ -18,6 +18,7 @@ public sealed class SourceCollectionProgressTests
         Assert.Contains("停止收集", razor, StringComparison.Ordinal);
         Assert.Contains("StopCollectionAsync(source.Id)", razor, StringComparison.Ordinal);
         Assert.Contains("停止回補", razor, StringComparison.Ordinal);
+        Assert.Contains("@onclick=\"StopBackfillAsync\"", razor, StringComparison.Ordinal);
         Assert.Contains("cancellation.Token", razor, StringComparison.Ordinal);
     }
 }

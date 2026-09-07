@@ -269,10 +269,12 @@ p { color: var(--muted); line-height: 1.65; }
 .evidence-panel { cursor: default; }
 .evidence-panel summary { cursor: pointer; color: #344361; font-size: 14px; }
 .evidence-panel[open] > summary { margin-bottom: 18px; }
-.manual-source-details { margin-top: 8px; }
-.manual-source-details > summary { width: fit-content; }
-.manual-source-details[open] > summary { margin-bottom: 8px; }
-.manual-source-details > summary:focus-visible { outline: 3px solid #cdd3ff; outline-offset: 2px; }
+.manual-source-item > summary { cursor: pointer; list-style-position: outside; }
+.manual-source-item > summary::marker { color: #8792a6; }
+.manual-source-item > summary .timeline-time,
+.manual-source-item > summary .timeline-title { display: block; }
+.manual-source-item[open] > summary { margin-bottom: 8px; }
+.manual-source-item > summary:focus-visible { outline: 3px solid #cdd3ff; outline-offset: 3px; border-radius: 4px; }
 .compact-form { padding: 10px 0; }
 .modal-backdrop { position: fixed; z-index: 1100; inset: 0; display: grid; place-items: center; padding: 24px; overflow-y: auto; background: rgba(24, 36, 61, .62); backdrop-filter: blur(3px); }
 .modal-dialog { width: min(620px, 100%); max-height: calc(100vh - 48px); padding: 24px; overflow-y: auto; background: white; border: 1px solid rgba(255,255,255,.7); border-radius: 16px; box-shadow: 0 24px 70px rgba(20, 31, 55, .28); }

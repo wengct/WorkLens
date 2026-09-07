@@ -322,7 +322,7 @@
         <div class="form-actions">
             @if (isBackfilling)
             {
-                <button class="button button-danger" @onclick="StopBackfill" disabled="@IsStoppingBackfill">@(IsStoppingBackfill ? "正在停止…" : "停止回補")</button>
+                <button class="button button-danger" @onclick="StopBackfillAsync" disabled="@IsStoppingBackfill">@(IsStoppingBackfill ? "正在停止…" : "停止回補")</button>
             }
             else
             {
@@ -1016,7 +1016,7 @@
 
     private bool IsStoppingBackfill => backfillCancellation?.IsCancellationRequested == true;
 
-    private void StopBackfill()
+    private async Task StopBackfillAsync()
     {
         if (backfillCancellation is null || backfillCancellation.IsCancellationRequested)
         {
@@ -1025,6 +1025,7 @@
 
         Toasts.Info("正在停止資料回補…");
         backfillCancellation.Cancel();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task ValidateAsync(Guid id)

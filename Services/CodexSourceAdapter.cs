@@ -106,8 +106,9 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
         var scanStartedAt = DateTimeOffset.UtcNow;
         try
         {
-            var allFiles = EnumerateSessionFiles(resolution.Path).ToList();
-            var index = LoadIndex(resolution.Path, batch.Warnings);
+            cancellationToken.ThrowIfCancellationRequested();
+            var allFiles = EnumerateSessionFiles(resolution.Path, cancellationToken).ToList();
+            var index = LoadIndex(resolution.Path, batch.Warnings, cancellationToken);
             var checkpoint = DeserializeCheckpoint(request.Source.CheckpointJson);
             var isBackfill = !request.UpdateCheckpoint;
             var isInitialImport = request.UpdateCheckpoint && request.Source.LastSuccessAt is null;
@@ -118,7 +119,7 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
             var candidates = isBackfill
-                ? allFiles
+                ? SelectBackfillCandidateFiles(allFiles, request.Since, request.Until)
                 : allFiles.Where(file =>
                         file.LastWriteTimeUtc >= watermark.UtcDateTime ||
                         (TryGetSessionIdFromFileName(file.Name, out var id) && indexChangedIds.Contains(id)))
@@ -130,7 +131,7 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    var parsed = ParseSession(file, index.TitlesById);
+                    var parsed = ParseSession(file, index.TitlesById, cancellationToken);
                     if (parsed is null)
                     {
                         batch.Warnings.Add($"{file.Name}：找不到有效的 session id，已略過。");
@@ -220,10 +221,13 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
         CancellationToken cancellationToken) =>
         homeResolver.ResolveAsync(sourceType, source, cancellationToken);
 
-    private static IEnumerable<FileInfo> EnumerateSessionFiles(string root)
+    private static IEnumerable<FileInfo> EnumerateSessionFiles(
+        string root,
+        CancellationToken cancellationToken = default)
     {
         foreach (var directoryName in new[] { "sessions", "archived_sessions" })
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var directory = Path.Combine(root, directoryName);
             if (!Directory.Exists(directory))
             {
@@ -232,12 +236,39 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
 
             foreach (var path in Directory.EnumerateFiles(directory, "*.jsonl", SearchOption.AllDirectories))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 yield return new FileInfo(path);
             }
         }
     }
 
-    private static SessionIndex LoadIndex(string root, List<string> warnings)
+    internal static IReadOnlyList<FileInfo> SelectBackfillCandidateFiles(
+        IEnumerable<FileInfo> files,
+        DateTimeOffset start,
+        DateTimeOffset? end)
+    {
+        var earliestDate = start.LocalDateTime.Date.AddDays(-1);
+        var latestDateExclusive = end?.LocalDateTime.Date.AddDays(1);
+
+        return files.Where(file =>
+        {
+            var timestamp = TryGetTimestampFromFileName(file.Name);
+            if (timestamp is null)
+            {
+                // Keep legacy or malformed names so an unusual Codex layout cannot silently lose data.
+                return true;
+            }
+
+            var date = timestamp.Value.LocalDateTime.Date;
+            return date >= earliestDate &&
+                   (latestDateExclusive is null || date < latestDateExclusive.Value);
+        }).ToList();
+    }
+
+    private static SessionIndex LoadIndex(
+        string root,
+        List<string> warnings,
+        CancellationToken cancellationToken)
     {
         var result = new SessionIndex();
         var path = Path.Combine(root, "session_index.jsonl");
@@ -248,7 +279,7 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
 
         try
         {
-            foreach (var line in ReadSharedLines(path))
+            foreach (var line in ReadSharedLines(path, cancellationToken))
             {
                 if (string.IsNullOrWhiteSpace(line))
                 {
@@ -291,7 +322,8 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
 
     private static ParsedSession? ParseSession(
         FileInfo file,
-        IReadOnlyDictionary<string, string> titles)
+        IReadOnlyDictionary<string, string> titles,
+        CancellationToken cancellationToken)
     {
         string? sessionId = null;
         string? cwd = null;
@@ -304,7 +336,7 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
         var attachmentCount = 0;
         var ordinal = 0;
 
-        foreach (var line in ReadSharedLines(file.FullName))
+        foreach (var line in ReadSharedLines(file.FullName, cancellationToken))
         {
             ordinal++;
             if (string.IsNullOrWhiteSpace(line))
@@ -431,7 +463,9 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
             messages);
     }
 
-    private static IEnumerable<string> ReadSharedLines(string path)
+    private static IEnumerable<string> ReadSharedLines(
+        string path,
+        CancellationToken cancellationToken)
     {
         using var stream = new FileStream(
             path,
@@ -441,6 +475,7 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
         using var reader = new StreamReader(stream);
         while (reader.ReadLine() is { } line)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             yield return line;
         }
     }

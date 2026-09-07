@@ -190,6 +190,104 @@ public sealed class CodexSourceAdapterTests : IDisposable
     }
 
     [Fact]
+    public void Backfill_candidates_keep_date_buffer_and_legacy_file_names()
+    {
+        var before = FileInfoFor("rollout-2026-09-01T23-30-00-11111111-1111-1111-1111-111111111111.jsonl");
+        var within = FileInfoFor("rollout-2026-09-02T12-00-00-22222222-2222-2222-2222-222222222222.jsonl");
+        var after = FileInfoFor("rollout-2026-09-03T00-30-00-33333333-3333-3333-3333-333333333333.jsonl");
+        var outside = FileInfoFor("rollout-2026-09-04T00-00-00-44444444-4444-4444-4444-444444444444.jsonl");
+        var legacy = FileInfoFor("legacy-session.jsonl");
+
+        var candidates = CodexSourceAdapter.SelectBackfillCandidateFiles(
+            [before, within, after, outside, legacy],
+            DateTimeOffset.Parse("2026-09-02T00:00:00Z"),
+            DateTimeOffset.Parse("2026-09-03T00:00:00Z"));
+
+        Assert.Equal([before, within, after, legacy], candidates);
+    }
+
+    [Fact]
+    public async Task Backfill_uses_buffered_and_legacy_files_but_keeps_only_requested_sessions()
+    {
+        var includedBefore = Guid.NewGuid();
+        var includedAfter = Guid.NewGuid();
+        var excluded = Guid.NewGuid();
+        var legacy = Guid.NewGuid();
+        await WriteSessionAsync(
+            Path.Combine(testRoot, "archived_sessions", $"rollout-2026-09-01T23-30-00-{includedBefore:D}.jsonl"),
+            includedBefore,
+            "2026-09-02T12:00:00Z",
+            "前一天檔名但應納入");
+        await WriteSessionAsync(
+            Path.Combine(testRoot, "archived_sessions", $"rollout-2026-09-03T00-30-00-{includedAfter:D}.jsonl"),
+            includedAfter,
+            "2026-09-02T13:00:00Z",
+            "後一天檔名但應納入");
+        await WriteSessionAsync(
+            Path.Combine(testRoot, "archived_sessions", $"rollout-2026-09-01T12-00-00-{excluded:D}.jsonl"),
+            excluded,
+            "2026-08-20T12:00:00Z",
+            "緩衝範圍內但不應納入");
+        await WriteSessionAsync(
+            Path.Combine(testRoot, "archived_sessions", "legacy-session.jsonl"),
+            legacy,
+            "2026-09-02T14:00:00Z",
+            "舊檔名仍應納入");
+
+        var batch = await CreateAdapter().CollectAsync(
+            new CollectionRequest(
+                CreateSource(),
+                DateTimeOffset.Parse("2026-09-02T00:00:00Z"),
+                DateTimeOffset.Parse("2026-09-03T00:00:00Z"),
+                UpdateCheckpoint: false),
+            CancellationToken.None);
+
+        Assert.Equal(3, batch.Evidence.Count);
+        Assert.Contains(batch.Evidence, evidence => evidence.ExternalKey == $"session:{includedBefore:D}");
+        Assert.Contains(batch.Evidence, evidence => evidence.ExternalKey == $"session:{includedAfter:D}");
+        Assert.Contains(batch.Evidence, evidence => evidence.ExternalKey == $"session:{legacy:D}");
+        Assert.DoesNotContain(batch.Evidence, evidence => evidence.ExternalKey == $"session:{excluded:D}");
+    }
+
+    [Fact]
+    public async Task Backfill_deduplicates_active_and_archived_sessions()
+    {
+        var id = Guid.NewGuid();
+        await WriteSessionAsync(SessionPath(id), id, "2026-09-02T12:00:00Z", "進行中版本");
+        var archived = Path.Combine(testRoot, "archived_sessions", $"rollout-2026-09-02T12-01-00-{id:D}.jsonl");
+        await WriteSessionAsync(archived, id, "2026-09-02T12:00:00Z", "封存版本");
+        File.SetLastWriteTimeUtc(archived, DateTime.UtcNow.AddMinutes(1));
+
+        var batch = await CreateAdapter().CollectAsync(
+            new CollectionRequest(
+                CreateSource(),
+                DateTimeOffset.Parse("2026-09-02T00:00:00Z"),
+                DateTimeOffset.Parse("2026-09-03T00:00:00Z"),
+                UpdateCheckpoint: false),
+            CancellationToken.None);
+
+        var evidence = Assert.Single(batch.Evidence);
+        Assert.Equal($"session:{id:D}", evidence.ExternalKey);
+        Assert.True(SourceSettingsSerializer.DeserializeCodexMetadata(evidence.MetadataJson)!.Archived);
+    }
+
+    [Fact]
+    public async Task Backfill_honors_cancellation_before_scanning_codex_home()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => CreateAdapter().CollectAsync(
+            new CollectionRequest(
+                CreateSource(),
+                DateTimeOffset.Parse("2026-09-02T00:00:00Z"),
+                DateTimeOffset.Parse("2026-09-03T00:00:00Z"),
+                UpdateCheckpoint: false,
+                cancellation.Token),
+            cancellation.Token));
+    }
+
+    [Fact]
     public async Task Incremental_collection_updates_an_old_session_when_its_file_changes()
     {
         var id = Guid.NewGuid();
@@ -370,7 +468,15 @@ public sealed class CodexSourceAdapterTests : IDisposable
 
     private async Task WriteMinimalSessionAsync(Guid id, string timestamp, string message)
     {
-        await File.WriteAllLinesAsync(SessionPath(id),
+        await WriteSessionAsync(SessionPath(id), id, timestamp, message);
+    }
+
+    private static FileInfo FileInfoFor(string name) => new(Path.Combine(Path.GetTempPath(), name));
+
+    private static async Task WriteSessionAsync(string path, Guid id, string timestamp, string message)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllLinesAsync(path,
         [
             Row(timestamp, "session_meta", new { id, timestamp }),
             Row(timestamp, "event_msg", new { type = "user_message", message })
