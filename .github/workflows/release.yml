@@ -73,7 +73,8 @@ jobs:
           $artifact = "worklens-$($env:GITHUB_REF_NAME)-${{ matrix.rid }}.zip"
           dotnet publish WorkLens.csproj --configuration Release --runtime "${{ matrix.rid }}" --self-contained true -p:Version=$version -p:InformationalVersion=$version --output $package
           & ./scripts/stage-leak-hunter.ps1 -PackageDir $package -Rid "${{ matrix.rid }}"
-          Copy-Item scripts $package -Recurse
+          New-Item -ItemType Directory -Force -Path (Join-Path $package "scripts") | Out-Null
+          Copy-Item -Path scripts/* -Destination (Join-Path $package "scripts") -Recurse -Force
           Copy-Item README.md, LICENSE $package
           Set-Content -LiteralPath (Join-Path $package "VERSION") -Value $version -Encoding ASCII
           & ./scripts/test-install.ps1 -ReleaseDir $package
