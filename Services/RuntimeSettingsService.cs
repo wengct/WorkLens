@@ -8,17 +8,33 @@ public sealed class RuntimeSettingsService
     private readonly SemaphoreSlim gate = new(1, 1);
     private readonly string settingsPath;
     private string? backupPathOverride;
+    private bool onboardingDismissed;
 
     public RuntimeSettingsService(AppPaths paths)
     {
         this.paths = paths;
         settingsPath = Path.Combine(paths.DataDirectory, "runtime-settings.json");
-        backupPathOverride = Load()?.BackupPath;
+        var loaded = Load();
+        backupPathOverride = loaded?.BackupPath;
+        onboardingDismissed = loaded?.OnboardingDismissed ?? false;
     }
 
     public string GetBackupPath() => string.IsNullOrWhiteSpace(backupPathOverride)
         ? paths.BackupPath
         : Path.GetFullPath(AppPaths.ExpandPath(backupPathOverride));
+
+    public bool IsOnboardingDismissed => onboardingDismissed;
+
+    public async Task SetOnboardingDismissedAsync(bool dismissed, CancellationToken cancellationToken = default)
+    {
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            await WriteAsync(new RuntimeSettings(backupPathOverride, dismissed), cancellationToken);
+            onboardingDismissed = dismissed;
+        }
+        finally { gate.Release(); }
+    }
 
     public async Task<string> SaveBackupPathAsync(string path, CancellationToken cancellationToken = default)
     {
@@ -42,13 +58,7 @@ public sealed class RuntimeSettingsService
         await gate.WaitAsync(cancellationToken);
         try
         {
-            Directory.CreateDirectory(paths.DataDirectory);
-            var temporaryPath = settingsPath + ".new";
-            var content = JsonSerializer.Serialize(
-                new RuntimeSettings(resolved),
-                new JsonSerializerOptions { WriteIndented = true });
-            await File.WriteAllTextAsync(temporaryPath, content, cancellationToken);
-            File.Move(temporaryPath, settingsPath, true);
+            await WriteAsync(new RuntimeSettings(resolved, onboardingDismissed), cancellationToken);
             backupPathOverride = resolved;
         }
         finally
@@ -57,6 +67,15 @@ public sealed class RuntimeSettingsService
         }
 
         return resolved;
+    }
+
+    private async Task WriteAsync(RuntimeSettings settings, CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(paths.DataDirectory);
+        var temporaryPath = settingsPath + ".new";
+        var content = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(temporaryPath, content, cancellationToken);
+        File.Move(temporaryPath, settingsPath, true);
     }
 
     private RuntimeSettings? Load()
@@ -77,5 +96,5 @@ public sealed class RuntimeSettingsService
         }
     }
 
-    private sealed record RuntimeSettings(string BackupPath);
+    private sealed record RuntimeSettings(string? BackupPath, bool OnboardingDismissed = false);
 }

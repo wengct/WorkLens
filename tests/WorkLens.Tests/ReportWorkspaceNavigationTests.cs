@@ -12,8 +12,11 @@ public sealed class ReportWorkspaceNavigationTests
         Assert.Contains("@page \"/reports\"", reports, StringComparison.Ordinal);
         Assert.Contains("ReportWorkspace", reports, StringComparison.Ordinal);
         Assert.Contains("RequestPeriodChangeAsync", reports, StringComparison.Ordinal);
-        Assert.Contains("儲存並切換", reports, StringComparison.Ordinal);
+        Assert.Contains("SaveChangesAsync", reports, StringComparison.Ordinal);
         Assert.Contains("篩選歷程", reports, StringComparison.Ordinal);
+        Assert.Contains("僅篩選歷程，不影響摘要範圍", reports, StringComparison.Ordinal);
+        Assert.Contains("產生 AI 摘要", workspace, StringComparison.Ordinal);
+        Assert.Contains("還原上一版", workspace, StringComparison.Ordinal);
         Assert.Contains("不受左側歷程篩選影響", workspace, StringComparison.Ordinal);
         Assert.Contains("href=\"/reports\"", navigation, StringComparison.Ordinal);
         Assert.DoesNotContain("/history", navigation, StringComparison.Ordinal);

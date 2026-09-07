@@ -5,12 +5,17 @@
 @inject ManualSourceService ManualSources
 @inject SourceConfigurationService SourceConfig
 @inject ReportService Reports
+@inject AiConfigurationService AiConfigurations
+@inject WorkDraftService Drafts
+@inject RuntimeSettingsService RuntimeSettings
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @inject ToastService Toasts
 @implements IAsyncDisposable
 
 <PageTitle>工作填寫｜WorkLens</PageTitle>
+<NavigationLock OnBeforeInternalNavigation="BeforeNavigationAsync" />
+<div class="today-page-stack">
 
 <div class="page-heading">
     <div>
@@ -24,11 +29,6 @@
         <button class="button button-secondary" @onclick="NextDay">後一天 →</button>
     </div>
 </div>
-
-@if (!string.IsNullOrWhiteSpace(editorNotice))
-{
-    <div class="alert alert-warning">@editorNotice</div>
-}
 
 @{ var confirmedHours = WorkLogService.CalculateHours(entries); }
 <div class="stats-grid today-stats" aria-label="當日概況">
@@ -44,24 +44,43 @@
 </div>
 
 <div class="today-workspace">
-<div class="panel today-quick-add">
+<div id="work-input" class="panel today-quick-add">
     <div class="panel-heading">
-        <div><h2>快速新增</h2><p>日期與專案會保留，方便連續記錄。</p></div>
-        <button class="button button-secondary" type="button" @onclick="OpenManualSourceCreateAsync">新增人工來源</button>
-    </div>
-    <EditForm Model="form" OnValidSubmit="SaveAsync">
-        <div class="form-grid quick-add-grid">
-            <div class="field"><label>日期</label><InputDate @bind-Value="form.WorkDate" @bind-Value:after="SelectFormDateAsync" /></div>
-            <div class="field"><label>時數</label><InputNumber @bind-Value="form.Hours" min="0.25" max="24" step="0.25" /></div>
-            <div class="field"><label>專案（選填）</label><select @bind="form.ProjectId"><option value="">未分類</option>@foreach (var project in projects) { <option value="@project.Id">@project.Name</option> }</select></div>
-            <div class="field full"><label>工作內容</label><textarea id="workContent" @bind="form.WorkContent" class="markdown-input" placeholder="用 Markdown 記下完成事項、問題或下一步…"></textarea><span class="hint">支援離線 Markdown 編輯、預覽與分欄檢視。</span></div>
-            <div class="form-actions"><button class="button button-primary" type="submit">儲存紀錄</button></div>
+        <div><h2>記工作與工時</h2><p>記下做了什麼、花了多少時間；日期與專案會保留，方便連續記錄。</p></div>
+        <div class="button-row today-quick-actions">
+            <button class="button button-secondary button-small" type="button" @onclick="OpenGettingStarted" aria-haspopup="dialog">建立摘要指南</button>
+            <button class="button button-secondary" type="button" @onclick="OpenManualSourceCreateAsync">貼上參考資料</button>
         </div>
-    </EditForm>
+    </div>
+    <WorkDraftEditor @key="QuickKey" @ref="quickEditor" Kind="WorkDraftKind.WorkCreate" Date="selectedDate"
+                     Initial="QuickInitial" Projects="projects" OnSaved="ReloadAsync" OnDraftChanged="LoadDraftListAsync" OnReload="ReloadQuickAsync" OnDateChanged="NavigateAsync" />
 </div>
 
+@if (showGettingStarted)
+{
+    <div class="modal-backdrop" role="presentation" @onclick="CloseGettingStartedAsync">
+        <section class="modal-dialog getting-started-dialog" role="dialog" aria-modal="true" aria-labelledby="getting-started-title" @onclick:stopPropagation>
+            <div class="modal-heading"><div><p class="eyebrow">開始使用</p><h2 id="getting-started-title">建立第一份工作摘要</h2><p>依你已完成的設定自動勾選；不使用 AI 也能完成。</p></div><button class="modal-close" type="button" aria-label="關閉" @onclick="CloseGettingStartedAsync">×</button></div>
+            <GettingStarted HasWork="@(entries.Count > 0)" HasSource="@(sources.Count > 0)" HasSourceCollection="@(sources.Any(source => source.LastSuccessAt is not null))" HasReport="hasAnyReport" HasAi="hasAiConfiguration" />
+            <div class="modal-actions"><button class="button button-secondary" type="button" @onclick="DismissGettingStartedAsync">略過</button></div>
+        </section>
+    </div>
+}
+
 <div id="today-records" class="panel today-records">
-    <div class="panel-heading"><div><h2>人工紀錄</h2><p>修改會讓相關報告標示為需要重產。</p></div></div>
+    <div class="panel-heading"><div><h2>工作紀錄</h2><p>會計入確認工時；修改會讓相關報告標示為需要重產。</p></div></div>
+    @if (draftList.Count > 0)
+    {
+        <details class="unfinished-drafts">
+            <summary><strong>未完成草稿（@draftList.Count）</strong></summary>
+            <ul>
+                @foreach (var item in draftList)
+                {
+                    <li><button type="button" class="button button-secondary button-small" @onclick="() => ResumeDraftAsync(item)">@item.Date.ToString("yyyy/MM/dd") · @DraftKindText(item.Kind)</button> <span>@item.UpdatedAt.ToLocalTime().ToString("MM/dd HH:mm") 暫存</span></li>
+                }
+            </ul>
+        </details>
+    }
     @if (entries.Count == 0)
     {
         <div class="empty-state"><h3>這天還沒有紀錄</h3><p>可直接補登過去日期的工作內容。</p></div>
@@ -87,11 +106,24 @@
 </div>
 </div>
 
+<SourceStatusSummary Sources="sources" Date="selectedDate" ActivityCount="evidence.Count" />
+@if (!string.IsNullOrEmpty(sourceRefreshError))
+{
+    <p class="alert alert-warning" role="status">@sourceRefreshError</p>
+}
 <details id="source-activity" class="panel evidence-panel">
-    <summary><strong>來源活動（@evidence.Count）</strong> · 自動納入當日報告</summary>
+    <summary><strong>參考資料與來源活動（@evidence.Count）</strong> · 自動納入當日報告</summary>
+    <ul class="source-health-list">
+        @foreach (var source in sources)
+        {
+            <li><strong>@source.DisplayName</strong> · @SourceStatusSummary.StateText(source)
+                <span>最近成功：@(source.LastSuccessAt?.ToLocalTime().ToString("yyyy/MM/dd HH:mm") ?? "尚無成功紀錄")</span>
+            </li>
+        }
+    </ul>
     @if (evidence.Count == 0)
     {
-        <p class="muted">尚未收集到此日期的來源活動。</p>
+        <p class="muted">此日期尚無已匯入的來源活動。</p>
     }
     else
     {
@@ -150,50 +182,14 @@
     }
 </details>
 
-@if (editingId is Guid workEntryId)
+@if (activeKind is WorkDraftKind modalKind)
 {
-    <div class="modal-backdrop" role="presentation" @onclick="CancelEditAsync">
-        <section class="modal-dialog modal-dialog-wide" role="dialog" aria-modal="true" aria-labelledby="work-edit-title" @onclick:stopPropagation>
-            <div class="modal-heading"><div><p class="eyebrow">人工紀錄</p><h2 id="work-edit-title">編輯工作紀錄</h2></div><button class="modal-close" type="button" aria-label="關閉" @onclick="CancelEditAsync">×</button></div>
-            <div class="form-grid">
-                <div class="field"><label>日期</label><InputDate @bind-Value="editForm.WorkDate" /></div>
-                <div class="field"><label>時數</label><InputNumber @bind-Value="editForm.Hours" min="0.25" max="24" step="0.25" /></div>
-                <div class="field full"><label>專案</label><select @bind="editForm.ProjectId"><option value="">未分類</option>@foreach (var project in projects) { <option value="@project.Id">@project.Name</option> }</select></div>
-                <div class="field full"><label>標題（選填）</label><input @bind="editForm.Title" maxlength="100" placeholder="未填時會取工作內容第一行" /></div>
-                <div class="field full"><label>工作內容</label><textarea id="editWorkContent" @bind="editForm.WorkContent" class="markdown-input"></textarea></div>
-            </div>
-            <div class="modal-actions"><button class="button button-secondary" type="button" @onclick="CancelEditAsync">取消</button><button class="button button-primary" type="button" @onclick="() => UpdateAsync(workEntryId)">儲存變更</button></div>
-        </section>
-    </div>
-}
-
-@if (showManualSourceCreate)
-{
-    <div class="modal-backdrop" role="presentation" @onclick="CancelManualSourceCreateAsync">
-        <section class="modal-dialog modal-dialog-wide" role="dialog" aria-modal="true" aria-labelledby="manual-create-title" @onclick:stopPropagation>
-            <div class="modal-heading"><div><p class="eyebrow">來源活動</p><h2 id="manual-create-title">新增人工來源</h2></div><button class="modal-close" type="button" aria-label="關閉" @onclick="CancelManualSourceCreateAsync">×</button></div>
-            <div class="form-grid">
-                <div class="field"><label>日期</label><InputDate @bind-Value="manualSourceForm.SourceDate" /></div>
-                <div class="field"><label>專案（選填）</label><select @bind="manualSourceForm.ProjectId"><option value="">未分類</option>@foreach (var project in projects) { <option value="@project.Id">@project.Name</option> }</select></div>
-                <div class="field full"><label>標題（選填）</label><input @bind="manualSourceForm.Title" maxlength="100" placeholder="未填時會取來源內容第一行" /></div>
-                <div class="field full"><label>來源內容</label><textarea id="manualSourceContent" @bind="manualSourceForm.Content" class="markdown-input" placeholder="貼上會議紀錄、需求討論、Email 摘要或其他工作脈絡…"></textarea></div>
-            </div>
-            <div class="modal-actions"><button class="button button-secondary" type="button" @onclick="CancelManualSourceCreateAsync">取消</button><button class="button button-primary" type="button" @onclick="SaveManualSourceAsync">儲存人工來源</button></div>
-        </section>
-    </div>
-}
-
-@if (editingManualId is Guid manualSourceId)
-{
-    <div class="modal-backdrop" role="presentation" @onclick="CancelManualSourceEditAsync">
-        <section class="modal-dialog modal-dialog-wide" role="dialog" aria-modal="true" aria-labelledby="manual-edit-title" @onclick:stopPropagation>
-            <div class="modal-heading"><div><p class="eyebrow">來源活動</p><h2 id="manual-edit-title">編輯人工來源</h2></div><button class="modal-close" type="button" aria-label="關閉" @onclick="CancelManualSourceEditAsync">×</button></div>
-            <div class="form-grid">
-                <div class="field full"><label>專案</label><select @bind="editManualSourceForm.ProjectId"><option value="">未分類</option>@foreach (var project in projects) { <option value="@project.Id">@project.Name</option> }</select></div>
-                <div class="field full"><label>標題（選填）</label><input @bind="editManualSourceForm.Title" maxlength="100" placeholder="未填時會取來源內容第一行" /></div>
-                <div class="field full"><label>來源內容</label><textarea id="editManualSourceContent" @bind="editManualSourceForm.Content" class="markdown-input"></textarea></div>
-            </div>
-            <div class="modal-actions"><button class="button button-secondary" type="button" @onclick="CancelManualSourceEditAsync">取消</button><button class="button button-primary" type="button" @onclick="() => UpdateManualSourceAsync(manualSourceId)">儲存變更</button></div>
+    <div class="modal-backdrop" role="presentation" @onclick="CloseModalAsync">
+        <section class="modal-dialog modal-dialog-wide" role="dialog" aria-modal="true" aria-labelledby="draft-modal-title" @onclick:stopPropagation>
+            <div class="modal-heading"><h2 id="draft-modal-title">@DraftKindText(modalKind)</h2><button class="modal-close" type="button" aria-label="關閉並保留草稿" @onclick="CloseModalAsync">×</button></div>
+            <WorkDraftEditor @key="ModalKey" @ref="modalEditor" Kind="modalKind" Date="selectedDate" TargetId="activeTargetId"
+                             Initial="modalInitial" Projects="projects" OnSaved="ModalSavedAsync" OnClose="HideModalAsync"
+                             OnDraftChanged="LoadDraftListAsync" OnReload="ReloadModalAsync" OnDateChanged="@(modalKind == WorkDraftKind.ManualCreate ? EventCallback.Factory.Create<DateOnly>(this, NavigateManualDateAsync) : default)" />
         </section>
     </div>
 }
@@ -208,236 +204,220 @@
                OnCancel="CancelDelete" />
 
 <ConfirmDialog Open="pendingManualDeleteId is not null"
-               Title="刪除這筆人工來源？"
-               Message="刪除後，相關摘要會標示為需要重產；這筆來源內容無法復原。"
+               Title="刪除這筆參考資料？"
+               Message="這筆資料不計入工時。刪除後，相關摘要會標示為需要重產，且無法復原。"
                ConfirmText="確認刪除"
                BusyText="刪除中…"
                IsBusy="isDeleting"
                OnConfirm="ConfirmManualSourceDeleteAsync"
                OnCancel="CancelManualSourceDelete" />
 
+</div>
+
 @code {
     [SupplyParameterFromQuery(Name = "date")] public DateTime? RequestedDate { get; set; }
+    [SupplyParameterFromQuery(Name = "draft")] public string? RequestedDraft { get; set; }
+    [SupplyParameterFromQuery(Name = "compose")] public string? RequestedCompose { get; set; }
     private DateOnly selectedDate;
     private IReadOnlyList<WorkEntry> entries = [];
     private IReadOnlyList<SourceEvidence> evidence = [];
     private IReadOnlyList<Project> projects = [];
+    private IReadOnlyList<ActivitySource> sources = [];
+    private IReadOnlyList<WorkDraft> draftList = [];
     private ReportDocument? report;
-    private readonly WorkForm form = new();
-    private readonly WorkForm editForm = new();
-    private readonly ManualSourceForm manualSourceForm = new();
-    private readonly ManualSourceForm editManualSourceForm = new();
-    private Guid? editingId;
-    private Guid? editingManualId;
+    private bool hasAnyReport;
+    private bool hasAiConfiguration;
+    private bool showGettingStarted;
+    private bool gettingStartedOpenedAutomatically;
+    private bool automaticGettingStartedRecorded;
+    private WorkDraftEditor? quickEditor;
+    private WorkDraftEditor? modalEditor;
+    private WorkDraftKind? activeKind;
+    private Guid? activeTargetId;
+    private WorkDraftInput modalInitial = new();
     private Guid? pendingDeleteId;
     private Guid? pendingManualDeleteId;
     private bool isDeleting;
-    private bool quickEditorInitialized;
-    private bool editEditorInitialized;
-    private bool manualCreateEditorInitialized;
-    private bool manualEditEditorInitialized;
-    private bool initializeEditEditor;
-    private bool initializeManualCreateEditor;
-    private bool initializeManualEditEditor;
-    private bool showManualSourceCreate;
-    private string editorNotice = string.Empty;
+    private string sourceRefreshError = "";
+    private int quickGeneration;
+    private int modalGeneration;
+    private readonly CancellationTokenSource lifetime = new();
+    private Task? refreshTask;
+    private string QuickKey => $"{selectedDate}:{quickGeneration}";
+    private string ModalKey => $"{selectedDate}:{activeKind}:{activeTargetId}:{modalGeneration}";
+    private WorkDraftInput QuickInitial => new() { Date = selectedDate.ToString("yyyy-MM-dd") };
 
     protected override async Task OnParametersSetAsync()
     {
         selectedDate = DateOnly.FromDateTime(RequestedDate ?? DateTime.Today);
-        form.WorkDate = selectedDate.ToDateTime(TimeOnly.MinValue);
+        activeKind = null;
         await ReloadAsync();
+        await LoadDraftListAsync();
+        if (RequestedCompose == "manual") await OpenManualSourceCreateAsync();
+        if (RequestedDraft is not null)
+        {
+            var requested = draftList.FirstOrDefault(x => x.Id == RequestedDraft);
+            if (requested is not null && requested.Kind != WorkDraftKind.WorkCreate) OpenDraft(requested);
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        if (!RuntimeSettings.IsOnboardingDismissed)
+        {
+            showGettingStarted = true;
+            gettingStartedOpenedAutomatically = true;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) refreshTask = RefreshLoopAsync();
+        if (gettingStartedOpenedAutomatically && !automaticGettingStartedRecorded)
+        {
+            automaticGettingStartedRecorded = true;
+            await RuntimeSettings.SetOnboardingDismissedAsync(true);
+        }
+    }
+
+    private async Task RefreshLoopAsync()
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(10));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(lifetime.Token))
+            {
+                await InvokeAsync(async () =>
+                {
+                    try { await ReloadSourceStateAsync(); StateHasChanged(); }
+                    catch (Exception) when (!lifetime.IsCancellationRequested)
+                    {
+                        sourceRefreshError = "來源狀態更新失敗，目前顯示上次結果；稍後會自動重試。";
+                        StateHasChanged();
+                    }
+                });
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private async Task ReloadSourceStateAsync()
+    {
+        var date = selectedDate;
+        var start = new DateTimeOffset(DateTime.SpecifyKind(date.ToDateTime(TimeOnly.MinValue), DateTimeKind.Local));
+        var newSources = await SourceConfig.GetSourcesAsync(lifetime.Token);
+        var newEvidence = await Activities.GetForRangeAsync(start, start.AddDays(1));
+        if (date != selectedDate || lifetime.IsCancellationRequested) return;
+        sources = newSources;
+        evidence = newEvidence;
+        sourceRefreshError = "";
     }
 
     private async Task ReloadAsync()
     {
         projects = await SourceConfig.GetProjectsAsync();
         entries = await WorkLogs.GetForDateAsync(selectedDate);
-        var start = new DateTimeOffset(DateTime.SpecifyKind(selectedDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Local));
-        evidence = await Activities.GetForRangeAsync(start, start.AddDays(1));
+        await ReloadSourceStateAsync();
         report = await Reports.GetForPeriodAsync(ReportKind.Daily, selectedDate.ToString("yyyy-MM-dd"));
+        hasAnyReport = (await Reports.GetRecentAsync(1)).Count > 0;
+        var aiSettings = await AiConfigurations.GetFeatureSettingsAsync();
+        hasAiConfiguration = aiSettings.Enabled && await AiConfigurations.GetDefaultAsync() is not null;
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            quickEditorInitialized = await InitializeEditorAsync("workContent", "190px");
-        }
-
-        if (initializeEditEditor)
-        {
-            initializeEditEditor = false;
-            editEditorInitialized = await InitializeEditorAsync("editWorkContent");
-        }
-
-        if (initializeManualCreateEditor)
-        {
-            initializeManualCreateEditor = false;
-            manualCreateEditorInitialized = await InitializeEditorAsync("manualSourceContent");
-        }
-
-        if (initializeManualEditEditor)
-        {
-            initializeManualEditEditor = false;
-            manualEditEditorInitialized = await InitializeEditorAsync("editManualSourceContent");
-        }
-    }
-
+    private async Task LoadDraftListAsync() => draftList = await Drafts.ListAsync();
     private Task PreviousDay() => NavigateAsync(selectedDate.AddDays(-1));
     private Task NextDay() => NavigateAsync(selectedDate.AddDays(1));
     private Task GoToday() => NavigateAsync(DateOnly.FromDateTime(DateTime.Today));
     private Task NavigateAsync(DateOnly date) { Navigation.NavigateTo($"/?date={date:yyyy-MM-dd}"); return Task.CompletedTask; }
-    private Task SelectFormDateAsync() => NavigateAsync(DateOnly.FromDateTime(form.WorkDate));
+    private Task NavigateManualDateAsync(DateOnly date) { Navigation.NavigateTo($"/?date={date:yyyy-MM-dd}&compose=manual"); return Task.CompletedTask; }
 
-    private async Task SaveAsync()
+    private async Task BeforeNavigationAsync(LocationChangingContext context)
     {
         try
         {
-            form.WorkContent = await GetEditorValueAsync("workContent", quickEditorInitialized, form.WorkContent);
-            await WorkLogs.AddAsync(DateOnly.FromDateTime(form.WorkDate), form.Hours ?? 0, form.WorkContent, ParseProject(form.ProjectId));
-            Toasts.Success("工作紀錄已儲存。");
-            form.Hours = null; form.WorkContent = string.Empty;
-            await SetEditorValueAsync("workContent", quickEditorInitialized, string.Empty);
-            await ReloadAsync();
+            if (!await JS.InvokeAsync<bool>("workLensDrafts.flushAll"))
+            {
+                context.PreventNavigation();
+                Toasts.Error("草稿尚未暫存，請重試或先複製目前內容。");
+            }
         }
-        catch (ArgumentException exception) { Toasts.Error(exception.Message); }
-    }
-
-    private async Task SaveManualSourceAsync()
-    {
-        try
-        {
-            manualSourceForm.Content = await GetEditorValueAsync("manualSourceContent", manualCreateEditorInitialized, manualSourceForm.Content);
-            await ManualSources.AddAsync(DateOnly.FromDateTime(manualSourceForm.SourceDate), manualSourceForm.Content, ParseProject(manualSourceForm.ProjectId), manualSourceForm.Title);
-            await DisposeEditorAsync("manualSourceContent", manualCreateEditorInitialized);
-            manualCreateEditorInitialized = false;
-            showManualSourceCreate = false;
-            manualSourceForm.Title = string.Empty;
-            manualSourceForm.Content = string.Empty;
-            Toasts.Success("人工來源已儲存。");
-            await ReloadAsync();
-        }
-        catch (ArgumentException exception)
-        {
-            Toasts.Error(exception.Message);
-        }
-    }
-
-    private async Task DeleteManualSourceAsync(Guid id)
-    {
-        if (isDeleting) return;
-        isDeleting = true;
-        try
-        {
-            await ManualSources.DeleteAsync(id);
-            pendingManualDeleteId = null;
-            Toasts.Success("人工來源已刪除。");
-            await ReloadAsync();
-        }
-        finally
-        {
-            isDeleting = false;
-        }
+        catch (JSException) { context.PreventNavigation(); Toasts.Error("無法完成草稿暫存，請先保留目前內容。"); }
     }
 
     private Task OpenManualSourceCreateAsync()
     {
-        manualSourceForm.SourceDate = form.WorkDate;
-        showManualSourceCreate = true;
-        initializeManualCreateEditor = true;
+        activeKind = WorkDraftKind.ManualCreate;
+        activeTargetId = null;
+        modalInitial = QuickInitial;
+        modalGeneration++;
         return Task.CompletedTask;
     }
-
-    private async Task CancelManualSourceCreateAsync()
+    private void OpenGettingStarted()
     {
-        await DisposeEditorAsync("manualSourceContent", manualCreateEditorInitialized);
-        manualCreateEditorInitialized = false;
-        showManualSourceCreate = false;
-        manualSourceForm.Title = string.Empty;
-        manualSourceForm.Content = string.Empty;
+        showGettingStarted = true;
+        gettingStartedOpenedAutomatically = false;
     }
-
-    private Task BeginManualSourceEditAsync(SourceEvidence evidence)
+    private async Task CloseGettingStartedAsync()
     {
-        editingManualId = evidence.Id;
-        pendingManualDeleteId = null;
-        editManualSourceForm.ProjectId = evidence.ProjectId?.ToString() ?? string.Empty;
-        editManualSourceForm.Title = evidence.Title;
-        editManualSourceForm.Content = evidence.CommitMessage;
-        initializeManualEditEditor = true;
-        return Task.CompletedTask;
+        if (gettingStartedOpenedAutomatically)
+            await RuntimeSettings.SetOnboardingDismissedAsync(true);
+        showGettingStarted = false;
+        gettingStartedOpenedAutomatically = false;
     }
-
-    private async Task CancelManualSourceEditAsync()
+    private async Task DismissGettingStartedAsync()
     {
-        await DisposeEditorAsync("editManualSourceContent", manualEditEditorInitialized);
-        manualEditEditorInitialized = false;
-        editingManualId = null;
-        editManualSourceForm.Title = string.Empty;
-        editManualSourceForm.Content = string.Empty;
+        await RuntimeSettings.SetOnboardingDismissedAsync(true);
+        showGettingStarted = false;
+        gettingStartedOpenedAutomatically = false;
     }
-
-    private async Task UpdateManualSourceAsync(Guid id)
-    {
-        try
-        {
-            editManualSourceForm.Content = await GetEditorValueAsync("editManualSourceContent", manualEditEditorInitialized, editManualSourceForm.Content);
-            var updated = await ManualSources.UpdateAsync(
-                id,
-                editManualSourceForm.Content,
-                ParseProject(editManualSourceForm.ProjectId),
-                editManualSourceForm.Title);
-            if (updated is null)
-            {
-                Toasts.Error("找不到要修改的人工來源，請重新整理後再試。");
-                return;
-            }
-
-            await DisposeEditorAsync("editManualSourceContent", manualEditEditorInitialized);
-            manualEditEditorInitialized = false;
-            editingManualId = null;
-            editManualSourceForm.Title = string.Empty;
-            editManualSourceForm.Content = string.Empty;
-            Toasts.Success("人工來源已更新。");
-            await ReloadAsync();
-        }
-        catch (ArgumentException exception)
-        {
-            Toasts.Error(exception.Message);
-        }
-    }
-
     private Task BeginEditAsync(WorkEntry entry)
     {
-        editingId = entry.Id;
-        editForm.WorkDate = entry.WorkDate.ToDateTime(TimeOnly.MinValue);
-        editForm.Hours = entry.Hours;
-        editForm.Title = entry.Title;
-        editForm.WorkContent = entry.WorkContent;
-        editForm.ProjectId = entry.ProjectId?.ToString() ?? string.Empty;
-        initializeEditEditor = true;
+        activeKind = WorkDraftKind.WorkEdit;
+        activeTargetId = entry.Id;
+        modalInitial = QuickInitial;
+        modalGeneration++;
         return Task.CompletedTask;
     }
-    private async Task CancelEditAsync()
+    private Task BeginManualSourceEditAsync(SourceEvidence item)
     {
-        await DisposeEditorAsync("editWorkContent", editEditorInitialized);
-        editEditorInitialized = false;
-        editingId = null;
+        activeKind = WorkDraftKind.ManualEdit;
+        activeTargetId = item.Id;
+        modalInitial = QuickInitial;
+        modalGeneration++;
+        return Task.CompletedTask;
     }
-    private async Task UpdateAsync(Guid id)
+    private Task CloseModalAsync() => modalEditor?.CloseAsync() ?? Task.CompletedTask;
+    private Task HideModalAsync() { activeKind = null; modalEditor = null; return Task.CompletedTask; }
+    private async Task ModalSavedAsync() { await HideModalAsync(); await ReloadAsync(); }
+    private Task ReloadQuickAsync() { quickGeneration++; return Task.CompletedTask; }
+    private Task ReloadModalAsync() { modalGeneration++; return Task.CompletedTask; }
+    private async Task CopyAsync(WorkEntry entry)
     {
-        try
-        {
-            editForm.WorkContent = await GetEditorValueAsync("editWorkContent", editEditorInitialized, editForm.WorkContent);
-            await WorkLogs.UpdateAsync(id, DateOnly.FromDateTime(editForm.WorkDate), editForm.Hours ?? 0, editForm.WorkContent, ParseProject(editForm.ProjectId), editForm.Title);
-            await DisposeEditorAsync("editWorkContent", editEditorInitialized);
-            editEditorInitialized = false;
-            editingId = null; Toasts.Success("工作紀錄已更新。"); await ReloadAsync();
-        }
-        catch (ArgumentException exception) { Toasts.Error(exception.Message); }
+        if (quickEditor is not null)
+            await quickEditor.ReplaceAsync(new WorkDraftInput
+            {
+                Date = selectedDate.ToString("yyyy-MM-dd"), Hours = entry.Hours.ToString(CultureInfo.InvariantCulture),
+                ProjectId = entry.ProjectId?.ToString() ?? "", Content = entry.WorkContent
+            });
     }
-    private async Task CopyAsync(WorkEntry entry) { form.WorkDate = entry.WorkDate.ToDateTime(TimeOnly.MinValue); form.ProjectId = entry.ProjectId?.ToString() ?? string.Empty; form.Hours = entry.Hours; form.WorkContent = entry.WorkContent; await SetEditorValueAsync("workContent", quickEditorInitialized, form.WorkContent); }
+    private void OpenDraft(WorkDraft item)
+    {
+        activeKind = item.Kind;
+        activeTargetId = item.TargetId;
+        modalInitial = QuickInitial;
+        modalGeneration++;
+    }
+    private Task ResumeDraftAsync(WorkDraft item)
+    {
+        Navigation.NavigateTo($"/?date={item.Date:yyyy-MM-dd}&draft={Uri.EscapeDataString(item.Id)}");
+        return Task.CompletedTask;
+    }
+    private static string DraftKindText(WorkDraftKind kind) => kind switch
+    {
+        WorkDraftKind.WorkCreate => "記工作與工時", WorkDraftKind.WorkEdit => "編輯工作紀錄",
+        WorkDraftKind.ManualCreate => "貼上參考資料", _ => "編輯參考資料"
+    };
+
     private async Task DeleteAsync(Guid id)
     {
         if (isDeleting) return;
@@ -449,48 +429,32 @@
             Toasts.Success("工作紀錄已刪除。");
             await ReloadAsync();
         }
-        finally
+        finally { isDeleting = false; }
+    }
+    private async Task DeleteManualSourceAsync(Guid id)
+    {
+        if (isDeleting) return;
+        isDeleting = true;
+        try
         {
-            isDeleting = false;
+            await ManualSources.DeleteAsync(id);
+            pendingManualDeleteId = null;
+            Toasts.Success("參考資料已刪除。");
+            await ReloadAsync();
         }
+        finally { isDeleting = false; }
     }
     private Task ConfirmDeleteAsync() => pendingDeleteId is Guid id ? DeleteAsync(id) : Task.CompletedTask;
     private Task ConfirmManualSourceDeleteAsync() => pendingManualDeleteId is Guid id ? DeleteManualSourceAsync(id) : Task.CompletedTask;
     private void CancelDelete() => pendingDeleteId = null;
     private void CancelManualSourceDelete() => pendingManualDeleteId = null;
-    private static Guid? ParseProject(string value) => Guid.TryParse(value, out var id) ? id : null;
     private string ProjectName(Guid? id) => id is Guid projectId ? projects.FirstOrDefault(x => x.Id == projectId)?.Name ?? "已停用專案" : "未分類";
     private string ReportStateText() => report is null ? "未產生" : report.IsStale ? "需重產" : "最新";
-    private async Task<bool> InitializeEditorAsync(string id, string? minHeight = null)
-    {
-        try { await JS.InvokeVoidAsync("workLensEasyMde.initialize", id, minHeight); return true; }
-        catch (JSException) { editorNotice = "Markdown 編輯器無法載入，已切換為一般文字輸入。"; await InvokeAsync(StateHasChanged); return false; }
-    }
-    private async Task<string> GetEditorValueAsync(string id, bool initialized, string fallback)
-    {
-        if (!initialized) return fallback;
-        try { return await JS.InvokeAsync<string>("workLensEasyMde.getValue", id); }
-        catch (JSException) { editorNotice = "Markdown 編輯器連線中斷，已使用目前文字內容。"; return fallback; }
-    }
-    private async Task SetEditorValueAsync(string id, bool initialized, string value)
-    {
-        if (!initialized) return;
-        try { await JS.InvokeVoidAsync("workLensEasyMde.setValue", id, value); }
-        catch (JSException) { editorNotice = "Markdown 編輯器連線中斷。"; }
-    }
-    private async Task DisposeEditorAsync(string id, bool initialized)
-    {
-        if (!initialized) return;
-        try { await JS.InvokeVoidAsync("workLensEasyMde.dispose", id); }
-        catch (Exception exception) when (exception is JSException or JSDisconnectedException) { }
-    }
+
     public async ValueTask DisposeAsync()
     {
-        await DisposeEditorAsync("workContent", quickEditorInitialized);
-        await DisposeEditorAsync("editWorkContent", editEditorInitialized);
-        await DisposeEditorAsync("manualSourceContent", manualCreateEditorInitialized);
-        await DisposeEditorAsync("editManualSourceContent", manualEditEditorInitialized);
+        await lifetime.CancelAsync();
+        if (refreshTask is not null) await refreshTask;
+        lifetime.Dispose();
     }
-    private sealed class WorkForm { public DateTime WorkDate { get; set; } = DateTime.Today; public double? Hours { get; set; } public string ProjectId { get; set; } = string.Empty; public string Title { get; set; } = string.Empty; public string WorkContent { get; set; } = string.Empty; }
-    private sealed class ManualSourceForm { public DateTime SourceDate { get; set; } = DateTime.Today; public string ProjectId { get; set; } = string.Empty; public string Title { get; set; } = string.Empty; public string Content { get; set; } = string.Empty; }
 }

@@ -1,0 +1,301 @@
+@using System.Text.Json
+@using System.Text
+@using Microsoft.EntityFrameworkCore
+@inject WorkDraftService Drafts
+@inject IJSRuntime JS
+@inject ToastService Toasts
+@implements IAsyncDisposable
+
+<div id="@editorId" class="draft-editor">
+    <fieldset disabled="@(busy || !ready)">
+        <div class="form-grid quick-add-grid">
+            <div class="field"><label for="@(editorId + "-date")">日期</label><input id="@(editorId + "-date")" type="date" data-draft-field="date" value="@initial.Date" disabled="@(Kind == WorkDraftKind.ManualEdit)" /></div>
+            @if (IsWork)
+            {
+                <div class="field"><label for="@(editorId + "-hours")">時數</label><input id="@(editorId + "-hours")" type="number" data-draft-field="hours" value="@initial.Hours" min="0.5" max="24" step="0.5" inputmode="decimal" autocomplete="off" /></div>
+            }
+            <div class="field"><label for="@(editorId + "-project")">專案（選填）</label><select id="@(editorId + "-project")" data-draft-field="projectId">
+                <option value="" selected="@(initial.ProjectId == "")">未分類</option>
+                @if (initial.ProjectId.Length > 0 && !Projects.Any(x => x.Id.ToString() == initial.ProjectId))
+                {
+                    <option value="@initial.ProjectId" selected>已停用專案</option>
+                }
+                @foreach (var project in Projects) { <option value="@project.Id" selected="@(initial.ProjectId == project.Id.ToString())">@project.Name</option> }
+            </select></div>
+            @if (Kind != WorkDraftKind.WorkCreate)
+            {
+                <div class="field full"><label for="@(editorId + "-title")">標題（選填）</label><input id="@(editorId + "-title")" data-draft-field="title" value="@initial.Title" /></div>
+            }
+            <div class="field full"><label for="@(editorId + "-content")">@(IsWork ? "工作內容" : "參考資料（不計入工時）")</label><textarea id="@(editorId + "-content")" data-draft-field="content" class="markdown-input" placeholder="@(IsWork ? "記下完成事項、問題或下一步…" : "貼上會議紀錄、需求討論、Email 摘要或其他工作脈絡…")">@initial.Content</textarea></div>
+        </div>
+    </fieldset>
+    <div class="draft-status" role="status" aria-live="polite"><span data-draft-status></span></div>
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <div class="alert alert-warning" role="alert">@error</div>
+        <div class="button-row"><button type="button" class="button button-secondary" @onclick="CopyInputAsync">複製目前輸入</button><button type="button" class="button button-secondary" @onclick="ReloadAsync" disabled="@busy">重新載入草稿／原紀錄</button></div>
+    }
+    <div class="form-actions draft-actions">
+        <button class="button button-primary" type="button" @onclick="PublishAsync" disabled="@(busy || !ready)">@(busy ? "儲存中…" : IsWork ? "儲存工作紀錄" : "儲存參考資料")</button>
+        <button class="button button-secondary" type="button" @onclick="DiscardAsync" disabled="@(busy || !ready)">捨棄草稿</button>
+        @if (OnClose.HasDelegate) { <button class="button button-secondary" type="button" @onclick="CloseAsync" disabled="@busy">關閉並保留草稿</button> }
+    </div>
+</div>
+
+@code {
+    [Parameter] public WorkDraftKind Kind { get; set; }
+    [Parameter] public DateOnly Date { get; set; }
+    [Parameter] public Guid? TargetId { get; set; }
+    [Parameter] public WorkDraftInput Initial { get; set; } = new();
+    [Parameter] public IReadOnlyList<Project> Projects { get; set; } = [];
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public EventCallback OnDraftChanged { get; set; }
+    [Parameter] public EventCallback OnReload { get; set; }
+    [Parameter] public EventCallback<DateOnly> OnDateChanged { get; set; }
+    private readonly string editorId = $"draft-{Guid.NewGuid():N}";
+    private readonly SemaphoreSlim gate = new(1, 1);
+    private DotNetObjectReference<WorkDraftEditor>? reference;
+    private WorkDraftInput initial = new();
+    private WorkDraft? draft;
+    private string? baseVersion;
+    private string status = "";
+    private string error = "";
+    private bool ready;
+    private bool busy;
+    private bool publishing;
+    private bool disposed;
+    private bool publicationNeedsReload;
+    private bool IsWork => Kind is WorkDraftKind.WorkCreate or WorkDraftKind.WorkEdit;
+
+    protected override async Task OnInitializedAsync()
+    {
+        initial = Initial;
+        try
+        {
+            if (TargetId is { } target && await Drafts.GetOriginalAsync(Kind, target) is { } original)
+            {
+                initial = original.Input;
+                baseVersion = original.Version;
+            }
+            draft = await Drafts.GetAsync(WorkDraft.Key(Kind, Date, TargetId));
+            baseVersion = draft?.BaseVersion ?? baseVersion;
+            if (draft is not null)
+            {
+                initial = JsonSerializer.Deserialize<WorkDraftInput>(draft.Payload, WorkDraftService.JsonOptions)!;
+                status = "已恢復草稿；正式儲存後才會納入工作資料。";
+            }
+        }
+        catch { error = "無法讀取草稿，請重新載入後再試。"; }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        reference = DotNetObjectReference.Create(this);
+        try
+        {
+            await JS.InvokeVoidAsync("workLensDrafts.attach", editorId, reference, OnDateChanged.HasDelegate, status);
+            ready = string.IsNullOrEmpty(error);
+        }
+        catch (JSException) { error = "填寫保護無法載入，請重新整理後再試。"; }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task<bool> SaveSnapshotAsync(DraftSnapshot snapshot)
+    {
+        await gate.WaitAsync();
+        try
+        {
+            var input = await ReadInputAsync(snapshot);
+            if (disposed || busy || publicationNeedsReload) return false;
+            if (draft is null && input == initial) return true;
+            draft = await Drafts.SaveAsync(Kind, Date, TargetId, input, draft?.Version, baseVersion);
+            error = "";
+            status = "草稿已暫存";
+            await OnDraftChanged.InvokeAsync();
+            return true;
+        }
+        catch (InvalidOperationException exception) { error = exception.Message; return false; }
+        catch { error = "草稿暫存失敗，輸入仍保留。請重試或複製內容後再離開。"; return false; }
+        finally { gate.Release(); if (!disposed) await InvokeAsync(StateHasChanged); }
+    }
+
+    public sealed record DraftSnapshot(string Id, int Length);
+
+    private async Task<WorkDraftInput> ReadInputAsync(DraftSnapshot snapshot)
+    {
+        try
+        {
+            if (snapshot.Length is < 0 or > 10 * 1024 * 1024)
+                throw new InvalidOperationException("內容過長，請分成數筆紀錄並保留目前輸入。");
+            var json = new StringBuilder(snapshot.Length);
+            for (var offset = 0; offset < snapshot.Length;)
+            {
+                var chunk = await JS.InvokeAsync<string>("workLensDrafts.readChunk", snapshot.Id, offset);
+                if (chunk.Length == 0 || chunk.Length > 4000 || offset + chunk.Length > snapshot.Length)
+                    throw new InvalidOperationException("草稿傳輸未完成，請保留內容後重試。");
+                json.Append(chunk);
+                offset += chunk.Length;
+            }
+            return JsonSerializer.Deserialize<WorkDraftInput>(json.ToString(), WorkDraftService.JsonOptions)
+                ?? throw new InvalidOperationException("無法讀取目前輸入，請保留內容後重試。");
+        }
+        finally { await JS.InvokeVoidAsync("workLensDrafts.releaseSnapshot", snapshot.Id); }
+    }
+
+    private async Task<WorkDraftInput> ReadInputAsync() =>
+        await ReadInputAsync(await JS.InvokeAsync<DraftSnapshot>("workLensDrafts.capture", editorId));
+
+    public async Task<bool> FlushAsync()
+    {
+        if (!ready || busy) return false;
+        try { return await JS.InvokeAsync<bool>("workLensDrafts.flush", editorId); }
+        catch (JSException) { error = "無法完成草稿暫存，請先保留目前輸入。"; return false; }
+    }
+
+    [JSInvokable]
+    public async Task ChangeDateAsync(string value)
+    {
+        if (DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            && await FlushAsync()) await OnDateChanged.InvokeAsync(date);
+    }
+
+    private async Task PublishAsync()
+    {
+        if (busy || publishing || !ready) return;
+        publishing = true;
+        if (!await FlushAsync()) { publishing = false; return; }
+        await gate.WaitAsync();
+        if (busy) { gate.Release(); return; }
+        busy = true;
+        StateHasChanged();
+        var focusAfterSave = false;
+        var published = false;
+        try
+        {
+            await JS.InvokeVoidAsync("workLensDrafts.setBusy", editorId, true);
+            var input = await ReadInputAsync();
+            draft = await Drafts.SaveAsync(Kind, Date, TargetId, input, draft?.Version, baseVersion);
+            await Drafts.PublishAsync(draft);
+            published = true;
+            draft = null;
+            status = "已儲存";
+            error = "";
+            // Acknowledge the consumed snapshot before any UI operation which might fail.
+            await JS.InvokeVoidAsync("workLensDrafts.committed", editorId);
+            Toasts.Success(IsWork ? "工作紀錄已儲存。" : "參考資料已儲存，不計入工時。");
+            if (Kind == WorkDraftKind.WorkCreate)
+            {
+                initial = input with { Hours = "", Content = "", Title = "" };
+                await JS.InvokeVoidAsync("workLensDrafts.replace", editorId, initial, false);
+                focusAfterSave = true;
+            }
+            await OnSaved.InvokeAsync();
+            await OnDraftChanged.InvokeAsync();
+        }
+        catch (ArgumentException exception) { error = exception.Message; }
+        catch (InvalidOperationException exception) { error = exception.Message; }
+        catch (DbUpdateConcurrencyException) { error = "原紀錄或草稿已在其他分頁變更。請先複製輸入，再重新載入。"; }
+        catch
+        {
+            if (published)
+            {
+                publicationNeedsReload = true;
+                ready = false;
+                error = "紀錄已儲存，但畫面更新失敗。請重新載入確認紀錄，避免重複新增。";
+            }
+            else error = "儲存未完成，請保留目前輸入並重新載入，確認紀錄狀態後再試。";
+        }
+        finally
+        {
+            busy = false;
+            publishing = false;
+            gate.Release();
+            try
+            {
+                await JS.InvokeVoidAsync("workLensDrafts.setBusy", editorId, false);
+                if (focusAfterSave) await JS.InvokeVoidAsync("workLensDrafts.focusHours", editorId);
+            }
+            catch (JSException) { }
+        }
+    }
+
+    public async Task CloseAsync()
+    {
+        if (await FlushAsync()) await OnClose.InvokeAsync();
+    }
+
+    public async Task ReplaceAsync(WorkDraftInput input)
+    {
+        if (!ready || busy || publishing) return;
+        if (!await FlushAsync()) return;
+        if (await JS.InvokeAsync<bool>("workLensDrafts.hasInput", editorId) &&
+            !await JS.InvokeAsync<bool>("confirm", "目前已有填寫內容，要以複製的紀錄取代嗎？")) return;
+        await JS.InvokeVoidAsync("workLensDrafts.replace", editorId, input, true);
+        await FlushAsync();
+    }
+
+    private async Task DiscardAsync()
+    {
+        if (busy || publishing || !ready) return;
+        if (!await JS.InvokeAsync<bool>("confirm", "捨棄這份草稿與目前未儲存的輸入？此操作無法復原。")) return;
+        if (!await FlushAsync()) return;
+        await gate.WaitAsync();
+        busy = true;
+        StateHasChanged();
+        try
+        {
+            await JS.InvokeVoidAsync("workLensDrafts.setBusy", editorId, true);
+            if (draft is not null) await Drafts.DeleteAsync(draft.Id, draft.Version);
+            draft = null;
+            initial = Initial;
+            baseVersion = await Drafts.GetBaseVersionAsync(Kind, TargetId);
+            await JS.InvokeVoidAsync("workLensDrafts.replace", editorId, initial, false);
+            status = "草稿已捨棄";
+            await JS.InvokeVoidAsync("workLensDrafts.setStatus", editorId, status);
+            error = "";
+            await OnDraftChanged.InvokeAsync();
+            if (OnClose.HasDelegate) await OnClose.InvokeAsync();
+        }
+        catch (InvalidOperationException exception) { error = exception.Message; }
+        catch { error = "無法捨棄草稿，內容仍保留。"; }
+        finally
+        {
+            busy = false;
+            gate.Release();
+            try { await JS.InvokeVoidAsync("workLensDrafts.setBusy", editorId, false); }
+            catch (JSException) { }
+        }
+    }
+
+    private async Task CopyInputAsync()
+    {
+        try
+        {
+            var input = await ReadInputAsync();
+            var project = Projects.FirstOrDefault(x => x.Id.ToString() == input.ProjectId)?.Name ?? input.ProjectId;
+            await JS.InvokeVoidAsync("workLensClipboard.copyText", $"日期：{input.Date}\n時數：{input.Hours}\n專案：{project}\n{input.Title}\n{input.Content}");
+            Toasts.Success("已複製目前輸入。");
+        }
+        catch { error = "無法複製到剪貼簿，請在欄位中選取並複製要保留的文字。"; }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (busy || publishing) return;
+        if (!await JS.InvokeAsync<bool>("confirm", "重新載入會取代目前畫面上的輸入。請先複製需要保留的內容。")) return;
+        await JS.InvokeVoidAsync("workLensDrafts.abandon", editorId);
+        await OnReload.InvokeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true;
+        if (reference is null) return;
+        try { await JS.InvokeVoidAsync("workLensDrafts.detach", editorId); }
+        catch (Exception exception) when (exception is JSException or JSDisconnectedException) { }
+        reference?.Dispose();
+    }
+}

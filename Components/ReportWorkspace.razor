@@ -3,6 +3,9 @@
 @inject ILogger<ReportWorkspace> Logger
 @inject IJSRuntime JS
 @inject ToastService Toasts
+@implements IAsyncDisposable
+
+<NavigationLock OnBeforeInternalNavigation="BeforeNavigationAsync" />
 
 @if (isGeneratingAi)
 {
@@ -24,14 +27,16 @@
     <p class="report-scope-note">摘要涵蓋完整@(Kind == ReportKind.Daily ? "日期" : "週期")，不受左側歷程篩選影響。</p>
 
     <div class="button-row report-primary-actions">
-        <button class="button button-primary" type="button" @onclick="PrepareGenerateAsync" disabled="@IsBusy">@(isGeneratingReport ? "產生中…" : report is null ? "產生摘要" : "重產制式摘要")</button>
+        <button class="button button-primary" type="button" @onclick="PrepareAiAsync" disabled="@IsBusy">@(isGeneratingAi ? "AI 整理中…" : report is null ? "產生 AI 摘要" : "重新用 AI 整理")</button>
         @if (report is not null)
         {
             <button class="button button-secondary button-small" type="button" @onclick="CopyReportAsync" disabled="@(string.IsNullOrEmpty(report.Body) || IsBusy)">複製內容</button>
-            <a class="button button-secondary button-small" href="/reports/@report.Id/markdown" target="_blank">Markdown</a>
-            <a class="button button-secondary button-small" href="/reports/@report.Id/csv" target="_blank">CSV</a>
         }
     </div>
+    @if (!string.IsNullOrWhiteSpace(aiAvailabilityError))
+    {
+        <p class="alert alert-warning">@aiAvailabilityError <a href="/ai">前往 AI 設定</a></p>
+    }
 
     @if (isGeneratingReport)
     {
@@ -40,35 +45,18 @@
 
     @if (report is null && !isGeneratingReport)
     {
-        <div class="empty-state report-empty"><p>這個期間尚未產生摘要。</p></div>
+        <div class="empty-state report-empty"><p>這個期間尚未產生摘要。可直接用 AI 整理；系統會先建立基本摘要作為起點。</p></div>
     }
     else if (report is not null)
     {
-        <textarea class="report-body" @bind="report.Body" aria-label="工作摘要內容"></textarea>
+        <textarea id="report-body-editor" class="report-body" @bind="report.Body" aria-label="工作摘要內容"></textarea>
         <div class="report-ai-controls">
-            <div class="field"><label for="manual-report-prompt">AI Prompt</label><select id="manual-report-prompt" value="@SelectedPromptValue" @onchange="SetSelectedPrompt" disabled="@IsBusy"><option value="">使用系統預設</option>@foreach (var prompt in promptOptions) { <option value="@prompt.Id">@prompt.Name</option> }</select></div>
-            <div class="button-row report-editor-actions"><button class="button button-primary" @onclick="PrepareAiAsync" disabled="@IsBusy">@(isGeneratingAi ? "AI 整理中…" : "用 AI 整理")</button><button class="button button-secondary" @onclick="SaveChangesAsync" disabled="@IsBusy">儲存文字</button></div>
+            <details class="report-prompt-picker"><summary>整理方式：@(selectedPromptId is null ? "使用系統設定" : "自訂範本")</summary><div class="field"><label for="manual-report-prompt">選擇整理方式</label><select id="manual-report-prompt" value="@SelectedPromptValue" @onchange="SetSelectedPrompt" disabled="@IsBusy"><option value="">使用系統設定</option>@foreach (var prompt in promptOptions) { <option value="@prompt.Id">@prompt.Name</option> }</select></div></details>
+            <div class="button-row report-editor-actions"><button class="button button-secondary" @onclick="SaveChangesAsync" disabled="@IsBusy">儲存文字</button></div>
+            <details class="report-secondary-actions"><summary>其他操作</summary><div class="button-row"><button class="button button-secondary button-small" type="button" @onclick="GenerateAsync" disabled="@IsBusy">產生基本摘要</button><button class="button button-secondary button-small" type="button" @onclick="DownloadMarkdownAsync" disabled="@IsBusy">下載 Markdown</button><button class="button button-secondary button-small" type="button" @onclick="DownloadCsvAsync" disabled="@IsBusy">下載 CSV</button>@if (previousRevision is not null) { <button class="button button-secondary button-small" type="button" @onclick="RestorePreviousAsync" disabled="@IsBusy">還原上一版（@previousRevision.CapturedAt.LocalDateTime.ToString("yyyy/MM/dd HH:mm")）</button> }</div></details>
         </div>
     }
 </section>
-
-<ConfirmDialog Open="confirmOverwrite"
-               Title="覆蓋目前摘要？"
-               Message="重產制式摘要會覆蓋目前的文字，這項操作無法復原。"
-               ConfirmText="確認覆蓋"
-               BusyText="產生中…"
-               IsBusy="isGeneratingReport"
-               OnConfirm="GenerateAsync"
-               OnCancel="CancelOverwrite" />
-
-<ConfirmDialog Open="confirmAiOverwrite"
-               Title="讓 AI 覆蓋目前摘要？"
-               Message="AI 整理會以新內容覆蓋目前文字，這項操作無法復原。"
-               ConfirmText="確認覆蓋"
-               BusyText="整理中…"
-               IsBusy="isGeneratingAi"
-               OnConfirm="PrepareAiAndMaybeSendAsync"
-               OnCancel="CancelAiOverwrite" />
 
 @if (pendingAiPreparation is not null)
 {
@@ -107,12 +95,13 @@
     private string savedBody = string.Empty;
     private bool isGeneratingReport;
     private bool isGeneratingAi;
-    private bool confirmOverwrite;
-    private bool confirmAiOverwrite;
+    private bool editorAttached;
     private AiPreparedReport? pendingAiPreparation;
     private CancellationTokenSource? aiCancellation;
     private IReadOnlyList<PromptTemplate> promptOptions = [];
     private Guid? selectedPromptId;
+    private ReportRevision? previousRevision;
+    private string? aiAvailabilityError;
     private string SelectedPromptValue => selectedPromptId?.ToString() ?? string.Empty;
 
     public bool HasUnsavedChanges => report is not null && report.Body != savedBody;
@@ -133,10 +122,9 @@
         if (loadedKind == Kind && loadedKey == PeriodKey) return;
         loadedKind = Kind;
         loadedKey = PeriodKey;
-        confirmOverwrite = false;
-        confirmAiOverwrite = false;
         report = await ReportService.GetForPeriodAsync(Kind, PeriodKey);
         savedBody = report?.Body ?? string.Empty;
+        previousRevision = report is null ? null : await ReportService.GetPreviousRevisionAsync(report.Id);
     }
 
     public void DiscardChanges()
@@ -149,8 +137,10 @@
         if (report is null || !HasUnsavedChanges) return true;
         try
         {
-            await ReportService.UpdateBodyAsync(report.Id, report.Body);
-            savedBody = report.Body;
+            report = await ReportService.UpdateBodyAsync(report.Id, report.Body, report.UpdateVersion);
+            savedBody = report?.Body ?? string.Empty;
+            previousRevision = report is null ? null : await ReportService.GetPreviousRevisionAsync(report.Id);
+            await JS.InvokeVoidAsync("workLensReportEditor.markSaved", "report-body-editor");
             Toasts.Success("摘要文字已儲存。");
             await OnReportChanged.InvokeAsync();
             return true;
@@ -163,22 +153,10 @@
         }
     }
 
-    private async Task PrepareGenerateAsync()
-    {
-        report = await ReportService.GetForPeriodAsync(Kind, PeriodKey);
-        savedBody = report?.Body ?? string.Empty;
-        if (report is not null && !string.IsNullOrWhiteSpace(report.Body))
-        {
-            confirmOverwrite = true;
-            return;
-        }
-        await GenerateAsync();
-    }
-
     private async Task GenerateAsync()
     {
         if (IsBusy) return;
-        confirmOverwrite = false;
+        if (!await SaveChangesAsync()) return;
         isGeneratingReport = true;
         await InvokeAsync(StateHasChanged);
         await Task.Yield();
@@ -188,6 +166,8 @@
                 ? await ReportService.GenerateDeterministicAsync(AnchorDate)
                 : await ReportService.GenerateWeeklyAsync(AnchorDate);
             savedBody = report.Body;
+            previousRevision = await ReportService.GetPreviousRevisionAsync(report.Id);
+            await JS.InvokeVoidAsync("workLensReportEditor.markSaved", "report-body-editor");
             Toasts.Success("摘要已產生。");
             await OnReportChanged.InvokeAsync();
         }
@@ -205,6 +185,7 @@
     private async Task CopyReportAsync()
     {
         if (report is null || string.IsNullOrEmpty(report.Body)) return;
+        if (!await SaveChangesAsync()) return;
         try
         {
             await JS.InvokeVoidAsync("workLensClipboard.copyText", report.Body);
@@ -217,22 +198,76 @@
         }
     }
 
-    private Task PrepareAiAsync()
+    private async Task DownloadMarkdownAsync()
     {
-        confirmAiOverwrite = !string.IsNullOrWhiteSpace(report?.Body);
-        return confirmAiOverwrite ? Task.CompletedTask : PrepareAiAndMaybeSendAsync();
+        if (report is null || !await SaveChangesAsync()) return;
+        await JS.InvokeVoidAsync("open", $"/reports/{report.Id}/markdown", "_blank");
     }
 
-    private async Task PrepareAiAndMaybeSendAsync()
+    private async Task DownloadCsvAsync()
     {
-        if (report is null || isGeneratingAi) return;
-        confirmAiOverwrite = false;
+        if (report is null || !await SaveChangesAsync()) return;
+        await JS.InvokeVoidAsync("open", $"/reports/{report.Id}/csv", "_blank");
+    }
+
+    private async Task RestorePreviousAsync()
+    {
+        if (report is null || !await SaveChangesAsync()) return;
+        try
+        {
+            report = await ReportService.RestorePreviousAsync(report.Id, report.UpdateVersion);
+            savedBody = report?.Body ?? string.Empty;
+            previousRevision = report is null ? null : await ReportService.GetPreviousRevisionAsync(report.Id);
+            await JS.InvokeVoidAsync("workLensReportEditor.markSaved", "report-body-editor");
+            Toasts.Success("已還原上一版摘要；目前內容標示為需確認。再次還原可撤回這次操作。");
+            await OnReportChanged.InvokeAsync();
+        }
+        catch (Exception exception)
+        {
+            Logger.LogError(exception, "Restoring previous report revision failed");
+            Toasts.Error("還原上一版失敗，請重新載入後再試。");
+        }
+    }
+
+    private async Task BeforeNavigationAsync(LocationChangingContext context)
+    {
+        if (HasUnsavedChanges && !await SaveChangesAsync()) context.PreventNavigation();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (report is null) return;
+        if (!editorAttached)
+        {
+            await JS.InvokeVoidAsync("workLensReportEditor.attach", "report-body-editor");
+            editorAttached = true;
+        }
+        if (!HasUnsavedChanges) await JS.InvokeVoidAsync("workLensReportEditor.markSaved", "report-body-editor");
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        aiCancellation?.Cancel();
+        aiCancellation?.Dispose();
+        if (editorAttached)
+        {
+            try { await JS.InvokeVoidAsync("workLensReportEditor.detach", "report-body-editor"); }
+            catch (JSException) { }
+        }
+    }
+
+    private async Task PrepareAiAsync()
+    {
+        if (isGeneratingAi || !await SaveChangesAsync()) return;
         isGeneratingAi = true;
         aiCancellation = new CancellationTokenSource();
         await InvokeAsync(StateHasChanged);
         await Task.Yield();
         try
         {
+            aiAvailabilityError = null;
+            report = await ReportService.EnsureForAiAsync(Kind, AnchorDate, aiCancellation.Token);
+            savedBody = report.Body;
             var preparation = await ReportService.PrepareWithAiAsync(report.Id, selectedPromptId, aiCancellation.Token);
             if (aiCancellation.IsCancellationRequested)
             {
@@ -240,6 +275,7 @@
             }
             else if (!preparation.Succeeded)
             {
+                aiAvailabilityError = preparation.Error;
                 Toasts.Error(preparation.Error ?? "機敏資訊檢查未完成，原內容已保留。");
             }
             else if (preparation.Sanitization.Status == AiSanitizationStatus.Redacted)
@@ -301,8 +337,11 @@
         }
         else if (result.Succeeded)
         {
+            aiAvailabilityError = null;
             report = await ReportService.GetAsync(prepared.ReportId);
             savedBody = report?.Body ?? string.Empty;
+            previousRevision = report is null ? null : await ReportService.GetPreviousRevisionAsync(report.Id);
+            await JS.InvokeVoidAsync("workLensReportEditor.markSaved", "report-body-editor");
             var suffix = result.Sanitization?.Status == AiSanitizationStatus.Redacted
                 ? "（已自動遮蔽機敏資訊）"
                 : string.Empty;
@@ -317,8 +356,6 @@
 
     private void CancelAiGeneration() => aiCancellation?.Cancel();
     private void SetSelectedPrompt(ChangeEventArgs args) => selectedPromptId = Guid.TryParse(args.Value?.ToString(), out var id) ? id : null;
-    private void CancelOverwrite() => confirmOverwrite = false;
-    private void CancelAiOverwrite() => confirmAiOverwrite = false;
     private void CancelSensitivePreview() => pendingAiPreparation = null;
     private static string SensitiveSegmentText(string segment) => segment;
     private static string SensitiveCategoryText(AiSensitiveDataCategory category) => category switch

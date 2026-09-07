@@ -183,6 +183,7 @@ public sealed record AiSanitizerStatus(
 
 public sealed record AiPreparedReport(
     Guid ReportId,
+    int ReportVersion,
     AiProviderConfiguration Configuration,
     AiPreparedRequest Request,
     Guid? PromptTemplateId,

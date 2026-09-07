@@ -181,6 +181,7 @@ builder.Services.AddSingleton<SourceOrchestrator>();
 builder.Services.AddSingleton<ReportInvalidationService>();
 
 builder.Services.AddScoped<WorkLogService>();
+builder.Services.AddScoped<WorkDraftService>();
 builder.Services.AddScoped<SourceConfigurationService>();
 builder.Services.AddScoped<ActivityQueryService>();
 builder.Services.AddScoped<ManualSourceService>();

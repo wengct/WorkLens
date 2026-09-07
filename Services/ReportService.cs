@@ -74,6 +74,11 @@ public sealed class ReportService(
             };
             db.Reports.Add(report);
         }
+        else if (HasDeterministicChange(report, body, hours, start, end))
+        {
+            await CapturePreviousAsync(db, report, "重產基本摘要", cancellationToken);
+            report.UpdateVersion++;
+        }
 
         report.TotalHours = hours;
         report.DeterministicBody = body;
@@ -124,6 +129,11 @@ public sealed class ReportService(
             };
             db.Reports.Add(report);
         }
+        else if (HasDeterministicChange(report, body, hours, start, end))
+        {
+            await CapturePreviousAsync(db, report, "重產基本摘要", cancellationToken);
+            report.UpdateVersion++;
+        }
 
         report.TotalHours = hours;
         report.DeterministicBody = body;
@@ -143,7 +153,8 @@ public sealed class ReportService(
     public async Task<AiReportResult> GenerateWithAiAsync(
         Guid reportId,
         Guid? promptTemplateId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool capturePrevious = true)
     {
         var preparation = await PrepareWithAiAsync(reportId, promptTemplateId, cancellationToken);
         if (!preparation.Succeeded)
@@ -151,7 +162,7 @@ public sealed class ReportService(
             return new AiReportResult(false, null, null, preparation.Error, preparation.Sanitization);
         }
 
-        return await SendPreparedWithAiAsync(preparation.PreparedReport!, cancellationToken);
+        return await SendPreparedWithAiAsync(preparation.PreparedReport!, cancellationToken, capturePrevious);
     }
 
     public async Task<AiReportPreparationResult> PrepareWithAiAsync(
@@ -255,6 +266,7 @@ public sealed class ReportService(
         return new AiReportPreparationResult(
             new AiPreparedReport(
                 report.Id,
+                report.UpdateVersion,
                 configuration,
                 preparedRequest,
                 promptTemplate?.Id,
@@ -266,7 +278,8 @@ public sealed class ReportService(
 
     public async Task<AiReportResult> SendPreparedWithAiAsync(
         AiPreparedReport prepared,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool capturePrevious = true)
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         var report = await db.Reports.SingleOrDefaultAsync(x => x.Id == prepared.ReportId, cancellationToken);
@@ -311,17 +324,37 @@ public sealed class ReportService(
             cancellationToken);
         result = result with { Sanitization = prepared.Request.Sanitization };
 
+        db.ChangeTracker.Clear();
+        job = await db.AiJobs.SingleAsync(x => x.Id == job.Id, CancellationToken.None);
+        report = await db.Reports.SingleOrDefaultAsync(x => x.Id == prepared.ReportId, CancellationToken.None);
         job.CompletedAt = DateTimeOffset.UtcNow;
         job.RawResponse = result.RawResponse;
         job.Status = result.Succeeded ? "Succeeded" : "Failed";
         job.Error = result.Error;
-        if (result.Succeeded && result.Body is not null)
+        if (report is null)
         {
+            job.Status = "Failed";
+            job.Error = "摘要已被移除，未套用 AI 結果。";
+            result = new AiReportResult(false, null, result.RawResponse, job.Error, result.Sanitization);
+        }
+        else if (result.Succeeded && report.UpdateVersion != prepared.ReportVersion)
+        {
+            job.Status = "Failed";
+            job.Error = "摘要在 AI 整理期間已更新，未套用 AI 結果。";
+            result = new AiReportResult(false, null, result.RawResponse, job.Error, result.Sanitization);
+        }
+        if (result.Succeeded && result.Body is not null && report is not null)
+        {
+            if (capturePrevious)
+            {
+                await CapturePreviousAsync(db, report, "AI 整理", CancellationToken.None);
+            }
             report.Body = result.Body;
             report.AiJobId = job.Id;
             report.IsStale = false;
             report.GeneratedAt = DateTimeOffset.UtcNow;
             report.UpdatedAt = DateTimeOffset.UtcNow;
+            report.UpdateVersion++;
         }
 
         // The provider runner converts cancellation into a failed result. Persist that terminal
@@ -345,18 +378,117 @@ public sealed class ReportService(
     public static int GetUtf8ContextByteCount(string input) =>
         Encoding.UTF8.GetByteCount(input);
 
-    public async Task UpdateBodyAsync(Guid id, string body, CancellationToken cancellationToken = default)
+    public async Task<ReportDocument?> UpdateBodyAsync(
+        Guid id,
+        string body,
+        int? expectedVersion = null,
+        CancellationToken cancellationToken = default)
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         var report = await db.Reports.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (report is null)
         {
-            return;
+            return null;
         }
-
+        if (expectedVersion is not null && report.UpdateVersion != expectedVersion)
+            throw new InvalidOperationException("摘要已在其他分頁或排程更新，請重新載入後再試。");
+        if (report.Body == body) return report;
+        await CapturePreviousAsync(db, report, "手動儲存", cancellationToken);
         report.Body = body;
         report.UpdatedAt = DateTimeOffset.UtcNow;
+        report.UpdateVersion++;
         await db.SaveChangesAsync(cancellationToken);
+        return report;
+    }
+
+    public async Task<ReportDocument> EnsureForAiAsync(
+        ReportKind kind,
+        DateOnly anchorDate,
+        CancellationToken cancellationToken = default)
+    {
+        var key = kind == ReportKind.Daily
+            ? anchorDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+            : ReportInvalidationService.GetWeeklyKey(anchorDate);
+        var existing = await GetForPeriodAsync(kind, key, cancellationToken);
+        if (existing is not null) return existing;
+        return kind == ReportKind.Daily
+            ? await GenerateDeterministicAsync(anchorDate, cancellationToken)
+            : await GenerateWeeklyAsync(anchorDate, cancellationToken);
+    }
+
+    public async Task<ReportRevision?> GetPreviousRevisionAsync(Guid reportId, CancellationToken cancellationToken = default)
+    {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        return await db.ReportRevisions.AsNoTracking().SingleOrDefaultAsync(x => x.ReportId == reportId, cancellationToken);
+    }
+
+    public async Task<ReportDocument?> RestorePreviousAsync(
+        Guid reportId,
+        int expectedVersion,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        var report = await db.Reports.SingleOrDefaultAsync(x => x.Id == reportId, cancellationToken);
+        var previous = await db.ReportRevisions.SingleOrDefaultAsync(x => x.ReportId == reportId, cancellationToken);
+        if (report is null || previous is null) return null;
+        if (report.UpdateVersion != expectedVersion)
+            throw new InvalidOperationException("摘要已在其他分頁或排程更新，請重新載入後再試。");
+        var current = Snapshot(report, "還原前版本");
+        report.Body = previous.Body;
+        report.DeterministicBody = previous.DeterministicBody;
+        report.TotalHours = previous.TotalHours;
+        report.IsStale = true;
+        report.GeneratedAt = previous.GeneratedAt;
+        report.AiJobId = previous.AiJobId;
+        report.UpdatedAt = DateTimeOffset.UtcNow;
+        report.UpdateVersion++;
+        previous.Body = current.Body;
+        previous.DeterministicBody = current.DeterministicBody;
+        previous.TotalHours = current.TotalHours;
+        previous.IsStale = current.IsStale;
+        previous.GeneratedAt = current.GeneratedAt;
+        previous.AiJobId = current.AiJobId;
+        previous.SourceVersion = current.SourceVersion;
+        previous.Reason = current.Reason;
+        previous.CapturedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+        return report;
+    }
+
+    private static bool HasDeterministicChange(
+        ReportDocument report,
+        string body,
+        double hours,
+        DateTimeOffset start,
+        DateTimeOffset end) =>
+        report.Body != body ||
+        report.DeterministicBody != body ||
+        report.TotalHours != hours ||
+        report.PeriodStart != start ||
+        report.PeriodEnd != end;
+
+    private static ReportRevision Snapshot(ReportDocument report, string reason) => new()
+    {
+        ReportId = report.Id,
+        Body = report.Body,
+        DeterministicBody = report.DeterministicBody,
+        TotalHours = report.TotalHours,
+        IsStale = report.IsStale,
+        GeneratedAt = report.GeneratedAt,
+        AiJobId = report.AiJobId,
+        SourceVersion = report.UpdateVersion,
+        Reason = reason
+    };
+
+    private static async Task CapturePreviousAsync(
+        WorkLensDbContext db,
+        ReportDocument report,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var existing = await db.ReportRevisions.SingleOrDefaultAsync(x => x.ReportId == report.Id, cancellationToken);
+        if (existing is not null) db.ReportRevisions.Remove(existing);
+        db.ReportRevisions.Add(Snapshot(report, reason));
     }
 
     public async Task<string?> ExportCsvAsync(Guid id, CancellationToken cancellationToken = default)

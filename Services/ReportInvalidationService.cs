@@ -9,6 +9,14 @@ public sealed class ReportInvalidationService(IDbContextFactory<WorkLensDbContex
 {
     public async Task MarkStaleAsync(IEnumerable<DateOnly> dates, CancellationToken cancellationToken = default)
     {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        await MarkStaleInContextAsync(db, dates, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    internal static async Task MarkStaleInContextAsync(WorkLensDbContext db, IEnumerable<DateOnly> dates,
+        CancellationToken cancellationToken)
+    {
         var distinctDates = dates.Distinct().ToArray();
         if (distinctDates.Length == 0)
         {
@@ -17,7 +25,6 @@ public sealed class ReportInvalidationService(IDbContextFactory<WorkLensDbContex
 
         var dailyKeys = distinctDates.Select(date => date.ToString("yyyy-MM-dd")).ToHashSet();
         var weeklyKeys = distinctDates.Select(GetWeeklyKey).ToHashSet();
-        await using var db = await factory.CreateDbContextAsync(cancellationToken);
         var reports = await db.Reports
             .Where(report => (report.Kind == ReportKind.Daily && dailyKeys.Contains(report.PeriodKey)) ||
                              (report.Kind == ReportKind.Weekly && weeklyKeys.Contains(report.PeriodKey)))
@@ -25,10 +32,6 @@ public sealed class ReportInvalidationService(IDbContextFactory<WorkLensDbContex
         foreach (var report in reports)
         {
             report.IsStale = true;
-        }
-        if (reports.Count > 0)
-        {
-            await db.SaveChangesAsync(cancellationToken);
         }
     }
 

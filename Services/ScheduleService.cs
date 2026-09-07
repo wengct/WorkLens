@@ -209,7 +209,9 @@ public sealed class ScheduleRunner(
                     execution.AiStatus = "Running";
                     db.ScheduleExecutions.Update(execution);
                     await db.SaveChangesAsync(cancellationToken);
-                    var result = await reports.GenerateWithAiAsync(report.Id, prompt!.Id, cancellationToken);
+                    // The deterministic update already captured the pre-run version. Keep that
+                    // single snapshot when the AI result replaces it.
+                    var result = await reports.GenerateWithAiAsync(report.Id, prompt!.Id, cancellationToken, capturePrevious: false);
                     execution.SanitizationStatus = result.Sanitization?.Status.ToString() ?? "NotRun";
                     execution.SanitizedFindingCount = result.Sanitization?.TotalCount ?? 0;
                     execution.SanitizedCategoriesJson = JsonSerializer.Serialize(result.Sanitization?.Notices ?? []);

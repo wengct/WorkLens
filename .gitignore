@@ -34,6 +34,8 @@ logs/
 .env.*
 !.env.example
 secrets/
+/keys/
+/runtime-settings.json
 *.pfx
 *.p12
 *.pem

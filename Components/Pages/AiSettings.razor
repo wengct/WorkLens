@@ -121,6 +121,8 @@
     </section>
 </div>
 
+<p><a class="button button-secondary button-small" href="/">返回工作台</a></p>
+
 @if (IsAskBridge && detection is not null)
 {
     <div class="panel"><div class="panel-heading"><div><h2>環境診斷</h2><p>@detection.Validation.Summary</p></div></div><div class="form-grid"><div class="field"><label>執行檔</label><div class="hint">@(detection.ExecutablePath ?? "未找到")</div></div><div class="field"><label>版本</label><div class="hint">@(detection.Version ?? "未取得")</div></div><div class="field"><label>Node.js</label><div class="hint">@(detection.NodeAvailable ? "可用" : "不可用")</div></div><div class="field"><label>Chrome</label><div class="hint">@(detection.ChromeAvailable ? "可用" : "不可用")</div></div></div></div>

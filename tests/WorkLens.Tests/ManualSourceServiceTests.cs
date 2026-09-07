@@ -52,7 +52,7 @@ public sealed class ManualSourceServiceTests
         var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
             service.AddAsync(new DateOnly(2026, 9, 3), "  "));
 
-        Assert.Equal("人工來源內容不可空白。", exception.Message);
+        Assert.Equal("參考資料內容不可空白。", exception.Message);
     }
 
     [Fact]

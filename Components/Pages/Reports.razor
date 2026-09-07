@@ -38,11 +38,11 @@
 </section>
 
 <details class="panel history-filter-panel">
-    <summary class="history-filter-summary"><span><strong>篩選歷程</strong><small>@FilterSummary()</small></span><span>展開設定</span></summary>
+    <summary class="history-filter-summary"><span><strong>篩選歷程</strong><small>僅篩選歷程，不影響摘要範圍 · @FilterSummary()</small></span><span>展開設定</span></summary>
     <div class="form-grid history-filter-grid">
         <div class="field"><label>專案</label><select @bind="filterProject"><option value="">全部專案</option>@foreach (var project in projects) { <option value="@project.Id">@(project.IsArchived ? "[已停用] " : string.Empty)@project.Name</option> }</select></div>
         <div class="field"><label>內容</label><input @bind="filterQuery" placeholder="搜尋工作內容、repository 或 commit message" /></div>
-        <div class="field"><label>資料種類</label><select @bind="filterMode"><option value="all">全部</option><option value="manual">人工紀錄</option><option value="sources">來源活動</option></select></div>
+        <div class="field"><label>資料種類</label><select @bind="filterMode"><option value="all">全部</option><option value="manual">工作紀錄</option><option value="sources">參考資料與來源活動</option></select></div>
         <div class="field"><label class="inline-checkbox"><input type="checkbox" @bind="filterCurrentOnly" /> 只看目前有效來源</label></div>
         <div class="form-actions"><button class="button button-primary" @onclick="ApplyFilters">套用篩選</button></div>
     </div>
@@ -50,7 +50,9 @@
 
 <div class="summary-workspace">
     <div class="summary-history-column">
-        <section class="panel history-calendar-panel">
+        <details class="panel history-browser">
+            <summary><strong>瀏覽日期</strong><small>週／月檢視只用來瀏覽歷程</small></summary>
+            <section class="history-calendar-panel">
             <div class="panel-heading">
                 <div><h2>@CalendarTitle()</h2><p>@(kind == ReportKind.Daily ? "點選日期，查看當日歷程與摘要。" : "點選任一天，查看該週歷程與摘要。")</p></div>
                 <div class="calendar-toolbar">
@@ -80,7 +82,8 @@
                     else { <div class="calendar-day calendar-day-empty" aria-hidden="true"></div> }
                 }
             </div>
-        </section>
+            </section>
+        </details>
 
         <section class="panel history-day-detail">
             <div class="panel-heading">
@@ -117,19 +120,6 @@
     <ReportWorkspace @ref="reportWorkspace" Kind="kind" AnchorDate="selectedDate" OnReportChanged="ReloadAsync" />
 </div>
 
-<ConfirmDialog Open="pendingKind is not null"
-               Title="切換摘要期間？"
-               Message="目前摘要有尚未儲存的文字。你可以先儲存再切換，或放棄這次修改。"
-               ConfirmText="放棄並切換"
-               BusyText="切換中…"
-               IsBusy="isChangingPeriod"
-               OnConfirm="DiscardAndChangePeriod"
-               OnCancel="CancelPendingPeriodChange">
-    <AdditionalActions>
-        <button class="button button-primary" type="button" @onclick="SaveAndChangePeriodAsync" disabled="@isChangingPeriod">儲存並切換</button>
-    </AdditionalActions>
-</ConfirmDialog>
-
 @code {
     [SupplyParameterFromQuery(Name = "date")] public DateTime? RequestedDate { get; set; }
     [SupplyParameterFromQuery(Name = "kind")] public string? RequestedKind { get; set; }
@@ -153,9 +143,6 @@
     private IReadOnlyList<ReportDocument> reports = [];
     private bool isBackfilling;
     private ReportWorkspace? reportWorkspace;
-    private ReportKind? pendingKind;
-    private DateOnly pendingDate;
-    private bool isChangingPeriod;
     private static readonly string[] MonthWeekdays = ["日", "一", "二", "三", "四", "五", "六"];
     private static readonly string[] WeekWeekdays = ["一", "二", "三", "四", "五", "六", "日"];
     private IReadOnlyList<string> CalendarWeekdays => calendarView == "week" ? WeekWeekdays : MonthWeekdays;
@@ -196,46 +183,15 @@
         if (DateOnly.TryParse(args.Value?.ToString(), out var date)) await RequestPeriodChangeAsync(kind, date);
     }
 
-    private Task RequestPeriodChangeAsync(ReportKind newKind, DateOnly newDate)
+    private async Task RequestPeriodChangeAsync(ReportKind newKind, DateOnly newDate)
     {
-        if (newKind == kind && IsSamePeriod(newDate, selectedDate, newKind)) return Task.CompletedTask;
+        if (newKind == kind && IsSamePeriod(newDate, selectedDate, newKind)) return;
         if (reportWorkspace?.HasUnsavedChanges == true)
         {
-            pendingKind = newKind;
-            pendingDate = newDate;
-            return Task.CompletedTask;
+            if (!await reportWorkspace.SaveChangesAsync()) return;
         }
         NavigateToPeriod(newKind, newDate);
-        return Task.CompletedTask;
     }
-
-    private async Task SaveAndChangePeriodAsync()
-    {
-        if (isChangingPeriod || pendingKind is not ReportKind nextKind || reportWorkspace is null) return;
-        isChangingPeriod = true;
-        try
-        {
-            if (!await reportWorkspace.SaveChangesAsync()) return;
-            var nextDate = pendingDate;
-            pendingKind = null;
-            NavigateToPeriod(nextKind, nextDate);
-        }
-        finally
-        {
-            isChangingPeriod = false;
-        }
-    }
-
-    private void DiscardAndChangePeriod()
-    {
-        if (pendingKind is not ReportKind nextKind) return;
-        reportWorkspace?.DiscardChanges();
-        var nextDate = pendingDate;
-        pendingKind = null;
-        NavigateToPeriod(nextKind, nextDate);
-    }
-
-    private void CancelPendingPeriodChange() => pendingKind = null;
     private void NavigateToPeriod(ReportKind newKind, DateOnly newDate)
     {
         var query = BuildQuery();
@@ -274,7 +230,7 @@
     private string FilterSummary()
     {
         var project = string.IsNullOrWhiteSpace(filterProject) ? "全部專案" : ProjectName(ParseProject(filterProject));
-        var mode = filterMode == "manual" ? "人工紀錄" : filterMode == "sources" ? "來源活動" : "全部資料";
+        var mode = filterMode == "manual" ? "工作紀錄" : filterMode == "sources" ? "參考資料與來源活動" : "全部資料";
         return string.IsNullOrWhiteSpace(filterQuery) ? $"{project} · {mode}" : $"{project} · {mode} · 關鍵字：{filterQuery}";
     }
 

@@ -50,7 +50,8 @@ public sealed class WorkLogService(
         string workContent,
         Guid? projectId = null,
         string? title = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        WorkDraftCommit? draftCommit = null)
     {
         if (!double.IsFinite(hours) || hours <= 0 || hours > 24)
         {
@@ -63,6 +64,7 @@ public sealed class WorkLogService(
         }
 
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        await WorkDraftService.ConsumeAsync(db, draftCommit, WorkDraftKind.WorkCreate, null, cancellationToken);
         var entry = new WorkEntry
         {
             WorkDate = workDate,
@@ -73,8 +75,8 @@ public sealed class WorkLogService(
         };
 
         db.WorkEntries.Add(entry);
+        await ReportInvalidationService.MarkStaleInContextAsync(db, [workDate], cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
-        await invalidation.MarkStaleAsync([workDate], cancellationToken);
         return entry;
     }
 
@@ -85,10 +87,12 @@ public sealed class WorkLogService(
         string workContent,
         Guid? projectId,
         string? title = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        WorkDraftCommit? draftCommit = null)
     {
         Validate(hours, workContent);
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        await WorkDraftService.ConsumeAsync(db, draftCommit, WorkDraftKind.WorkEdit, id, cancellationToken);
         var entry = await db.WorkEntries.SingleOrDefaultAsync(x => x.Id == id, cancellationToken);
         if (entry is null)
         {
@@ -102,8 +106,8 @@ public sealed class WorkLogService(
         entry.WorkContent = workContent.Trim();
         entry.ProjectId = projectId;
         entry.UpdatedAt = DateTimeOffset.UtcNow;
+        await ReportInvalidationService.MarkStaleInContextAsync(db, [oldDate, workDate], cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
-        await invalidation.MarkStaleAsync([oldDate, workDate], cancellationToken);
         return entry;
     }
 

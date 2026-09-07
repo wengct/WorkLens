@@ -1,0 +1,15 @@
+<ol class="getting-started-list">
+    <li class="@(HasWork ? "done" : string.Empty)"><span>@(HasWork ? "✓" : "1")</span><div><strong>先記一筆工作</strong><p>記下做了什麼與花費時間。</p>@if (!HasWork) { <a href="#work-input">記工作與工時</a> }</div></li>
+    <li class="@(HasSourceCollection ? "done" : string.Empty)"><span>@(HasSourceCollection ? "✓" : "2")</span><div><strong>@SourceStepTitle</strong><p>可補充自動收集的工作脈絡；首次收集由你主動執行。</p>@if (!HasSourceCollection) { <a href="/sources">前往資料來源</a> }</div></li>
+    <li class="@(HasReport ? "done" : string.Empty)"><span>@(HasReport ? "✓" : "3")</span><div><strong>產生第一份摘要</strong><p>基本摘要可直接使用，AI 是選用功能。</p>@if (!HasReport) { <a href="/reports">前往工作摘要</a> }</div></li>
+    <li class="@(HasAi ? "done" : string.Empty)"><span>@(HasAi ? "✓" : "選用")</span><div><strong>設定 AI 整理</strong><p>想用 AI 整理時再設定即可。</p>@if (!HasAi) { <a href="/ai">設定 AI</a> }</div></li>
+</ol>
+
+@code {
+    [Parameter] public bool HasWork { get; set; }
+    [Parameter] public bool HasSource { get; set; }
+    [Parameter] public bool HasSourceCollection { get; set; }
+    [Parameter] public bool HasReport { get; set; }
+    [Parameter] public bool HasAi { get; set; }
+    private string SourceStepTitle => HasSource ? "完成首次收集" : "設定資料來源";
+}

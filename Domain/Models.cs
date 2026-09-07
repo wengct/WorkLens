@@ -186,8 +186,24 @@ public sealed class ReportDocument
     public bool IsStale { get; set; }
     public DateTimeOffset? GeneratedAt { get; set; }
     public Guid? AiJobId { get; set; }
+    public int UpdateVersion { get; set; } = 1;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class ReportRevision
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ReportId { get; set; }
+    public string Body { get; set; } = string.Empty;
+    public string DeterministicBody { get; set; } = string.Empty;
+    public double TotalHours { get; set; }
+    public bool IsStale { get; set; }
+    public DateTimeOffset? GeneratedAt { get; set; }
+    public Guid? AiJobId { get; set; }
+    public int SourceVersion { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public DateTimeOffset CapturedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public sealed class AiJob

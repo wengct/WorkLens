@@ -87,10 +87,16 @@ p { color: var(--muted); line-height: 1.65; }
 .today-workspace { display: grid; grid-template-columns: minmax(0, 1.18fr) minmax(340px, .82fr); align-items: start; gap: 18px; }
 .today-workspace > .panel { margin-top: 0; }
 .today-workspace + .evidence-panel { margin-top: 18px; }
-.today-quick-add .markdown-input { min-height: 190px; }
-.today-quick-add .EasyMDEContainer .CodeMirror { min-height: 190px; }
-.today-quick-add .EasyMDEContainer .CodeMirror-scroll { min-height: 170px; }
+.today-quick-add { padding: 18px; }
+.today-quick-add .panel-heading { margin-bottom: 12px; }
+.today-quick-add .markdown-input { min-height: 125px; }
+.today-quick-add .EasyMDEContainer .CodeMirror { height: 125px; min-height: 125px !important; overflow: hidden; resize: vertical; }
+.today-quick-add .EasyMDEContainer .CodeMirror-scroll { min-height: 100% !important; }
+.today-quick-actions { justify-content: flex-end; }
 .today-records .empty-state { padding: 30px 12px; }
+.today-records .unfinished-drafts { margin-bottom: 14px; padding: 11px 13px; background: #f7f8fc; border: 1px solid var(--line); border-radius: 9px; }
+.today-records .unfinished-drafts > summary { cursor: pointer; }
+.today-records .unfinished-drafts ul { margin-bottom: 0; padding-left: 20px; }
 .today-records, .evidence-panel { scroll-margin-top: 20px; }
 .button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; }
 .button { display: inline-flex; align-items: center; justify-content: center; min-height: 38px; padding: 0 15px; border: 1px solid transparent; border-radius: 8px; font-size: 13px; font-weight: 650; text-decoration: none; }
@@ -455,6 +461,8 @@ button.calendar-day:hover { border-color: #aeb8dc; transform: translateY(-1px); 
     .ai-feature-bar { align-items: flex-start; flex-direction: column; gap: 12px; }
     .ai-feature-toggle { align-self: flex-end; }
     .form-grid, .quick-add-grid { grid-template-columns: 1fr; }
+    .today-quick-add .panel-heading { align-items: flex-start; flex-direction: column; }
+    .today-quick-actions { justify-content: flex-start; width: 100%; }
     .today-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .today-stats .stat-card { display: block; }
     .today-stats .stat-value { margin-top: 6px; font-size: 22px; }
@@ -763,3 +771,26 @@ button.calendar-day:hover { border-color: #aeb8dc; transform: translateY(-1px); 
         animation: none;
     }
 }
+.today-page-stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.today-page-stack > .panel { margin-top: 0; }
+.today-page-stack > .page-heading, .today-page-stack > .today-stats { margin: 0; }
+.draft-editor { min-width: 0; }
+.draft-editor fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.draft-editor fieldset:disabled { opacity: .7; }
+.draft-status { min-height: 1.5em; margin-block: 6px; color: var(--muted, #667085); }
+.draft-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.source-health-list { padding-left: 20px; }
+.source-health-list li, .unfinished-drafts li { margin-block: 8px; overflow-wrap: anywhere; }
+.source-health-list span { display: block; }
+.history-browser > summary, .report-prompt-picker > summary, .report-secondary-actions > summary { cursor: pointer; }
+.history-browser > summary { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
+.history-browser > summary small { color: var(--muted, #697386); }
+.history-browser .history-calendar-panel { margin-top: 14px; }
+.report-prompt-picker, .report-secondary-actions { margin-top: 12px; }
+.report-secondary-actions > div { margin-top: 10px; }
+.getting-started-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.getting-started-list li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
+.getting-started-list li > span { display: grid; place-items: center; min-height: 28px; border-radius: 999px; background: #eef1ff; color: #4655bf; font-weight: 700; }
+.getting-started-list li.done > span { background: #e7f7ed; color: #197342; }
+.getting-started-list p { margin: 3px 0 6px; color: var(--muted, #697386); }
+.getting-started-dialog { width: min(620px, 100%); }

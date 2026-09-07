@@ -34,6 +34,14 @@
             editors.set(elementId, editor);
         },
 
+        onChange: function (elementId, callback) {
+            editors.get(elementId)?.codemirror.on("change", callback);
+        },
+
+        setReadOnly: function (elementId, value) {
+            editors.get(elementId)?.codemirror.setOption("readOnly", value);
+        },
+
         getValue: function (elementId) {
             const editor = editors.get(elementId);
             if (!editor) {

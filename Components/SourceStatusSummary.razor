@@ -1,0 +1,44 @@
+<section class="panel source-status-summary" aria-label="來源收集狀態">
+    <div class="panel-heading"><div><h2>來源收集狀態</h2><p>@Date.ToString("yyyy/MM/dd") 已匯入 @ActivityCount 筆活動；目前來源狀態不代表此日期已完整收集。</p></div></div>
+    @if (Sources.Count == 0)
+    {
+        <p>尚未設定自動資料來源。</p><a class="button button-secondary" href="/sources">新增資料來源</a>
+    }
+    else if (Sources.All(x => !x.Enabled))
+    {
+        <p>所有資料來源目前皆已停用，既有活動仍保留。</p><a class="button button-secondary" href="/sources">管理來源</a>
+    }
+    else
+    {
+        @foreach (var source in Sources.Where(x => x.Enabled && (x.HealthStatus != SourceHealthStatus.Ready || x.LastSuccessAt is null)))
+        {
+            <p><strong>@source.DisplayName</strong>：@StateText(source)
+                @if (source.HealthStatus is SourceHealthStatus.Error or SourceHealthStatus.Unavailable)
+                { <a href="/sources">查看並修正</a> }
+                else if (source.HealthStatus != SourceHealthStatus.Running && source.LastSuccessAt is null)
+                { <a href="/sources">前往執行首次收集</a> }
+            </p>
+        }
+        @if (Sources.Any(x => x.Enabled && x.HealthStatus == SourceHealthStatus.Ready && x.LastSuccessAt is not null))
+        { <p>已有來源可正常收集；各來源最近成功時間可在下方活動區查看。</p> }
+    }
+    @if (ActivityCount == 0)
+    {
+        <p>此日期尚無已匯入的來源活動。</p>
+        <a class="button button-secondary" href="/reports?kind=Daily&date=@Date.ToString("yyyy-MM-dd")">查看此日期並重新收集</a>
+    }
+</section>
+
+@code {
+    [Parameter] public IReadOnlyList<ActivitySource> Sources { get; set; } = [];
+    [Parameter] public DateOnly Date { get; set; }
+    [Parameter] public int ActivityCount { get; set; }
+    public static string StateText(ActivitySource source) => !source.Enabled ? "已停用" : source.HealthStatus switch
+    {
+        SourceHealthStatus.Running => "正在收集，完成後會自動更新活動數。",
+        SourceHealthStatus.Error => "收集失敗",
+        SourceHealthStatus.Unavailable => "來源目前不可用",
+        SourceHealthStatus.Disabled => "尚未啟動收集",
+        _ => source.LastSuccessAt is null ? "尚無成功紀錄，等待首次收集。" : "可正常收集"
+    };
+}

@@ -26,4 +26,23 @@ public sealed class RuntimeSettingsServiceTests
             if (Directory.Exists(root)) Directory.Delete(root, true);
         }
     }
+
+    [Fact]
+    public async Task Onboarding_dismissal_is_loaded_after_restart()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"worklens-settings-{Guid.NewGuid():N}");
+        try
+        {
+            var paths = new AppPaths(Path.Combine(root, "data", "worklens.db"), Path.Combine(root, "backup"), Path.Combine(root, "logs"));
+            var settings = new RuntimeSettingsService(paths);
+
+            await settings.SetOnboardingDismissedAsync(true);
+
+            Assert.True(new RuntimeSettingsService(paths).IsOnboardingDismissed);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, true);
+        }
+    }
 }

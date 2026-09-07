@@ -68,6 +68,19 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         await db.Database.EnsureCreatedAsync(cancellationToken);
+        await EnsureReportRevisionSchemaAsync(db, cancellationToken);
+        await db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "WorkDrafts" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_WorkDrafts" PRIMARY KEY,
+                "Kind" TEXT NOT NULL,
+                "Date" TEXT NOT NULL,
+                "TargetId" TEXT NULL,
+                "Payload" TEXT NOT NULL,
+                "BaseVersion" TEXT NULL,
+                "Version" TEXT NOT NULL,
+                "UpdatedAt" TEXT NOT NULL
+            );
+            """, cancellationToken);
         await EnsureSchedulingSchemaAsync(db, cancellationToken);
         var legacyAiEnabled = await ReadLegacyAiEnabledAsync(db, cancellationToken);
         await EnsureColumnAsync(db, "AiProviders", "ProviderType", "TEXT NOT NULL DEFAULT 'ask-bridge'", cancellationToken);
@@ -314,6 +327,30 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
         await EnsureColumnAsync(db, "ScheduleExecutions", "SanitizedCategoriesJson", "TEXT NOT NULL DEFAULT '[]'", cancellationToken);
         await EnsureColumnAsync(db, "ScheduleExecutions", "SanitizerVersion", "TEXT NOT NULL DEFAULT ''", cancellationToken);
         await EnsureColumnAsync(db, "ScheduleExecutions", "SanitizerRuleVersion", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+    }
+
+    private static async Task EnsureReportRevisionSchemaAsync(
+        WorkLensDbContext db,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            CREATE TABLE IF NOT EXISTS "ReportRevisions" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_ReportRevisions" PRIMARY KEY,
+                "ReportId" TEXT NOT NULL,
+                "Body" TEXT NOT NULL,
+                "DeterministicBody" TEXT NOT NULL,
+                "TotalHours" REAL NOT NULL,
+                "IsStale" INTEGER NOT NULL,
+                "GeneratedAt" TEXT NULL,
+                "AiJobId" TEXT NULL,
+                "SourceVersion" INTEGER NOT NULL,
+                "Reason" TEXT NOT NULL,
+                "CapturedAt" TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_ReportRevisions_ReportId" ON "ReportRevisions" ("ReportId");
+            """;
+        await db.Database.ExecuteSqlRawAsync(sql, cancellationToken);
+        await EnsureColumnAsync(db, "Reports", "UpdateVersion", "INTEGER NOT NULL DEFAULT 1", cancellationToken);
     }
 
     private static async Task EnsureSensitiveWordsSchemaAsync(

@@ -5,6 +5,7 @@ namespace WorkLens.Data;
 
 public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> options) : DbContext(options)
 {
+    public DbSet<WorkDraft> WorkDrafts => Set<WorkDraft>();
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<WorkEntry> WorkEntries => Set<WorkEntry>();
     public DbSet<ActivitySource> ActivitySources => Set<ActivitySource>();
@@ -12,6 +13,7 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
     public DbSet<CommitLineage> CommitLineages => Set<CommitLineage>();
     public DbSet<RebaseSession> RebaseSessions => Set<RebaseSession>();
     public DbSet<ReportDocument> Reports => Set<ReportDocument>();
+    public DbSet<ReportRevision> ReportRevisions => Set<ReportRevision>();
     public DbSet<AiJob> AiJobs => Set<AiJob>();
     public DbSet<AiProviderConfiguration> AiProviders => Set<AiProviderConfiguration>();
     public DbSet<AiFeatureSettings> AiFeatureSettings => Set<AiFeatureSettings>();
@@ -23,12 +25,17 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<WorkDraft>().Property(x => x.Kind).HasConversion<string>();
+        modelBuilder.Entity<WorkDraft>().Property(x => x.Version).IsConcurrencyToken();
+        modelBuilder.Entity<WorkEntry>().Property(x => x.UpdatedAt).IsConcurrencyToken();
+        modelBuilder.Entity<SourceEvidence>().Property(x => x.LastObservedAt).IsConcurrencyToken();
         modelBuilder.Entity<ActivitySource>().Property(x => x.SourceType).HasConversion<string>();
         modelBuilder.Entity<ActivitySource>().Property(x => x.HealthStatus).HasConversion<string>();
         modelBuilder.Entity<SourceEvidence>().Property(x => x.Kind).HasConversion<string>();
         modelBuilder.Entity<SourceEvidence>().Property(x => x.ReachabilityStatus).HasConversion<string>();
         modelBuilder.Entity<CommitLineage>().Property(x => x.Relation).HasConversion<string>();
         modelBuilder.Entity<ReportDocument>().Property(x => x.Kind).HasConversion<string>();
+        modelBuilder.Entity<ReportDocument>().Property(x => x.UpdateVersion).IsConcurrencyToken();
         modelBuilder.Entity<ScheduleDefinition>().Property(x => x.Kind).HasConversion<string>();
         modelBuilder.Entity<AiProviderConfiguration>().Property(x => x.ReasoningLevel).HasConversion<string>();
 
@@ -55,6 +62,10 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
 
         modelBuilder.Entity<ReportDocument>()
             .HasIndex(x => new { x.Kind, x.PeriodKey })
+            .IsUnique();
+
+        modelBuilder.Entity<ReportRevision>()
+            .HasIndex(x => x.ReportId)
             .IsUnique();
 
         modelBuilder.Entity<AiProviderConfiguration>()

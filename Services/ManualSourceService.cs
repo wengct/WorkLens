@@ -16,11 +16,12 @@ public sealed class ManualSourceService(
         string content,
         Guid? projectId = null,
         string? title = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        WorkDraftCommit? draftCommit = null)
     {
         if (string.IsNullOrWhiteSpace(content))
         {
-            throw new ArgumentException("人工來源內容不可空白。");
+            throw new ArgumentException("參考資料內容不可空白。");
         }
 
         var normalizedContent = content.Trim();
@@ -36,16 +37,17 @@ public sealed class ManualSourceService(
             Environment = "Manual",
             Kind = EvidenceKind.Manual,
             ExternalKey = $"manual:{id:N}",
-            Title = ContentTitle.Resolve(title, normalizedContent, "人工來源"),
+            Title = ContentTitle.Resolve(title, normalizedContent, "參考資料"),
             CommitMessage = normalizedContent,
             OccurredAt = new DateTimeOffset(localOccurredAt, TimeZoneInfo.Local.GetUtcOffset(localOccurredAt)),
             ReachabilityStatus = CommitReachabilityStatus.Unknown
         };
 
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        await WorkDraftService.ConsumeAsync(db, draftCommit, WorkDraftKind.ManualCreate, null, cancellationToken);
         db.SourceEvidence.Add(evidence);
+        await ReportInvalidationService.MarkStaleInContextAsync(db, [date], cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
-        await invalidation.MarkStaleAsync([date], cancellationToken);
         return evidence;
     }
 
@@ -71,11 +73,12 @@ public sealed class ManualSourceService(
         string content,
         Guid? projectId,
         string? title = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        WorkDraftCommit? draftCommit = null)
     {
         if (string.IsNullOrWhiteSpace(content))
         {
-            throw new ArgumentException("人工來源內容不可空白。");
+            throw new ArgumentException("參考資料內容不可空白。");
         }
 
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
@@ -84,18 +87,19 @@ public sealed class ManualSourceService(
             cancellationToken);
         if (evidence is null)
         {
+            if (draftCommit is not null) throw new InvalidOperationException("原紀錄已刪除，草稿仍保留。請先複製草稿內容。");
             return null;
         }
 
+        await WorkDraftService.ConsumeAsync(db, draftCommit, WorkDraftKind.ManualEdit, id, cancellationToken);
         var normalizedContent = content.Trim();
         evidence.ProjectId = projectId;
-        evidence.Title = ContentTitle.Resolve(title, normalizedContent, "人工來源");
+        evidence.Title = ContentTitle.Resolve(title, normalizedContent, "參考資料");
         evidence.CommitMessage = normalizedContent;
         evidence.LastObservedAt = DateTimeOffset.UtcNow;
+        await ReportInvalidationService.MarkStaleInContextAsync(db,
+            [DateOnly.FromDateTime(evidence.OccurredAt.LocalDateTime)], cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
-        await invalidation.MarkStaleAsync(
-            [DateOnly.FromDateTime(evidence.OccurredAt.LocalDateTime)],
-            cancellationToken);
         return evidence;
     }
 
