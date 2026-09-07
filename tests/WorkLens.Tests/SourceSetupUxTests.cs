@@ -3,6 +3,23 @@ namespace WorkLens.Tests;
 public sealed class SourceSetupUxTests
 {
     [Fact]
+    public async Task Saving_source_automatically_validates_and_offers_revalidation()
+    {
+        var razor = await ReadSourcesPageAsync();
+        var saveStart = razor.IndexOf("private async Task SaveAndValidateSourceAsync()", StringComparison.Ordinal);
+        var saveEnd = razor.IndexOf("private async Task BeginEditAsync", saveStart, StringComparison.Ordinal);
+        var save = razor[saveStart..saveEnd];
+
+        Assert.True(save.IndexOf("await SourceConfig.SaveAsync(source);", StringComparison.Ordinal)
+            < save.IndexOf("await ValidateAsync(source.Id);", StringComparison.Ordinal));
+        Assert.Contains("await ValidateAsync(source.Id);", save, StringComparison.Ordinal);
+        Assert.Contains("\"重新驗證\"", razor, StringComparison.Ordinal);
+        Assert.Contains("disabled=\"@isSavingSource\"", razor, StringComparison.Ordinal);
+        Assert.DoesNotContain("請按「驗證」", razor, StringComparison.Ordinal);
+        Assert.DoesNotContain("儲存後按「驗證」", razor, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Setup_uses_content_and_location_instead_of_platform_cartesian_options()
     {
         var razor = await ReadSourcesPageAsync();
@@ -42,6 +59,19 @@ public sealed class SourceSetupUxTests
         Assert.DoesNotContain("Organization：無法存取", razor, StringComparison.Ordinal);
         Assert.Contains("Projects：", razor, StringComparison.Ordinal);
         Assert.Contains("visualstudio.com", razor, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Source_overview_keeps_ai_sharing_visible_and_action_menu_closable()
+    {
+        var razor = await ReadSourcesPageAsync();
+
+        Assert.Contains("@onclick=\"() => ToggleSourceAiAsync(source)\"", razor, StringComparison.Ordinal);
+        Assert.Contains("<details class=\"source-more-actions\" data-action-menu>", razor, StringComparison.Ordinal);
+        Assert.DoesNotContain("<button class=\"button button-secondary button-small\" @onclick=\"() => ToggleSourceAiAsync(source)\" disabled=\"@sourceIsBusy\">@(source.IncludeInAi ? \"停止提供給 AI\" : \"允許提供給 AI\")</button>",
+            razor[razor.IndexOf("<details class=\"source-more-actions\"", StringComparison.Ordinal)..],
+            StringComparison.Ordinal);
+        Assert.Contains("data-menu-action", razor, StringComparison.Ordinal);
     }
 
     private static async Task<string> ReadSourcesPageAsync()

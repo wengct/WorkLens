@@ -259,7 +259,7 @@ public sealed class ReportService(
                 preparedRequest,
                 promptTemplate?.Id,
                 promptTemplate?.Name ?? "舊版 Prompt",
-                preparedRequest.EffectivePrompt),
+                preparedRequest.EffectivePrompt) { PreviewValues = sanitization.PreviewValues },
             sanitization.Summary,
             null);
     }

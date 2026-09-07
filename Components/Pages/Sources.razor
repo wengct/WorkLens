@@ -80,7 +80,7 @@
             <div class="field">
                 <label for="distro">WSL Linux 環境</label>
                 <input id="distro" @bind="newDistro" placeholder="例如：Ubuntu" />
-                <span class="hint">只有儲存後按「驗證」時才會偵測 WSL。</span>
+                <span class="hint">儲存後會自動驗證並偵測 WSL。</span>
             </div>
         }
         @if (newKind != SourceKind.AzureDevOps)
@@ -299,7 +299,7 @@
         </details>
         <div class="form-actions">
             <label class="inline-checkbox"><input type="checkbox" @bind="newEnabled" /> 儲存後啟用</label>
-            <button class="button button-primary" @onclick="SaveSourceAsync">@(editingSourceId is null ? "新增來源" : "儲存來源設定")</button>
+            <button class="button button-primary" @onclick="SaveSourceAsync" disabled="@isSavingSource">@(isSavingSource ? "儲存並驗證中…" : editingSourceId is null ? "新增來源" : "儲存來源設定")</button>
             @if (editingSourceId is not null)
             {
                 <button class="button button-secondary" @onclick="CancelEdit">取消編輯</button>
@@ -410,7 +410,7 @@
                 </div>
                 <div class="source-actions">
                     <button class="button button-secondary button-small" @onclick="() => BeginEditAsync(source)" disabled="@sourceIsBusy">編輯</button>
-                    <button class="button button-secondary button-small" @onclick="() => ValidateAsync(source.Id)" disabled="@sourceIsBusy">@(sourceIsValidating ? "驗證中…" : "驗證")</button>
+                    <button class="button button-secondary button-small" @onclick="() => ValidateAsync(source.Id)" disabled="@sourceIsBusy">@(sourceIsValidating ? "驗證中…" : "重新驗證")</button>
                     @if (sourceIsCollecting)
                     {
                         <button class="button button-danger button-small" @onclick="() => StopCollectionAsync(source.Id)" disabled="@sourceIsStopping">@(sourceIsStopping ? "正在停止…" : "停止收集")</button>
@@ -420,12 +420,12 @@
                         <button class="button button-secondary button-small" @onclick="() => RunNowAsync(source.Id)" disabled="@(source.HealthStatus != SourceHealthStatus.Ready || sourceIsBusy)">立即收集</button>
                     }
                     <button class="button button-secondary button-small" @onclick="() => ToggleAsync(source)" disabled="@sourceIsBusy">@(source.Enabled ? "停用" : "啟用")</button>
-                    <details class="source-more-actions">
+                    <button class="button button-secondary button-small" @onclick="() => ToggleSourceAiAsync(source)" disabled="@sourceIsBusy">@(source.IncludeInAi ? "停止提供給 AI" : "允許提供給 AI")</button>
+                    <details class="source-more-actions" data-action-menu>
                         <summary>更多操作</summary>
                         <div>
-                            <button class="button button-secondary button-small" @onclick="() => ToggleSourceAiAsync(source)" disabled="@sourceIsBusy">@(source.IncludeInAi ? "停止提供給 AI" : "允許提供給 AI")</button>
-                            <button class="button button-secondary button-small" @onclick="() => PrepareReset(source.Id)" disabled="@sourceIsBusy">重設 checkpoint</button>
-                            <button class="button button-danger button-small" @onclick="() => ArchiveAsync(source.Id)" disabled="@sourceIsBusy">封存</button>
+                            <button class="button button-secondary button-small" data-menu-action @onclick="() => PrepareReset(source.Id)" disabled="@sourceIsBusy">重設 checkpoint</button>
+                            <button class="button button-danger button-small" data-menu-action @onclick="() => ArchiveAsync(source.Id)" disabled="@sourceIsBusy">封存</button>
                         </div>
                     </details>
                 </div>
@@ -504,7 +504,23 @@
         refreshTask = RefreshSourceStatusesAsync(refreshCancellation.Token);
     }
 
+    private bool isSavingSource;
+
     private async Task SaveSourceAsync()
+    {
+        if (isSavingSource) return;
+        isSavingSource = true;
+        try
+        {
+            await SaveAndValidateSourceAsync();
+        }
+        finally
+        {
+            isSavingSource = false;
+        }
+    }
+
+    private async Task SaveAndValidateSourceAsync()
     {
         var newType = SelectedSourceType;
         if (IsGitType(newType))
@@ -645,11 +661,12 @@
         };
         await SourceConfig.SaveAsync(source);
         Toasts.Success(existing is null
-            ? "來源已新增。請按「驗證」確認環境與資料路徑。"
-            : "來源設定已更新。請重新按「驗證」確認環境與資料路徑。");
+            ? "來源已新增，接著自動驗證環境與資料路徑。"
+            : "來源設定已更新，接著自動驗證環境與資料路徑。");
         ResetForm();
         await ReloadAsync();
         activeWorkspace = SourceWorkspace.Overview;
+        await ValidateAsync(source.Id);
     }
 
     private async Task BeginEditAsync(ActivitySource source)
@@ -1026,6 +1043,10 @@
             {
                 SetError($"{result.Summary} {string.Join(" ", result.Details)}");
             }
+        }
+        catch (Exception)
+        {
+            SetError("來源設定已保留，但驗證未完成。請稍後按「重新驗證」再試一次。");
         }
         finally
         {

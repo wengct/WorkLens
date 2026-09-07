@@ -133,7 +133,7 @@ public sealed class SourceOrchestrator(
 
             if (source.HealthStatus != SourceHealthStatus.Ready)
             {
-                return new CollectionRunResult(false, 0, [], "來源尚未驗證，請先按「驗證」。");
+                return new CollectionRunResult(false, 0, [], "來源尚未就緒，請按「重新驗證」確認來源可用。");
             }
 
             var since = requestedStart ?? (source.LastSuccessAt is null

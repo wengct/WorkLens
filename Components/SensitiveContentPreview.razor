@@ -1,0 +1,67 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div class="sensitive-locator" @ref="container" tabindex="0" aria-label="遮蔽位置導覽，使用上下方向鍵切換">
+    <div class="sensitive-navigation">
+        <button type="button" class="button button-secondary button-small" data-sensitive-previous>↑ 上一處</button>
+        <button type="button" class="button button-secondary button-small" data-sensitive-next>↓ 下一處</button>
+        <span role="status" aria-live="polite" data-sensitive-position></span>
+        <span class="sensitive-navigation-hint">在此區按 ↑／↓ 快速定位；滑鼠停留在標記上可查看原值（僅供本機檢查）</span>
+    </div>
+    <details class="sensitive-preview-section" open>
+        <summary>工作資料預覽</summary>
+        <pre class="sensitive-preview">@Highlight(InputMarkdown, "工作資料")</pre>
+    </details>
+    @if (!string.IsNullOrWhiteSpace(EffectivePrompt))
+    {
+        <details class="sensitive-preview-section">
+            <summary>Prompt 預覽</summary>
+            <pre class="sensitive-preview">@Highlight(EffectivePrompt, "Prompt")</pre>
+        </details>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string InputMarkdown { get; set; } = string.Empty;
+    [Parameter] public string? EffectivePrompt { get; set; }
+    [Parameter] public IReadOnlyList<AiRedactionPreview> PreviewValues { get; set; } = [];
+
+    private ElementReference container;
+    private IJSObjectReference? module;
+    private static readonly System.Text.RegularExpressions.Regex Markers = new(
+        @"\[已遮蔽：(機敏憑證|個人資料|自訂敏感詞)\]",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private RenderFragment Highlight(string text, string segment) => builder =>
+    {
+        var start = 0;
+        foreach (System.Text.RegularExpressions.Match match in Markers.Matches(text))
+        {
+            var preview = PreviewValues.FirstOrDefault(value => value.Segment == segment && value.Start == match.Index);
+            if (preview is null) continue;
+
+            builder.AddContent(0, text[start..match.Index]);
+            builder.OpenElement(1, "mark");
+            builder.AddAttribute(2, "class", "sensitive-marker");
+            builder.AddAttribute(3, "title", $"原值（僅供本機檢查）：{preview.OriginalValue}");
+            builder.AddContent(4, match.Value);
+            builder.CloseElement();
+            start = match.Index + match.Length;
+        }
+        builder.AddContent(5, text[start..]);
+    };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/sensitive-preview.js");
+        await module.InvokeVoidAsync("initialize", container);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (module is null) return;
+        try { await module.DisposeAsync(); }
+        catch (JSDisconnectedException) { }
+    }
+}

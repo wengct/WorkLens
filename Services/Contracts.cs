@@ -160,7 +160,19 @@ public sealed record AiSanitizationResult(
     AiPreparedRequest? PreparedRequest,
     AiSanitizationSummary Summary)
 {
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<AiRedactionPreview> PreviewValues { get; init; } = [];
+
     public bool Succeeded => PreparedRequest is not null && Summary.IsReady;
+}
+
+// Local preview metadata only; never part of the provider request or persisted summary.
+public sealed class AiRedactionPreview(string segment, int start, string originalValue)
+{
+    public string Segment { get; } = segment;
+    public int Start { get; } = start;
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string OriginalValue { get; } = originalValue;
 }
 
 public sealed record AiSanitizerStatus(
@@ -175,7 +187,11 @@ public sealed record AiPreparedReport(
     AiPreparedRequest Request,
     Guid? PromptTemplateId,
     string PromptNameSnapshot,
-    string PromptTextSnapshot);
+    string PromptTextSnapshot)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<AiRedactionPreview> PreviewValues { get; init; } = [];
+}
 
 public sealed record AiReportPreparationResult(
     AiPreparedReport? PreparedReport,

@@ -50,6 +50,14 @@ curl -fsSL https://raw.githubusercontent.com/wengct/WorkLens/main/scripts/get.sh
 
 目前的 Release 未經 Windows code signing 或 Apple notarization。作業系統可能在第一次執行時顯示 SmartScreen 或 Gatekeeper 警告；安裝腳本不會關閉或繞過任何系統安全功能。
 
+Windows 開發環境不會將 leak-hunter 二進位檔提交到 Git。首次需要測試 AI 機敏資訊防護時，請在 repository 根目錄執行：
+
+```powershell
+.\scripts\stage-leak-hunter.ps1 -PackageDir (Get-Location).Path -Rid win-x64
+```
+
+這會從固定版本的官方 Release 下載並驗證掃描器，放入被 `.gitignore` 忽略的 `tools\leak-hunter`；之後建置會自動將它複製到執行輸出目錄。
+
 ### 管理、更新與移除
 
 Windows：

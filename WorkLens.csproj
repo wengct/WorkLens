@@ -20,4 +20,15 @@
     <None Remove="site\**" />
     <EmbeddedResource Remove="site\**" />
   </ItemGroup>
+
+  <!-- The Windows development build uses the same verified scanner layout as the release package. -->
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <None Include="tools\leak-hunter\leak-hunter.exe"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="Always" />
+    <None Include="scripts\leak-hunter.version"
+          Link="scripts\leak-hunter.version"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="Always" />
+  </ItemGroup>
 </Project>

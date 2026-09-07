@@ -2,6 +2,7 @@
 bin/
 obj/
 .vs/
+/tools/
 
 # Local IDE and user state
 *.user

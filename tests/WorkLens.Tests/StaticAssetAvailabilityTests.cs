@@ -42,12 +42,23 @@ public sealed class StaticAssetAvailabilityTests : IClassFixture<WorkLensApplica
     [InlineData("/lib/easymde/easymde.min.js")]
     [InlineData("/lib/easymde/easymde.min.css")]
     [InlineData("/js/easymde-interop.js")]
-    public async Task Offline_markdown_editor_assets_are_served(string path)
+    [InlineData("/js/action-menus.js")]
+    public async Task Offline_frontend_assets_are_served(string path)
     {
         using var response = await client.GetAsync(path);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.True(response.Content.Headers.ContentLength > 0);
+    }
+
+    [Fact]
+    public async Task Windows_development_build_copies_the_bundled_scanner_layout()
+    {
+        var project = await File.ReadAllTextAsync(FindRepositoryFile("WorkLens.csproj"));
+
+        Assert.Contains("tools\\leak-hunter\\leak-hunter.exe", project, StringComparison.Ordinal);
+        Assert.Contains("scripts\\leak-hunter.version", project, StringComparison.Ordinal);
+        Assert.Contains("CopyToOutputDirectory=\"PreserveNewest\"", project, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -68,6 +79,18 @@ public sealed class StaticAssetAvailabilityTests : IClassFixture<WorkLensApplica
         using var response = await client.GetAsync("/history");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    private static string FindRepositoryFile(params string[] parts)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "WorkLens.csproj")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(directory);
+        return Path.Combine([directory.FullName, .. parts]);
     }
 }
 

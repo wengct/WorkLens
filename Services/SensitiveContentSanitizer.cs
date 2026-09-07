@@ -165,9 +165,10 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
                     cleanSummary);
             }
 
+            var previewValues = new List<AiRedactionPreview>();
             var sanitizedSegments = segments.ToDictionary(
                 pair => pair.Key,
-                pair => pair.Value with { Text = ApplyRedactions(pair.Value.Text, rangesByFile.GetValueOrDefault(pair.Key) ?? []) },
+                pair => pair.Value with { Text = ApplyRedactions(pair.Value.Text, rangesByFile.GetValueOrDefault(pair.Key) ?? [], pair.Value.Label, previewValues) },
                 StringComparer.OrdinalIgnoreCase);
             await WriteSegmentsAsync(temporaryDirectory, sanitizedSegments, cancellationToken);
 
@@ -216,7 +217,7 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
                 request.ExecutablePath,
                 sanitizedSegments[PromptSegmentFile].Text,
                 summary);
-            return new AiSanitizationResult(prepared, summary);
+            return new AiSanitizationResult(prepared, summary) { PreviewValues = previewValues };
         }
         catch (OperationCanceledException)
         {
@@ -411,17 +412,21 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
         ranges.Add(range);
     }
 
-    private static string ApplyRedactions(string text, IReadOnlyList<RedactionRange> ranges)
+    private static string ApplyRedactions(string text, IReadOnlyList<RedactionRange> ranges,
+        string segment, List<AiRedactionPreview> previewValues)
     {
         if (ranges.Count == 0) return text;
         var merged = MergeRanges(ranges);
-        var builder = new StringBuilder(text);
-        for (var index = merged.Count - 1; index >= 0; index--)
+        var builder = new StringBuilder();
+        var start = 0;
+        foreach (var range in merged)
         {
-            var range = merged[index];
-            builder.Remove(range.Start, range.End - range.Start);
-            builder.Insert(range.Start, MarkerFor(range.Category));
+            builder.Append(text.AsSpan(start, range.Start - start));
+            previewValues.Add(new AiRedactionPreview(segment, builder.Length, text[range.Start..range.End]));
+            builder.Append(MarkerFor(range.Category));
+            start = range.End;
         }
+        builder.Append(text.AsSpan(start));
 
         return builder.ToString();
     }

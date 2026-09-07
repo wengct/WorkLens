@@ -57,6 +57,15 @@ public sealed class SensitiveContentSanitizerTests
         Assert.DoesNotContain("person@example.invalid", result.PreparedRequest.InputMarkdown, StringComparison.Ordinal);
         Assert.DoesNotContain("客戶代號", result.PreparedRequest.InputMarkdown, StringComparison.Ordinal);
         Assert.Equal(input, request.InputMarkdown);
+        Assert.Equal(4, result.PreviewValues.Count);
+        Assert.Contains(result.PreviewValues, value => value.OriginalValue == "AbC123");
+        foreach (var value in result.PreviewValues)
+        {
+            var sanitized = value.Segment == "工作資料" ? result.PreparedRequest.InputMarkdown : result.PreparedRequest.EffectivePrompt;
+            Assert.StartsWith("[已遮蔽：", sanitized[value.Start..]);
+        }
+        Assert.DoesNotContain("AbC123", JsonSerializer.Serialize(result));
+        Assert.DoesNotContain("person@example.invalid", JsonSerializer.Serialize(result.PreparedRequest));
         var scanRoot = Path.Combine(fixture.Root, "sensitive-scans");
         Assert.True(!Directory.Exists(scanRoot) || !Directory.EnumerateFileSystemEntries(scanRoot).Any());
     }

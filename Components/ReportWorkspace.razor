@@ -85,17 +85,9 @@
                     <li>@SensitiveSegmentText(notice.Segment)：@SensitiveCategoryText(notice.Category) @notice.Count 處</li>
                 }
             </ul>
-            <details class="sensitive-preview-section" open>
-                <summary>工作資料預覽</summary>
-                <pre class="sensitive-preview">@pendingAiPreparation.Request.InputMarkdown</pre>
-            </details>
-            @if (!string.IsNullOrWhiteSpace(pendingAiPreparation.Request.EffectivePrompt))
-            {
-                <details class="sensitive-preview-section">
-                    <summary>Prompt 預覽</summary>
-                    <pre class="sensitive-preview">@pendingAiPreparation.Request.EffectivePrompt</pre>
-                </details>
-            }
+            <SensitiveContentPreview InputMarkdown="@pendingAiPreparation.Request.InputMarkdown"
+                                     PreviewValues="@pendingAiPreparation.PreviewValues"
+                                     EffectivePrompt="@pendingAiPreparation.Request.EffectivePrompt" />
             <div class="modal-actions">
                 <button class="button button-secondary" type="button" @onclick="CancelSensitivePreview" disabled="@isGeneratingAi">取消</button>
                 <button class="button button-primary" type="button" @onclick="SendPreparedAiAsync" disabled="@isGeneratingAi">@(isGeneratingAi ? "整理中…" : "遮蔽後送出")</button>
