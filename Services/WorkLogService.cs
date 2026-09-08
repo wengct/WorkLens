@@ -69,7 +69,7 @@ public sealed class WorkLogService(
         {
             WorkDate = workDate,
             Hours = hours,
-            Title = ContentTitle.Resolve(title, workContent),
+            Title = ContentTitle.Normalize(title),
             WorkContent = workContent.Trim(),
             ProjectId = projectId
         };
@@ -102,7 +102,7 @@ public sealed class WorkLogService(
         var oldDate = entry.WorkDate;
         entry.WorkDate = workDate;
         entry.Hours = hours;
-        entry.Title = ContentTitle.Resolve(title, workContent);
+        entry.Title = ContentTitle.Normalize(title);
         entry.WorkContent = workContent.Trim();
         entry.ProjectId = projectId;
         entry.UpdatedAt = DateTimeOffset.UtcNow;

@@ -84,7 +84,7 @@ public sealed class ManualSourceServiceTests
         Assert.NotNull(result);
         await using var verify = new WorkLensDbContext(options);
         var updated = await verify.SourceEvidence.SingleAsync();
-        Assert.Equal("更新內容", updated.Title);
+        Assert.Equal(string.Empty, updated.Title);
         Assert.Equal("# 更新內容\n\n- 新決議", updated.CommitMessage);
         Assert.Equal(projectId, updated.ProjectId);
         Assert.True((await verify.Reports.SingleAsync()).IsStale);

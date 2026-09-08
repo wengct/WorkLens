@@ -5,7 +5,7 @@ public sealed class TodayLayoutTests
     [Fact]
     public async Task Unfinished_drafts_are_nested_above_work_records()
     {
-        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var root = FindRepositoryRoot();
         var razor = await File.ReadAllTextAsync(Path.Combine(root, "Components", "Pages", "Today.razor"));
         var css = await File.ReadAllTextAsync(Path.Combine(root, "wwwroot", "app.css"));
         Assert.True(razor.IndexOf("id=\"today-records\"", StringComparison.Ordinal) < razor.IndexOf("class=\"unfinished-drafts\"", StringComparison.Ordinal));
@@ -19,7 +19,7 @@ public sealed class TodayLayoutTests
     [Fact]
     public async Task Work_input_keeps_secondary_actions_in_header_and_uses_compact_spacing()
     {
-        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var root = FindRepositoryRoot();
         var razor = await File.ReadAllTextAsync(Path.Combine(root, "Components", "Pages", "Today.razor"));
         var css = await File.ReadAllTextAsync(Path.Combine(root, "wwwroot", "app.css"));
 
@@ -31,7 +31,7 @@ public sealed class TodayLayoutTests
     [Fact]
     public async Task Work_hours_support_half_hour_keyboard_steps()
     {
-        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var root = FindRepositoryRoot();
         var razor = await File.ReadAllTextAsync(Path.Combine(root, "Components", "WorkDraftEditor.razor"));
 
         Assert.Contains("type=\"number\" data-draft-field=\"hours\"", razor, StringComparison.Ordinal);
@@ -39,11 +39,20 @@ public sealed class TodayLayoutTests
     }
 
     [Fact]
+    public async Task Work_create_displays_the_optional_title_input()
+    {
+        var root = FindRepositoryRoot();
+        var razor = await File.ReadAllTextAsync(Path.Combine(root, "Components", "WorkDraftEditor.razor"));
+
+        Assert.Contains("標題（選填）", razor, StringComparison.Ordinal);
+        Assert.Contains("data-draft-field=\"title\"", razor, StringComparison.Ordinal);
+        Assert.DoesNotContain("Kind != WorkDraftKind.WorkCreate", razor, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Timeline_content_wraps_long_unbroken_values_inside_panels()
     {
-        var root = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory,
-            "..", "..", "..", "..", ".."));
+        var root = FindRepositoryRoot();
         var css = await File.ReadAllTextAsync(Path.Combine(root, "wwwroot", "app.css"));
 
         Assert.Contains(".timeline-item { position: relative; min-width: 0;", css, StringComparison.Ordinal);
@@ -55,12 +64,24 @@ public sealed class TodayLayoutTests
     [Fact]
     public async Task First_summary_guide_is_available_from_the_work_input_header_and_uses_a_modal()
     {
-        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+        var root = FindRepositoryRoot();
         var razor = await File.ReadAllTextAsync(Path.Combine(root, "Components", "Pages", "Today.razor"));
 
         Assert.Contains("建立第一份工作摘要", razor, StringComparison.Ordinal);
         Assert.Contains("class=\"modal-dialog getting-started-dialog\"", razor, StringComparison.Ordinal);
         Assert.Contains("RuntimeSettings.IsOnboardingDismissed", razor, StringComparison.Ordinal);
         Assert.Contains("SetOnboardingDismissedAsync(true)", razor, StringComparison.Ordinal);
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "WorkLens.csproj")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName
+            ?? throw new DirectoryNotFoundException("找不到 WorkLens repository root。");
     }
 }

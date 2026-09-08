@@ -29,13 +29,13 @@ public sealed class WorkLogServiceTests
         var entry = Assert.Single(entries);
         Assert.Equal(date, entry.WorkDate);
         Assert.Equal(7.5, entry.Hours);
-        Assert.Equal("工作內容", entry.Title);
+        Assert.Equal(string.Empty, entry.Title);
         Assert.Equal("# 工作內容\n\n- 完成離線編輯器", entry.WorkContent);
         Assert.Equal(7.5, WorkLogService.CalculateHours(entries));
     }
 
     [Fact]
-    public async Task Stores_optional_title_and_rebuilds_it_when_cleared_during_update()
+    public async Task Stores_optional_title_and_leaves_it_empty_when_cleared_during_update()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -52,7 +52,7 @@ public sealed class WorkLogServiceTests
 
         var updated = await service.UpdateAsync(entry.Id, date, 3, "# 更新後第一行\n細節", null, "  ");
         Assert.NotNull(updated);
-        Assert.Equal("更新後第一行", updated.Title);
+        Assert.Equal(string.Empty, updated.Title);
     }
 
     [Theory]

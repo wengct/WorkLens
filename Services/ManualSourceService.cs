@@ -37,7 +37,7 @@ public sealed class ManualSourceService(
             Environment = "Manual",
             Kind = EvidenceKind.Manual,
             ExternalKey = $"manual:{id:N}",
-            Title = ContentTitle.Resolve(title, normalizedContent, "參考資料"),
+            Title = ContentTitle.Normalize(title),
             CommitMessage = normalizedContent,
             OccurredAt = new DateTimeOffset(localOccurredAt, TimeZoneInfo.Local.GetUtcOffset(localOccurredAt)),
             ReachabilityStatus = CommitReachabilityStatus.Unknown
@@ -94,7 +94,7 @@ public sealed class ManualSourceService(
         await WorkDraftService.ConsumeAsync(db, draftCommit, WorkDraftKind.ManualEdit, id, cancellationToken);
         var normalizedContent = content.Trim();
         evidence.ProjectId = projectId;
-        evidence.Title = ContentTitle.Resolve(title, normalizedContent, "參考資料");
+        evidence.Title = ContentTitle.Normalize(title);
         evidence.CommitMessage = normalizedContent;
         evidence.LastObservedAt = DateTimeOffset.UtcNow;
         await ReportInvalidationService.MarkStaleInContextAsync(db,

@@ -22,10 +22,7 @@
                 }
                 @foreach (var project in Projects) { <option value="@project.Id" selected="@(initial.ProjectId == project.Id.ToString())">@project.Name</option> }
             </select></div>
-            @if (Kind != WorkDraftKind.WorkCreate)
-            {
-                <div class="field full"><label for="@(editorId + "-title")">標題（選填）</label><input id="@(editorId + "-title")" data-draft-field="title" value="@initial.Title" /></div>
-            }
+            <div class="field full"><label for="@(editorId + "-title")">標題（選填）</label><input id="@(editorId + "-title")" data-draft-field="title" value="@initial.Title" /></div>
             <div class="field full"><label for="@(editorId + "-content")">@(IsWork ? "工作內容" : "參考資料（不計入工時）")</label><textarea id="@(editorId + "-content")" data-draft-field="content" class="markdown-input" placeholder="@(IsWork ? "記下完成事項、問題或下一步…" : "貼上會議紀錄、需求討論、Email 摘要或其他工作脈絡…")">@initial.Content</textarea></div>
         </div>
     </fieldset>

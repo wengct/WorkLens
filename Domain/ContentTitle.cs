@@ -2,6 +2,12 @@ namespace WorkLens.Domain;
 
 public static class ContentTitle
 {
+    public static string Normalize(string? title)
+    {
+        var normalized = title?.Trim() ?? string.Empty;
+        return normalized.Length <= 100 ? normalized : normalized[..100] + "…";
+    }
+
     public static string Resolve(string? title, string content, string fallback = "未命名紀錄")
     {
         var candidate = string.IsNullOrWhiteSpace(title)
