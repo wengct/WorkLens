@@ -44,17 +44,34 @@ public sealed class SourceSetupUxTests
     }
 
     [Fact]
+    public async Task Setup_uses_pills_for_every_multi_value_source_field()
+    {
+        var razor = await ReadSourcesPageAsync();
+
+        Assert.Contains("repositoryPaths", razor, StringComparison.Ordinal);
+        Assert.Contains("authorEmails", razor, StringComparison.Ordinal);
+        Assert.Contains("vsCodeWorkspaceStoragePaths", razor, StringComparison.Ordinal);
+        Assert.Contains("visualStudioSolutionPaths", razor, StringComparison.Ordinal);
+        Assert.Contains("CommitVsCodeWorkspaceStoragePathInput", razor, StringComparison.Ordinal);
+        Assert.Contains("CommitVisualStudioSolutionPathInput", razor, StringComparison.Ordinal);
+        Assert.DoesNotContain("newVsCodePaths", razor, StringComparison.Ordinal);
+        Assert.DoesNotContain("newVisualStudioPaths", razor, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Setup_lists_azure_devops_cli_extension_and_uses_cascading_scope_fields()
     {
         var razor = await ReadSourcesPageAsync();
 
-        Assert.Contains("Azure DevOps PR", razor, StringComparison.Ordinal);
+        Assert.Contains("Azure DevOps</option>", razor, StringComparison.Ordinal);
         Assert.Contains("az extension add --name azure-devops", razor, StringComparison.Ordinal);
         Assert.Contains("az login", razor, StringComparison.Ordinal);
         Assert.Contains("az ad signed-in-user show", razor, StringComparison.Ordinal);
         Assert.Contains("ADO Project", razor, StringComparison.Ordinal);
         Assert.Contains("target branch", razor, StringComparison.Ordinal);
         Assert.Contains("WorkLens Project", razor, StringComparison.Ordinal);
+        Assert.Contains("收集 Work Item", razor, StringComparison.Ordinal);
+        Assert.Contains("自己撰寫或修改的 Discussion", razor, StringComparison.Ordinal);
         Assert.Contains("＋新增一組", razor, StringComparison.Ordinal);
         Assert.DoesNotContain("Organization：無法存取", razor, StringComparison.Ordinal);
         Assert.Contains("Projects：", razor, StringComparison.Ordinal);

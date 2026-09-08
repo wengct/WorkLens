@@ -45,6 +45,8 @@ select:focus { border-color: #8794ec; box-shadow: 0 0 0 3px #eef0ff; }
 .sidebar-github-link:focus-visible { outline: 2px solid #8f9cff; outline-offset: 4px; border-radius: 2px; }
 .sidebar-github-link svg { width: 17px; height: 17px; flex: 0 0 auto; }
 .sidebar-version { color: #73819f; font-size: 10px; letter-spacing: .04em; }
+.sidebar-update-link { padding: 0; color: #9fc5ff; background: none; border: 0; font: inherit; font-size: 10px; cursor: pointer; }
+.sidebar-update-link:hover { color: white; text-decoration: underline; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #55d493; box-shadow: 0 0 0 3px rgba(85,212,147,.13); }
 .main-content { width: 100%; margin-left: 248px; }
 .content-container { width: min(1180px, calc(100% - 40px)); margin: 0 auto; padding: 20px 0 72px; }
@@ -408,6 +410,9 @@ button.calendar-day:hover { border-color: #aeb8dc; transform: translateY(-1px); 
 @keyframes processing-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .processing-spinner { animation-duration: 1.8s; } }
 .code-block { padding: 13px 15px; color: #dce5ff; background: #1b2740; border-radius: 9px; overflow-x: auto; font-family: Consolas, monospace; font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
+.update-dialog { width: min(680px, 100%); }
+.update-command-label { margin: 18px 0 7px; color: var(--muted); font-size: 12px; font-weight: 700; }
+.update-command { margin: 0 0 10px; overflow-wrap: anywhere; }
 .check-list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
 .check-list li { position: relative; padding-left: 23px; color: #56647b; font-size: 13px; line-height: 1.55; }
 .check-list li::before { content: "✓"; position: absolute; left: 0; color: var(--success); font-weight: 800; }

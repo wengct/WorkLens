@@ -1,5 +1,9 @@
 @inherits LayoutComponentBase
+@implements IDisposable
 @inject StartupHealth StartupHealth
+@inject ReleaseUpdateService ReleaseUpdates
+@inject IJSRuntime JS
+@inject ToastService Toasts
 
 <ToastContainer />
 
@@ -25,7 +29,15 @@
                     </svg>
                     <span>GitHub</span>
                 </a>
-                <div class="sidebar-version">版本 v@(StartupHealth.Version)</div>
+                @if (updateStatus?.IsUpdateAvailable == true)
+                {
+                    <button class="sidebar-update-link" type="button" @onclick="OpenUpdateDialog"
+                            aria-haspopup="dialog">有新版本 @updateStatus.LatestVersion</button>
+                }
+                else
+                {
+                    <div class="sidebar-version">版本 v@(StartupHealth.Version)</div>
+                }
             </div>
         </div>
     </aside>
@@ -35,3 +47,78 @@
         </div>
     </main>
 </div>
+
+@if (showUpdateDialog && updateStatus?.IsUpdateAvailable == true)
+{
+    <div class="modal-backdrop" role="presentation" @onclick="CloseUpdateDialog">
+        <section class="modal-dialog update-dialog" role="dialog" aria-modal="true"
+                 aria-labelledby="update-dialog-title" @onclick:stopPropagation>
+            <div class="modal-heading">
+                <div>
+                    <p class="eyebrow">版本更新</p>
+                    <h2 id="update-dialog-title">WorkLens @updateStatus.LatestVersion 已發布</h2>
+                    <p>目前版本為 v@(updateStatus.CurrentVersion)。請複製下列指令，並在終端機中自行執行更新。</p>
+                </div>
+                <button class="modal-close" type="button" aria-label="關閉" @onclick="CloseUpdateDialog">×</button>
+            </div>
+            <p class="update-command-label">@(OperatingSystem.IsWindows() ? "Windows PowerShell" : "macOS Terminal")</p>
+            <pre class="code-block update-command"><code>@InstallCommand</code></pre>
+            <p class="hint">安裝器會保留工作資料；新版健康檢查失敗時會自動回復上一版。</p>
+            <div class="modal-actions">
+                @if (!string.IsNullOrWhiteSpace(updateStatus.ReleaseUrl))
+                {
+                    <a class="button button-secondary" href="@updateStatus.ReleaseUrl" target="_blank"
+                       rel="noopener noreferrer">查看更新內容</a>
+                }
+                <button class="button button-secondary" type="button" @onclick="CloseUpdateDialog">稍後再說</button>
+                <button class="button" type="button" @onclick="CopyInstallCommandAsync">複製安裝指令</button>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private const string WindowsInstallCommand = "irm https://raw.githubusercontent.com/wengct/WorkLens/main/scripts/get.ps1 | iex";
+    private const string MacOsInstallCommand = "curl -fsSL https://raw.githubusercontent.com/wengct/WorkLens/main/scripts/get.sh | bash";
+    private readonly CancellationTokenSource disposal = new();
+    private ReleaseUpdateStatus? updateStatus;
+    private bool showUpdateDialog;
+
+    private string InstallCommand => OperatingSystem.IsWindows() ? WindowsInstallCommand : MacOsInstallCommand;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            updateStatus = await ReleaseUpdates.CheckAsync(disposal.Token);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (disposal.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void OpenUpdateDialog() => showUpdateDialog = true;
+    private void CloseUpdateDialog() => showUpdateDialog = false;
+
+    private async Task CopyInstallCommandAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("workLensClipboard.copyText", InstallCommand);
+            Toasts.Success("安裝指令已複製，請貼到終端機執行。");
+        }
+        catch (JSException)
+        {
+            Toasts.Error("無法複製安裝指令，請手動選取並複製。");
+        }
+    }
+
+    public void Dispose()
+    {
+        disposal.Cancel();
+        disposal.Dispose();
+    }
+}

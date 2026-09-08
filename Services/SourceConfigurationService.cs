@@ -152,12 +152,12 @@ public sealed class SourceConfigurationService(
             settings.OrganizationUrl = SourceSettingsSerializer.NormalizeAzureDevOpsOrganizationUrl(settings.OrganizationUrl);
             if (settings.OrganizationUrl.Length == 0)
             {
-                throw new ArgumentException("Azure DevOps PR 來源必須設定 Organization URL。", nameof(source));
+                throw new ArgumentException("Azure DevOps 來源必須設定 Organization URL。", nameof(source));
             }
 
             if (!AzureDevOpsCliService.IsSupportedOrganizationUrl(settings.OrganizationUrl))
             {
-                throw new ArgumentException("Azure DevOps PR 來源的 Organization URL 必須是 Azure DevOps Services HTTPS URL。", nameof(source));
+                throw new ArgumentException("Azure DevOps 來源的 Organization URL 必須是 Azure DevOps Services HTTPS URL。", nameof(source));
             }
 
             var scopes = settings.Scopes
@@ -171,20 +171,42 @@ public sealed class SourceConfigurationService(
                     return scope;
                 })
                 .ToList();
-            if (scopes.Count == 0 || scopes.Any(scope =>
+            if (settings.CollectPullRequests && (scopes.Count == 0 || scopes.Any(scope =>
                     scope.ProjectId.Length == 0 ||
                     scope.RepositoryId.Length == 0 ||
-                    scope.TargetBranch.Length == 0))
+                    scope.TargetBranch.Length == 0)))
             {
                 throw new ArgumentException("Azure DevOps PR 來源至少需要一組完整的 Project、Repo 與 target branch。", nameof(source));
             }
 
-            if (scopes.GroupBy(SourceSettingsSerializer.AzureDevOpsScopeKey, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
+            if (settings.CollectPullRequests && scopes.GroupBy(SourceSettingsSerializer.AzureDevOpsScopeKey, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
             {
                 throw new ArgumentException("Azure DevOps PR 來源不可重複設定相同的 Project、Repo 與 target branch。", nameof(source));
             }
 
+            var workItemScopes = settings.WorkItemScopes
+                .Select(scope =>
+                {
+                    scope.ProjectId = scope.ProjectId.Trim();
+                    scope.ProjectName = scope.ProjectName.Trim();
+                    return scope;
+                })
+                .ToList();
+            if (!settings.CollectPullRequests && !settings.CollectWorkItems)
+            {
+                throw new ArgumentException("Azure DevOps 來源至少要啟用 PR 或 Work Item 收集。", nameof(source));
+            }
+            if (settings.CollectWorkItems && (workItemScopes.Count == 0 || workItemScopes.Any(scope => scope.ProjectId.Length == 0)))
+            {
+                throw new ArgumentException("Azure DevOps Work Item 來源至少需要一組完整的 Project。", nameof(source));
+            }
+            if (settings.CollectWorkItems && workItemScopes.GroupBy(SourceSettingsSerializer.AzureDevOpsWorkItemScopeKey, StringComparer.OrdinalIgnoreCase).Any(group => group.Count() > 1))
+            {
+                throw new ArgumentException("Azure DevOps Work Item 來源不可重複設定相同的 Project。", nameof(source));
+            }
+
             settings.Scopes = scopes;
+            settings.WorkItemScopes = workItemScopes;
             source.ProjectId = null;
             source.SettingsJson = SourceSettingsSerializer.Serialize(settings);
         }

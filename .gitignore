@@ -3,6 +3,7 @@ bin/
 obj/
 .vs/
 /tools/
+.artifacts-release/
 
 # Local IDE and user state
 *.user

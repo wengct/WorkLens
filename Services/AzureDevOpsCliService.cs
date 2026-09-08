@@ -47,6 +47,22 @@ public sealed record AzureDevOpsPullRequestRecord(
 
 public sealed record AzureDevOpsWorkItemReference(int Id, string Url);
 
+public sealed record AzureDevOpsWorkItemFieldUpdate(string Field, string OldValue, string NewValue);
+
+public sealed record AzureDevOpsWorkItemUpdate(
+    DateTimeOffset RevisedDate,
+    string RevisedBy,
+    IReadOnlyList<AzureDevOpsWorkItemFieldUpdate> Fields);
+
+public sealed record AzureDevOpsWorkItemComment(
+    int Id,
+    DateTimeOffset CreatedDate,
+    string CreatedBy,
+    DateTimeOffset? ModifiedDate,
+    string ModifiedBy,
+    bool IsDeleted,
+    string Text);
+
 public sealed class AzureDevOpsCliException(string message) : InvalidOperationException(message);
 
 public sealed class AzureDevOpsCliService(IProcessRunner processRunner)
@@ -352,6 +368,95 @@ public sealed class AzureDevOpsCliService(IProcessRunner processRunner)
         return ParseWorkItem(result.StandardOutput, organization, reference);
     }
 
+    public async Task<IReadOnlyList<AzureDevOpsWorkItemReference>> ListChangedWorkItemsAsync(
+        string organizationUrl,
+        AzureDevOpsWorkItemScope scope,
+        DateTimeOffset since,
+        DateTimeOffset? until,
+        CancellationToken cancellationToken = default)
+    {
+        var organization = ValidateOrganizationUrl(organizationUrl);
+        // Azure Boards organizations configured with date precision reject time values in WIQL.
+        // This intentionally makes the candidate query date-broad; the adapter applies the exact
+        // timestamp boundary to revisions and discussions before it creates evidence.
+        var start = DateOnly.FromDateTime(since.UtcDateTime).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var clauses = new List<string> { $"[System.ChangedDate] >= '{start}'" };
+        if (until is DateTimeOffset end)
+        {
+            var endText = DateOnly.FromDateTime(end.UtcDateTime).AddDays(1)
+                .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+            clauses.Add($"[System.ChangedDate] < '{endText}'");
+        }
+        var wiql = $"SELECT [System.Id] FROM WorkItems WHERE {string.Join(" AND ", clauses)} ORDER BY [System.ChangedDate] ASC";
+        var result = await RunAzAsync(
+            ["boards", "query", "--org", organization, "--project", scope.ProjectId, "--wiql", wiql],
+            CommandTimeout,
+            cancellationToken);
+        EnsureSucceeded(result, $"讀取 Project「{scope.ProjectName}」的 Work Item 失敗。");
+        return ParseWorkItemReferences(result.StandardOutput);
+    }
+
+    public async Task<IReadOnlyList<AzureDevOpsWorkItemUpdate>> GetWorkItemUpdatesAsync(
+        string organizationUrl,
+        AzureDevOpsWorkItemScope scope,
+        int workItemId,
+        CancellationToken cancellationToken = default)
+    {
+        var organization = ValidateOrganizationUrl(organizationUrl);
+        var result = await RunAzAsync(
+            [
+                "devops", "invoke", "--org", organization, "--area", "wit", "--resource", "updates",
+                "--route-parameters", $"project={scope.ProjectId}", $"id={workItemId}", "--api-version", "7.1"
+            ],
+            CommandTimeout,
+            cancellationToken);
+        EnsureSucceeded(result, $"讀取 Work Item #{workItemId} 的異動歷程失敗。");
+        return ParseWorkItemUpdates(result.StandardOutput);
+    }
+
+    public async Task<IReadOnlyList<AzureDevOpsWorkItemComment>> GetWorkItemCommentsAsync(
+        string organizationUrl,
+        AzureDevOpsWorkItemScope scope,
+        int workItemId,
+        CancellationToken cancellationToken = default)
+    {
+        var organization = ValidateOrganizationUrl(organizationUrl);
+        var all = new List<AzureDevOpsWorkItemComment>();
+        string? continuationToken = null;
+        do
+        {
+            var arguments = new List<string>
+            {
+                "devops", "invoke", "--org", organization, "--area", "wit", "--resource", "comments",
+                "--route-parameters", $"project={scope.ProjectId}", $"workItemId={workItemId}",
+                "--query-parameters", "$top=200"
+            };
+            if (continuationToken is not null)
+            {
+                arguments.Add($"continuationToken={continuationToken}");
+            }
+            arguments.Add("--api-version");
+            // az devops invoke parses a preview revision such as 7.1-preview.4 as a float
+            // and fails with "could not convert string to float". The preview channel keeps
+            // the endpoint contract while remaining compatible with the Azure CLI parser.
+            arguments.Add("7.1-preview");
+            var result = await RunAzAsync(
+                arguments,
+                CommandTimeout,
+                cancellationToken);
+            EnsureSucceeded(result, $"讀取 Work Item #{workItemId} 的 Discussion 失敗。");
+            var page = ParseWorkItemComments(result.StandardOutput, out continuationToken);
+            all.AddRange(page);
+        } while (!string.IsNullOrWhiteSpace(continuationToken));
+
+        return all.GroupBy(comment => comment.Id).Select(group => group.Last()).ToList();
+    }
+
+    public static bool IsIdentityMatch(string candidate, AzureDevOpsIdentity identity) =>
+        !string.IsNullOrWhiteSpace(candidate) &&
+        (string.Equals(candidate, identity.UniqueName, StringComparison.OrdinalIgnoreCase) ||
+         (!string.IsNullOrWhiteSpace(identity.Id) && string.Equals(candidate, identity.Id, StringComparison.OrdinalIgnoreCase)));
+
     public static string ValidateOrganizationUrl(string value)
     {
         var organization = SourceSettingsSerializer.NormalizeAzureDevOpsOrganizationUrl(value);
@@ -473,7 +578,7 @@ public sealed class AzureDevOpsCliService(IProcessRunner processRunner)
             return root.EnumerateArray();
         }
 
-        var value = GetProperty(root, "value", "items", "results");
+        var value = GetProperty(root, "value", "items", "results", "workItems", "comments");
         return value.ValueKind == JsonValueKind.Array
             ? value.EnumerateArray()
             : Enumerable.Empty<JsonElement>();
@@ -678,6 +783,52 @@ public sealed class AzureDevOpsCliService(IProcessRunner processRunner)
             .ToList();
     }
 
+    private static IReadOnlyList<AzureDevOpsWorkItemUpdate> ParseWorkItemUpdates(string json)
+    {
+        using var document = ParseDocument(json);
+        return GetArrayResult(document.RootElement)
+            .Select(item =>
+            {
+                var revisedBy = GetObject(item, "revisedBy");
+                var fields = new List<AzureDevOpsWorkItemFieldUpdate>();
+                var fieldsElement = GetProperty(item, "fields");
+                if (fieldsElement.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var field in fieldsElement.EnumerateObject())
+                    {
+                        fields.Add(new AzureDevOpsWorkItemFieldUpdate(
+                            field.Name,
+                            JsonValueToText(GetProperty(field.Value, "oldValue")),
+                            JsonValueToText(GetProperty(field.Value, "newValue"))));
+                    }
+                }
+                return new AzureDevOpsWorkItemUpdate(
+                    GetDateTimeOffset(item, "revisedDate"),
+                    GetIdentityName(revisedBy),
+                    fields);
+            })
+            .Where(item => item.RevisedDate != default)
+            .OrderBy(item => item.RevisedDate)
+            .ToList();
+    }
+
+    private static IReadOnlyList<AzureDevOpsWorkItemComment> ParseWorkItemComments(string json, out string? continuationToken)
+    {
+        using var document = ParseDocument(json);
+        continuationToken = GetString(document.RootElement, "continuationToken");
+        return GetArrayResult(document.RootElement)
+            .Select(item => new AzureDevOpsWorkItemComment(
+                GetInt(item, "id"),
+                GetDateTimeOffset(item, "createdDate", "createdOnBehalfDate"),
+                GetIdentityName(GetObject(item, "createdBy", "createdOnBehalfOf")),
+                GetNullableDateTimeOffset(item, "modifiedDate"),
+                GetIdentityName(GetObject(item, "modifiedBy")),
+                GetBoolean(item, "isDeleted"),
+                GetString(item, "text", "renderedText") ?? string.Empty))
+            .Where(item => item.Id > 0 && item.CreatedDate != default)
+            .ToList();
+    }
+
     private static AzureDevOpsWorkItemMetadata ParseWorkItem(
         string json,
         string organizationUrl,
@@ -756,6 +907,17 @@ public sealed class AzureDevOpsCliService(IProcessRunner processRunner)
             _ => value.GetRawText()
         };
     }
+
+    private static string GetIdentityName(JsonElement identity) =>
+        GetString(identity, "uniqueName", "mail", "email", "mailAddress", "principalName", "id") ?? string.Empty;
+
+    private static string JsonValueToText(JsonElement value) => value.ValueKind switch
+    {
+        JsonValueKind.String => value.GetString() ?? string.Empty,
+        JsonValueKind.Object => GetIdentityName(value) is { Length: > 0 } identity ? identity : value.GetRawText(),
+        JsonValueKind.Null or JsonValueKind.Undefined => string.Empty,
+        _ => value.GetRawText()
+    };
 
     private static JsonElement ParseObject(string json)
     {

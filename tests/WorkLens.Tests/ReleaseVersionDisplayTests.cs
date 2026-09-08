@@ -10,6 +10,8 @@ public sealed class ReleaseVersionDisplayTests
 
         Assert.Contains("v@(StartupHealth.Version)", layout, StringComparison.Ordinal);
         Assert.DoesNotContain("v@StartupHealth.Version</div>", layout, StringComparison.Ordinal);
+        Assert.Contains("v@(updateStatus.CurrentVersion)", layout, StringComparison.Ordinal);
+        Assert.DoesNotContain("v@updateStatus.CurrentVersion。", layout, StringComparison.Ordinal);
         Assert.Contains("-p:Version=$version", workflow, StringComparison.Ordinal);
         Assert.Contains("-p:InformationalVersion=$version", workflow, StringComparison.Ordinal);
     }

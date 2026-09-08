@@ -562,6 +562,7 @@ public sealed class ReportService(
             .Where(x => x.Kind != EvidenceKind.WorkingTreeSnapshot)
             .OrderBy(x => x.OccurredAt)
             .ToList();
+        var standaloneWorkItemIds = GetStandaloneWorkItemIds(activities);
         if (activities.Count == 0)
         {
             builder.AppendLine("- 尚未收集自動活動；請以人工紀錄補充工作過程。");
@@ -578,7 +579,8 @@ public sealed class ReportService(
                         : string.Empty;
                     builder.AppendLine($"- {activity.OccurredAt:HH:mm} [{activity.Kind}] {activity.Title} {status}");
                     AppendCommitMessage(builder, activity);
-                    AppendAzureDevOpsSummary(builder, activity);
+                    AppendAzureDevOpsSummary(builder, activity, standaloneWorkItemIds);
+                    AppendAzureDevOpsWorkItemActivitySummary(builder, activity);
                 }
             }
         }
@@ -636,10 +638,12 @@ public sealed class ReportService(
         }
 
         builder.AppendLine("來源活動：");
+        var standaloneWorkItemIds = GetStandaloneWorkItemIds(evidence);
         foreach (var item in evidence)
         {
             builder.AppendLine($"- {item.OccurredAt:O}｜{item.Kind}｜專案={ProjectName(item.ProjectId, projectNames)}｜title={item.Title}｜message={item.CommitMessage}｜branch={item.Branch}");
-            AppendAzureDevOpsAiSummary(builder, item);
+            AppendAzureDevOpsAiSummary(builder, item, standaloneWorkItemIds);
+            AppendAzureDevOpsWorkItemActivityAiSummary(builder, item);
         }
 
         return builder.ToString();
@@ -684,7 +688,7 @@ public sealed class ReportService(
         builder.AppendLine("  " + activity.CommitMessage.Trim().Replace(Environment.NewLine, Environment.NewLine + "  "));
     }
 
-    private static void AppendAzureDevOpsSummary(StringBuilder builder, SourceEvidence activity)
+    private static void AppendAzureDevOpsSummary(StringBuilder builder, SourceEvidence activity, ISet<int> standaloneWorkItemIds)
     {
         if (activity.Kind is not (EvidenceKind.AzureDevOpsPullRequestCreated or EvidenceKind.AzureDevOpsPullRequestClosed))
         {
@@ -705,6 +709,11 @@ public sealed class ReportService(
         foreach (var workItem in metadata.WorkItems)
         {
             builder.AppendLine($"  Work Item #{workItem.Id} [{workItem.Type}/{workItem.State}] {workItem.Title}");
+            if (standaloneWorkItemIds.Contains(workItem.Id))
+            {
+                builder.AppendLine("  詳細活動已由獨立 Work Item 證據提供。");
+                continue;
+            }
             if (!string.IsNullOrWhiteSpace(workItem.Description))
             {
                 var description = AzureDevOpsCliService.ToPlainText(workItem.Description);
@@ -719,7 +728,7 @@ public sealed class ReportService(
         }
     }
 
-    private static void AppendAzureDevOpsAiSummary(StringBuilder builder, SourceEvidence activity)
+    private static void AppendAzureDevOpsAiSummary(StringBuilder builder, SourceEvidence activity, ISet<int> standaloneWorkItemIds)
     {
         if (activity.Kind is not (EvidenceKind.AzureDevOpsPullRequestCreated or EvidenceKind.AzureDevOpsPullRequestClosed))
         {
@@ -741,6 +750,11 @@ public sealed class ReportService(
         foreach (var workItem in metadata.WorkItems)
         {
             builder.AppendLine($"  Work Item #{workItem.Id}｜類型={workItem.Type}｜狀態={workItem.State}｜標題={workItem.Title}｜Assigned To={workItem.AssignedTo}");
+            if (standaloneWorkItemIds.Contains(workItem.Id))
+            {
+                builder.AppendLine("  詳細活動已由獨立 Work Item 證據提供。");
+                continue;
+            }
             if (!string.IsNullOrWhiteSpace(workItem.Description))
             {
                 builder.AppendLine("  Description：" + AzureDevOpsCliService.ToPlainText(workItem.Description));
@@ -755,6 +769,44 @@ public sealed class ReportService(
             {
                 builder.AppendLine("  Tags：" + workItem.Tags);
             }
+        }
+    }
+
+    private static HashSet<int> GetStandaloneWorkItemIds(IEnumerable<SourceEvidence> evidence) =>
+        evidence.Where(item => item.Kind == EvidenceKind.AzureDevOpsWorkItemActivity)
+            .Select(item => SourceSettingsSerializer.DeserializeAzureDevOpsWorkItemActivityMetadata(item.MetadataJson)?.WorkItem.Id ?? 0)
+            .Where(id => id > 0)
+            .ToHashSet();
+
+    private static void AppendAzureDevOpsWorkItemActivitySummary(StringBuilder builder, SourceEvidence activity)
+    {
+        if (activity.Kind != EvidenceKind.AzureDevOpsWorkItemActivity) return;
+        var metadata = SourceSettingsSerializer.DeserializeAzureDevOpsWorkItemActivityMetadata(activity.MetadataJson);
+        if (metadata is null) return;
+        builder.AppendLine($"  Work Item #{metadata.WorkItem.Id} [{metadata.WorkItem.Type}/{metadata.WorkItem.State}]");
+        if (metadata.FieldChanges.Count > 0)
+        {
+            builder.AppendLine("  本人異動欄位：" + string.Join("、", metadata.FieldChanges.Select(change => change.Field).Distinct(StringComparer.OrdinalIgnoreCase)));
+        }
+        foreach (var discussion in metadata.Discussions)
+        {
+            builder.AppendLine("  Discussion：" + AzureDevOpsCliService.ToPlainText(discussion.Text));
+        }
+    }
+
+    private static void AppendAzureDevOpsWorkItemActivityAiSummary(StringBuilder builder, SourceEvidence activity)
+    {
+        if (activity.Kind != EvidenceKind.AzureDevOpsWorkItemActivity) return;
+        var metadata = SourceSettingsSerializer.DeserializeAzureDevOpsWorkItemActivityMetadata(activity.MetadataJson);
+        if (metadata is null) return;
+        builder.AppendLine($"  Work Item：#{metadata.WorkItem.Id}｜類型={metadata.WorkItem.Type}｜狀態={metadata.WorkItem.State}｜標題={metadata.WorkItem.Title}｜Assigned To={metadata.WorkItem.AssignedTo}");
+        foreach (var change in metadata.FieldChanges)
+        {
+            builder.AppendLine($"  異動：{change.Field}｜{AzureDevOpsCliService.ToPlainText(change.OldValue)} → {AzureDevOpsCliService.ToPlainText(change.NewValue)}");
+        }
+        foreach (var discussion in metadata.Discussions)
+        {
+            builder.AppendLine("  自己的 Discussion：" + AzureDevOpsCliService.ToPlainText(discussion.Text));
         }
     }
 

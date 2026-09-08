@@ -21,8 +21,45 @@ public sealed class SourceOrchestrator(
     ReportInvalidationService invalidation,
     ILogger<SourceOrchestrator> logger)
 {
+    private static readonly TimeSpan CollectionHeartbeatInterval = TimeSpan.FromSeconds(15);
+
     private readonly ConcurrentDictionary<Guid, SemaphoreSlim> locks = new();
     private readonly ConcurrentDictionary<Guid, CancellationTokenSource> activeCollections = new();
+
+    public async Task<int> RecoverStaleCollectionsAsync(
+        TimeSpan staleAfter,
+        CancellationToken cancellationToken = default)
+    {
+        if (staleAfter < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(staleAfter));
+        }
+
+        var staleBefore = DateTimeOffset.UtcNow - staleAfter;
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        var staleSources = await db.ActivitySources.AsNoTracking()
+            .Where(source => source.HealthStatus == SourceHealthStatus.Running &&
+                             !source.IsArchived)
+            .ToListAsync(cancellationToken);
+        staleSources = staleSources
+            .Where(source => source.UpdatedAt <= staleBefore)
+            .ToList();
+        var recovered = 0;
+        foreach (var source in staleSources)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (await StopCollectionAsync(source.Id, cancellationToken))
+            {
+                recovered++;
+                logger.LogWarning(
+                    "資料來源 {Source} 已超過 {StaleAfter} 未回報收集心跳，已自動復原。",
+                    SourceLogLabel(source),
+                    staleAfter);
+            }
+        }
+
+        return recovered;
+    }
 
     public async Task<bool> StopCollectionAsync(
         Guid sourceId,
@@ -55,7 +92,7 @@ public sealed class SourceOrchestrator(
         source.LastError = null;
         source.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
-        logger.LogInformation("已復原沒有活動收集工作的 Running 來源 {SourceId}", sourceId);
+        logger.LogInformation("已復原沒有活動收集工作的 Running 來源 {Source}", SourceLogLabel(source));
         return true;
     }
 
@@ -119,8 +156,11 @@ public sealed class SourceOrchestrator(
         var gate = locks.GetOrAdd(sourceId, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken);
         using var collectionCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var heartbeatCancellation = CancellationTokenSource.CreateLinkedTokenSource(collectionCancellation.Token);
         activeCollections[sourceId] = collectionCancellation;
         var collectionToken = collectionCancellation.Token;
+        var sourceLabel = sourceId.ToString();
+        Task? heartbeatTask = null;
         try
         {
             await using var readDb = await factory.CreateDbContextAsync(collectionToken);
@@ -130,6 +170,8 @@ public sealed class SourceOrchestrator(
             {
                 return new CollectionRunResult(false, 0, [], "來源未啟用。");
             }
+
+            sourceLabel = SourceLogLabel(source);
 
             if (source.HealthStatus != SourceHealthStatus.Ready)
             {
@@ -142,15 +184,20 @@ public sealed class SourceOrchestrator(
             var adapter = registry.Get(source.SourceType);
 
             await SetRunningAsync(sourceId, collectionToken);
+            heartbeatTask = KeepCollectionHeartbeatAsync(sourceId, heartbeatCancellation.Token);
             var batch = await adapter.CollectAsync(
                 new CollectionRequest(source, since, requestedEnd, updateCheckpoint, collectionToken),
                 collectionToken);
             collectionToken.ThrowIfCancellationRequested();
+            heartbeatCancellation.Cancel();
+            await WaitForHeartbeatAsync(heartbeatTask);
+            heartbeatTask = null;
 
             await using var db = await factory.CreateDbContextAsync(collectionToken);
             await using var transaction = await db.Database.BeginTransactionAsync(collectionToken);
             var trackedSource = await db.ActivitySources.SingleAsync(x => x.Id == sourceId, collectionToken);
 
+            await RemovePlaceholderWorkItemEvidenceAsync(db, sourceId, collectionToken);
             var changes = await UpsertEvidenceAsync(db, batch.Evidence, collectionToken);
             await UpdateCurrentStatusAsync(db, batch, collectionToken);
             await ReconcileLineageAsync(db, sourceId, batch, collectionToken);
@@ -171,6 +218,22 @@ public sealed class SourceOrchestrator(
             await db.SaveChangesAsync(collectionToken);
             await transaction.CommitAsync(collectionToken);
 
+            if (batch.SuccessfulRepositories == 0 && batch.Warnings.Count > 0)
+            {
+                logger.LogError(
+                    "資料來源同步失敗 {Source}：{Errors}",
+                    sourceLabel,
+                    string.Join(Environment.NewLine, batch.Warnings.Take(10)));
+            }
+            else if (batch.Warnings.Count > 0)
+            {
+                logger.LogWarning(
+                    "資料來源同步完成，但 {Source} 有 {WarningCount} 個警告：{Warnings}",
+                    sourceLabel,
+                    batch.Warnings.Count,
+                    string.Join(Environment.NewLine, batch.Warnings.Take(10)));
+            }
+
             if (changes.ChangedDates.Count > 0)
             {
                 // The collection transaction is already committed. Finish its bookkeeping even if
@@ -189,24 +252,29 @@ public sealed class SourceOrchestrator(
         }
         catch (OperationCanceledException) when (collectionToken.IsCancellationRequested)
         {
-            logger.LogInformation("資料來源 {SourceId} 收集已由使用者或主機取消", sourceId);
-            await RestoreReadyAfterCancellationAsync(sourceId);
+            logger.LogInformation("資料來源 {Source} 收集已由使用者或主機取消", sourceLabel);
+            await RestoreReadyAfterCancellationAsync(sourceId, sourceLabel);
             return new CollectionRunResult(false, 0, [], "收集已停止。", Canceled: true);
         }
         catch (Exception exception) when (exception is InvalidOperationException or IOException or DbUpdateException)
         {
-            logger.LogWarning(exception, "資料來源 {SourceId} 收集失敗", sourceId);
-            await MarkErrorAsync(sourceId, exception.Message, cancellationToken);
+            logger.LogWarning(exception, "資料來源 {Source} 收集失敗", sourceLabel);
+            await MarkErrorAsync(sourceId, sourceLabel, exception.Message, cancellationToken);
             return new CollectionRunResult(false, 0, [], exception.Message);
         }
         finally
         {
+            heartbeatCancellation.Cancel();
+            if (heartbeatTask is not null)
+            {
+                await WaitForHeartbeatAsync(heartbeatTask);
+            }
             activeCollections.TryRemove(sourceId, out _);
             gate.Release();
         }
     }
 
-    private async Task RestoreReadyAfterCancellationAsync(Guid sourceId)
+    private async Task RestoreReadyAfterCancellationAsync(Guid sourceId, string sourceLabel)
     {
         try
         {
@@ -224,7 +292,7 @@ public sealed class SourceOrchestrator(
         }
         catch (Exception exception) when (exception is InvalidOperationException or DbUpdateException)
         {
-            logger.LogWarning(exception, "無法還原已取消來源的狀態 {SourceId}", sourceId);
+            logger.LogWarning(exception, "無法還原已取消來源 {Source} 的狀態", sourceLabel);
         }
     }
 
@@ -234,10 +302,51 @@ public sealed class SourceOrchestrator(
         var source = await db.ActivitySources.SingleAsync(x => x.Id == sourceId, cancellationToken);
         source.HealthStatus = SourceHealthStatus.Running;
         source.LastError = null;
+        source.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task MarkErrorAsync(Guid sourceId, string error, CancellationToken cancellationToken)
+    private async Task KeepCollectionHeartbeatAsync(Guid sourceId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(CollectionHeartbeatInterval);
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await using var db = await factory.CreateDbContextAsync(cancellationToken);
+                var source = await db.ActivitySources.SingleOrDefaultAsync(
+                    item => item.Id == sourceId && item.HealthStatus == SourceHealthStatus.Running,
+                    cancellationToken);
+                if (source is null)
+                {
+                    return;
+                }
+
+                source.UpdatedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync(cancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or IOException or DbUpdateException)
+        {
+            logger.LogWarning(exception, "無法更新資料來源 {SourceId} 的收集心跳", sourceId);
+        }
+    }
+
+    private static async Task WaitForHeartbeatAsync(Task heartbeatTask)
+    {
+        try
+        {
+            await heartbeatTask;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task MarkErrorAsync(Guid sourceId, string sourceLabel, string error, CancellationToken cancellationToken)
     {
         try
         {
@@ -255,9 +364,14 @@ public sealed class SourceOrchestrator(
         }
         catch (Exception markException) when (markException is InvalidOperationException or DbUpdateException)
         {
-            logger.LogWarning(markException, "無法更新來源錯誤狀態 {SourceId}", sourceId);
+            logger.LogWarning(markException, "無法更新來源 {Source} 的錯誤狀態", sourceLabel);
         }
     }
+
+    private static string SourceLogLabel(ActivitySource source) =>
+        string.IsNullOrWhiteSpace(source.DisplayName)
+            ? source.Id.ToString()
+            : $"{source.DisplayName} ({source.Id})";
 
     private static async Task<EvidenceUpsertResult> UpsertEvidenceAsync(
         WorkLensDbContext db,
@@ -331,6 +445,21 @@ public sealed class SourceOrchestrator(
             }
         }
         return result;
+    }
+
+    private static async Task RemovePlaceholderWorkItemEvidenceAsync(
+        WorkLensDbContext db,
+        Guid sourceId,
+        CancellationToken cancellationToken)
+    {
+        var placeholders = await db.SourceEvidence
+            .Where(item => item.SourceId == sourceId && item.Kind == EvidenceKind.AzureDevOpsWorkItemActivity)
+            .ToListAsync(cancellationToken);
+        var invalid = placeholders.Where(item => item.OccurredAt.Year == 9999).ToList();
+        if (invalid.Count > 0)
+        {
+            db.SourceEvidence.RemoveRange(invalid);
+        }
     }
 
     private static bool IsMateriallyDifferent(SourceEvidence current, SourceEvidence incoming) =>

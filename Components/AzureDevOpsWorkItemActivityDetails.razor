@@ -1,0 +1,61 @@
+@using WorkLens.Domain
+
+@if (Metadata is not null)
+{
+    <details class="ado-pr-details">
+        <summary>Azure DevOps Work Item 活動</summary>
+        <div class="ado-pr-meta">
+            <span>類型：@Metadata.WorkItem.Type</span>
+            <span>狀態：@Metadata.WorkItem.State</span>
+            <span>Project：@Metadata.ProjectName</span>
+            @if (!string.IsNullOrWhiteSpace(Metadata.WorkItem.AssignedTo))
+            {
+                <span>Assigned To：@Metadata.WorkItem.AssignedTo</span>
+            }
+        </div>
+        @if (WorkItemUrl is string workItemUrl)
+        {
+            <a class="timeline-link" href="@workItemUrl" target="_blank" rel="noreferrer">在 Azure DevOps 開啟 Work Item</a>
+        }
+        @if (Metadata.FieldChanges.Count > 0)
+        {
+            <div class="ado-work-items">
+                <strong>本人異動欄位</strong>
+                @foreach (var field in Metadata.FieldChanges)
+                {
+                    <div class="ado-work-item-field"><strong>@field.Field：</strong>@DisplayChange(field)</div>
+                }
+            </div>
+        }
+        @if (Metadata.Discussions.Count > 0)
+        {
+            <div class="ado-work-items">
+                <strong>自己的 Discussion</strong>
+                @foreach (var discussion in Metadata.Discussions)
+                {
+                    <div class="ado-work-item-field"><strong>@discussion.OccurredAt.ToLocalTime().ToString("HH:mm")@(discussion.IsEdited ? "（已修改）" : string.Empty)：</strong>@AzureDevOpsCliService.ToPlainText(discussion.Text)</div>
+                }
+            </div>
+        }
+    </details>
+}
+
+@code {
+    [Parameter] public SourceEvidence Evidence { get; set; } = new();
+
+    private AzureDevOpsWorkItemActivityMetadata? Metadata =>
+        SourceSettingsSerializer.DeserializeAzureDevOpsWorkItemActivityMetadata(Evidence.MetadataJson);
+
+    private string? WorkItemUrl => Metadata is null ? null : AzureDevOpsCliService.ToWorkItemWebUrl(
+        Metadata.WorkItem.Url,
+        Metadata.WorkItem.Id,
+        Metadata.OrganizationUrl,
+        Metadata.ProjectId);
+
+    private static string DisplayChange(AzureDevOpsWorkItemFieldChange field)
+    {
+        var oldValue = AzureDevOpsCliService.ToPlainText(field.OldValue);
+        var newValue = AzureDevOpsCliService.ToPlainText(field.NewValue);
+        return oldValue.Length == 0 ? newValue : newValue.Length == 0 ? $"{oldValue} → （清除）" : $"{oldValue} → {newValue}";
+    }
+}

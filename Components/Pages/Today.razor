@@ -175,6 +175,10 @@
                             {
                                 <AzureDevOpsPullRequestDetails Evidence="item" />
                             }
+                            else if (item.Kind == EvidenceKind.AzureDevOpsWorkItemActivity)
+                            {
+                                <AzureDevOpsWorkItemActivityDetails Evidence="item" />
+                            }
                             else
                             {
                                 @item.RepositoryKey

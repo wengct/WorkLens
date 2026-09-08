@@ -24,7 +24,7 @@ public sealed class SourceRegistry(IEnumerable<IActivitySourceAdapter> adapters)
                     ActivitySourceType.WslCodex => "WSL Codex",
                     ActivitySourceType.MacOsGit => "macOS Git",
                     ActivitySourceType.MacOsCodex => "macOS Codex",
-                    ActivitySourceType.AzureDevOpsPullRequest => "Azure DevOps PR",
+                    ActivitySourceType.AzureDevOpsPullRequest => "Azure DevOps",
                     ActivitySourceType.WindowsClaudeCode => "Windows Claude Code",
                     ActivitySourceType.WslClaudeCode => "WSL Claude Code",
                     ActivitySourceType.MacOsClaudeCode => "macOS Claude Code",

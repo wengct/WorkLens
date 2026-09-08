@@ -100,6 +100,14 @@ builder.Services.AddSingleton<AzureDevOpsCliService>();
 builder.Services.AddSingleton<AskBridgeService>();
 builder.Services.AddSingleton<IAiSecretProtector, AiSecretProtector>();
 builder.Services.AddHttpClient("AiProvider", client => client.Timeout = TimeSpan.FromMinutes(5));
+builder.Services.AddHttpClient("GitHubReleases", client =>
+{
+    client.BaseAddress = new Uri("https://api.github.com/");
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("WorkLens-Update-Checker");
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
+    client.Timeout = TimeSpan.FromSeconds(10);
+});
+builder.Services.AddSingleton<ReleaseUpdateService>();
 builder.Services.AddSingleton<IAiProviderAdapter>(serviceProvider =>
     serviceProvider.GetRequiredService<AskBridgeService>());
 foreach (var providerType in new[] { "openai", "azure-openai", "anthropic", "gemini", "openai-compatible" })

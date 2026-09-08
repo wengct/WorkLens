@@ -46,6 +46,7 @@ public enum EvidenceKind
     CodexSession,
     AzureDevOpsPullRequestCreated,
     AzureDevOpsPullRequestClosed,
+    AzureDevOpsWorkItemActivity,
     ClaudeCodeSession,
     CopilotSession
 }

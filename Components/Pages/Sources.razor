@@ -58,7 +58,7 @@
                 <option value="Copilot">GitHub Copilot CLI／App 工作紀錄</option>
                 <option value="VsCodeCopilot">VS Code Copilot Chat 工作紀錄</option>
                 <option value="VisualStudioCopilot">Visual Studio Copilot Chat（Visual Studio 2026）</option>
-                <option value="AzureDevOps">Azure DevOps PR</option>
+                <option value="AzureDevOps">Azure DevOps</option>
             </select>
         </div>
         @if (SupportsWsl && newKind != SourceKind.AzureDevOps)
@@ -162,19 +162,47 @@
                 }
                 else if (newKind == SourceKind.VisualStudioCopilot)
                 {
-                    <input id="aiCodeHome" @bind="newVisualStudioPaths" placeholder="填入方案目錄；多個路徑請以分號分隔" />
+                    <div class="pill-editor">
+                        @foreach (var path in visualStudioSolutionPaths)
+                        {
+                            <span class="email-pill">
+                                <span title="@path">@path</span>
+                                <button type="button" class="pill-remove" title="移除 @path" aria-label="移除 @path" @onclick="() => RemoveVisualStudioSolutionPath(path)">×</button>
+                            </span>
+                        }
+                        <input id="aiCodeHome"
+                               value="@visualStudioSolutionPathInput"
+                               @oninput="HandleVisualStudioSolutionPathInput"
+                               @onkeydown="HandleVisualStudioSolutionPathKeyDown"
+                               @onblur="CommitVisualStudioSolutionPathInput"
+                               placeholder="輸入方案目錄後按 Enter" />
+                    </div>
                 }
                 else
                 {
-                    <input id="aiCodeHome" @bind="newVsCodePaths" placeholder="留空即自動偵測 Stable／Insiders workspaceStorage" />
+                    <div class="pill-editor">
+                        @foreach (var path in vsCodeWorkspaceStoragePaths)
+                        {
+                            <span class="email-pill">
+                                <span title="@path">@path</span>
+                                <button type="button" class="pill-remove" title="移除 @path" aria-label="移除 @path" @onclick="() => RemoveVsCodeWorkspaceStoragePath(path)">×</button>
+                            </span>
+                        }
+                        <input id="aiCodeHome"
+                               value="@vsCodeWorkspaceStoragePathInput"
+                               @oninput="HandleVsCodeWorkspaceStoragePathInput"
+                               @onkeydown="HandleVsCodeWorkspaceStoragePathKeyDown"
+                               @onblur="CommitVsCodeWorkspaceStoragePathInput"
+                               placeholder="留空即自動偵測 Stable／Insiders workspaceStorage" />
+                    </div>
                 }
                 @if (newKind == SourceKind.VsCodeCopilot)
                 {
-                    <span class="hint">可填一或多個 workspaceStorage 根目錄，以分號分隔；每個 workspace 下會掃描 chatSessions。</span>
+                    <span class="hint">一個 workspaceStorage 根目錄一個 pill；可貼上多行路徑，或輸入後按 Enter 加入。留空即自動偵測 Stable／Insiders workspaceStorage。</span>
                 }
                 else if (newKind == SourceKind.VisualStudioCopilot)
                 {
-                    <span class="hint">WorkLens 會從方案目錄尋找 .vs/copilot-chat；支援 Visual Studio 2026 Chat 與 Agent（Preview）。</span>
+                    <span class="hint">一個方案目錄一個 pill；可貼上多行路徑，或輸入後按 Enter 加入。WorkLens 會從方案目錄尋找 .vs/copilot-chat。</span>
                 }
                 else
                 {
@@ -232,9 +260,11 @@
                 </div>
                 <div class="ado-scope-editor">
                     <div class="ado-scope-heading">
-                        <strong>PR 收集組合</strong>
+                        <label class="inline-checkbox"><input type="checkbox" @bind="collectAdoPullRequests" /> 收集 PR</label>
                         <span class="hint">只會取得目前登入者建立、且 target branch 符合的 PR。</span>
                     </div>
+                    @if (collectAdoPullRequests)
+                    {
                     @foreach (var scope in adoScopes)
                     {
                         <div class="ado-scope-row" @key="scope">
@@ -282,6 +312,43 @@
                         </div>
                     }
                     <button type="button" class="button button-secondary button-small" @onclick="AddAdoScope" disabled="@isLoadingAdoOptions">＋新增一組</button>
+                    }
+                </div>
+                <div class="ado-scope-editor">
+                    <div class="ado-scope-heading">
+                        <label class="inline-checkbox"><input type="checkbox" @bind="collectAdoWorkItems" /> 收集 Work Item</label>
+                        <span class="hint">只會納入自己實際修改的欄位與自己撰寫或修改的 Discussion；同一天合併為一筆活動。</span>
+                    </div>
+                    @if (collectAdoWorkItems)
+                    {
+                        @foreach (var scope in adoWorkItemScopes)
+                        {
+                            <div class="ado-scope-row" @key="scope">
+                                <div class="field">
+                                    <label>ADO Project</label>
+                                    <select value="@scope.ProjectId" @onchange="eventArgs => ChangeAdoWorkItemProject(scope, eventArgs.Value?.ToString())" disabled="@isLoadingAdoOptions">
+                                        <option value="">請先選擇 Project</option>
+                                        @foreach (var project in adoProjects)
+                                        {
+                                            <option value="@project.Id">@project.Name</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="field">
+                                    <label>WorkLens Project</label>
+                                    <select value="@(scope.WorkLensProjectId?.ToString() ?? string.Empty)" @onchange="eventArgs => ChangeWorkItemWorkLensProject(scope, eventArgs.Value?.ToString())">
+                                        <option value="">待分類</option>
+                                        @foreach (var project in projects)
+                                        {
+                                            <option value="@project.Id">@project.Name</option>
+                                        }
+                                    </select>
+                                </div>
+                                <button type="button" class="button button-danger button-small ado-scope-remove" @onclick="() => RemoveAdoWorkItemScope(scope)" disabled="@(adoWorkItemScopes.Count == 1)">移除</button>
+                            </div>
+                        }
+                        <button type="button" class="button button-secondary button-small" @onclick="AddAdoWorkItemScope" disabled="@isLoadingAdoOptions">＋新增一組</button>
+                    }
                 </div>
             </div>
         }
@@ -354,7 +421,7 @@
     {
         <div class="empty-state">
             <h3>目前是純人工模式</h3>
-            <p>這是預設狀態。你可以稍後再新增目前平台的 Git、Codex、Claude Code、GitHub Copilot、VS Code Copilot 或 Azure DevOps PR 來源。</p>
+            <p>這是預設狀態。你可以稍後再新增目前平台的 Git、Codex、Claude Code、GitHub Copilot、VS Code Copilot 或 Azure DevOps 來源。</p>
             <button type="button" class="button button-primary" @onclick="BeginAdd">新增第一個來源</button>
         </div>
     }
@@ -391,7 +458,7 @@
                         }
                         @if (adoSettings is not null)
                         {
-                            <span> · @adoSettings.Scopes.Count 組 · @adoSettings.OrganizationUrl</span>
+                            <span> · PR：@(adoSettings.CollectPullRequests ? $"{adoSettings.Scopes.Count} 組" : "未啟用") · Work Item：@(adoSettings.CollectWorkItems ? $"{adoSettings.WorkItemScopes.Count} 組" : "未啟用") · @adoSettings.OrganizationUrl</span>
                         }
                     </div>
                     @if (validationResults.TryGetValue(source.Id, out var validation))
@@ -468,8 +535,10 @@
     private string newCodexHome = string.Empty;
     private string newClaudeCodeHome = string.Empty;
     private string newCopilotHome = string.Empty;
-    private string newVsCodePaths = string.Empty;
-    private string newVisualStudioPaths = string.Empty;
+    private List<string> vsCodeWorkspaceStoragePaths = [];
+    private string vsCodeWorkspaceStoragePathInput = string.Empty;
+    private List<string> visualStudioSolutionPaths = [];
+    private string visualStudioSolutionPathInput = string.Empty;
     private string newAdoOrganization = string.Empty;
     private List<string> repositoryPaths = [];
     private string repositoryPathInput = string.Empty;
@@ -484,6 +553,9 @@
     private IReadOnlyList<AzureDevOpsOption> adoProjects = [];
     private string? adoProjectLoadError;
     private readonly List<AzureDevOpsScopeForm> adoScopes = [];
+    private readonly List<AzureDevOpsWorkItemScopeForm> adoWorkItemScopes = [];
+    private bool collectAdoPullRequests = true;
+    private bool collectAdoWorkItems = true;
     private bool isLoadingAdoOptions;
     private Guid? editingSourceId;
     private Guid? resetSourceId;
@@ -530,6 +602,14 @@
             CommitAuthorEmailInput();
             CommitRepositoryPathInput();
         }
+        else if (IsVsCodeCopilotType(newType))
+        {
+            CommitVsCodeWorkspaceStoragePathInput();
+        }
+        else if (newType == ActivitySourceType.WindowsVisualStudioCopilot)
+        {
+            CommitVisualStudioSolutionPathInput();
+        }
         var paths = repositoryPaths
             .Where(path => path.Length > 0)
             .Where(x => x.Length > 0)
@@ -560,7 +640,7 @@
             return;
         }
 
-        if (newType == ActivitySourceType.WindowsVisualStudioCopilot && ParsePathList(newVisualStudioPaths).Count == 0)
+        if (newType == ActivitySourceType.WindowsVisualStudioCopilot && visualStudioSolutionPaths.Count == 0)
         {
             SetError("Visual Studio Copilot Chat 來源至少需要一個方案目錄。");
             return;
@@ -575,10 +655,15 @@
                 return;
             }
 
-            if (adoScopes.Count == 0 || adoScopes.Any(scope =>
+            if (!collectAdoPullRequests && !collectAdoWorkItems)
+            {
+                SetError("Azure DevOps 來源至少要啟用 PR 或 Work Item 收集。");
+                return;
+            }
+            if (collectAdoPullRequests && (adoScopes.Count == 0 || adoScopes.Any(scope =>
                     string.IsNullOrWhiteSpace(scope.ProjectId) ||
                     string.IsNullOrWhiteSpace(scope.RepositoryId) ||
-                    string.IsNullOrWhiteSpace(scope.ToSettings().TargetBranch)))
+                    string.IsNullOrWhiteSpace(scope.ToSettings().TargetBranch))))
             {
                 SetError("Azure DevOps PR 來源至少需要一組完整的 Project、Repo 與 target branch。");
                 return;
@@ -587,9 +672,20 @@
             var scopeKeys = adoScopes
                 .Select(scope => SourceSettingsSerializer.AzureDevOpsScopeKey(scope.ToSettings()))
                 .ToList();
-            if (scopeKeys.Count != scopeKeys.Distinct(StringComparer.OrdinalIgnoreCase).Count())
+            if (collectAdoPullRequests && scopeKeys.Count != scopeKeys.Distinct(StringComparer.OrdinalIgnoreCase).Count())
             {
                 SetError("Azure DevOps PR 來源不可重複設定相同的 Project、Repo 與 target branch。");
+                return;
+            }
+            if (collectAdoWorkItems && (adoWorkItemScopes.Count == 0 || adoWorkItemScopes.Any(scope => string.IsNullOrWhiteSpace(scope.ProjectId))))
+            {
+                SetError("Azure DevOps Work Item 收集至少需要一組完整的 Project。");
+                return;
+            }
+            var workItemScopeKeys = adoWorkItemScopes.Select(scope => SourceSettingsSerializer.AzureDevOpsWorkItemScopeKey(scope.ToSettings())).ToList();
+            if (collectAdoWorkItems && workItemScopeKeys.Count != workItemScopeKeys.Distinct(StringComparer.OrdinalIgnoreCase).Count())
+            {
+                SetError("Azure DevOps Work Item 收集不可重複設定相同的 Project。");
                 return;
             }
         }
@@ -630,7 +726,10 @@
                     ? SourceSettingsSerializer.Serialize(new AzureDevOpsSourceSettings
                     {
                         OrganizationUrl = SourceSettingsSerializer.NormalizeAzureDevOpsOrganizationUrl(newAdoOrganization),
-                        Scopes = adoScopes.Select(scope => scope.ToSettings()).ToList()
+                        Scopes = adoScopes.Select(scope => scope.ToSettings()).ToList(),
+                        CollectPullRequests = collectAdoPullRequests,
+                        CollectWorkItems = collectAdoWorkItems,
+                        WorkItemScopes = adoWorkItemScopes.Select(scope => scope.ToSettings()).ToList()
                     })
                      : IsCodexType(newType)
                          ? SourceSettingsSerializer.Serialize(new CodexSourceSettings
@@ -653,12 +752,12 @@
                                  : IsVsCodeCopilotType(newType)
                                      ? SourceSettingsSerializer.Serialize(new VsCodeCopilotSourceSettings
                                      {
-                                         WorkspaceStoragePaths = ParsePathList(newVsCodePaths),
+                                         WorkspaceStoragePaths = vsCodeWorkspaceStoragePaths.ToList(),
                                          Distro = newType == ActivitySourceType.WslVsCodeCopilot ? newDistro.Trim() : null
                                      })
                                      : SourceSettingsSerializer.Serialize(new VisualStudioCopilotSourceSettings
                                      {
-                                         SolutionPaths = ParsePathList(newVisualStudioPaths)
+                                         SolutionPaths = visualStudioSolutionPaths.ToList()
                                      })
         };
         await SourceConfig.SaveAsync(source);
@@ -683,8 +782,10 @@
             newCodexHome = string.Empty;
             newClaudeCodeHome = string.Empty;
             newCopilotHome = string.Empty;
-            newVsCodePaths = string.Empty;
-            newVisualStudioPaths = string.Empty;
+            vsCodeWorkspaceStoragePaths.Clear();
+            vsCodeWorkspaceStoragePathInput = string.Empty;
+            visualStudioSolutionPaths.Clear();
+            visualStudioSolutionPathInput = string.Empty;
             repositoryPaths = settings.RepositoryPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             authorEmails = SourceSettingsSerializer.NormalizeAuthorEmails(settings.AuthorEmails).ToList();
         }
@@ -696,11 +797,16 @@
             newCodexHome = string.Empty;
             newClaudeCodeHome = string.Empty;
             newCopilotHome = string.Empty;
-            newVsCodePaths = string.Empty;
-            newVisualStudioPaths = string.Empty;
+            vsCodeWorkspaceStoragePaths.Clear();
+            vsCodeWorkspaceStoragePathInput = string.Empty;
+            visualStudioSolutionPaths.Clear();
+            visualStudioSolutionPathInput = string.Empty;
             repositoryPaths.Clear();
             authorEmails.Clear();
             adoScopes.Clear();
+            adoWorkItemScopes.Clear();
+            collectAdoPullRequests = settings.CollectPullRequests;
+            collectAdoWorkItems = settings.CollectWorkItems;
             foreach (var scope in settings.Scopes)
             {
                 adoScopes.Add(new AzureDevOpsScopeForm(scope));
@@ -710,6 +816,14 @@
             {
                 adoScopes.Add(new AzureDevOpsScopeForm());
             }
+            foreach (var scope in settings.WorkItemScopes)
+            {
+                adoWorkItemScopes.Add(new AzureDevOpsWorkItemScopeForm(scope));
+            }
+            if (adoWorkItemScopes.Count == 0)
+            {
+                adoWorkItemScopes.Add(new AzureDevOpsWorkItemScopeForm());
+            }
         }
         else if (IsClaudeCodeType(source.SourceType))
         {
@@ -718,8 +832,10 @@
             newClaudeCodeHome = settings.ClaudeCodeHome ?? string.Empty;
             newCodexHome = string.Empty;
             newCopilotHome = string.Empty;
-            newVsCodePaths = string.Empty;
-            newVisualStudioPaths = string.Empty;
+            vsCodeWorkspaceStoragePaths.Clear();
+            vsCodeWorkspaceStoragePathInput = string.Empty;
+            visualStudioSolutionPaths.Clear();
+            visualStudioSolutionPathInput = string.Empty;
             repositoryPaths.Clear();
             authorEmails.Clear();
         }
@@ -730,8 +846,10 @@
             newCopilotHome = settings.CopilotHome ?? string.Empty;
             newCodexHome = string.Empty;
             newClaudeCodeHome = string.Empty;
-            newVsCodePaths = string.Empty;
-            newVisualStudioPaths = string.Empty;
+            vsCodeWorkspaceStoragePaths.Clear();
+            vsCodeWorkspaceStoragePathInput = string.Empty;
+            visualStudioSolutionPaths.Clear();
+            visualStudioSolutionPathInput = string.Empty;
             repositoryPaths.Clear();
             authorEmails.Clear();
         }
@@ -739,23 +857,27 @@
         {
             var settings = SourceSettingsSerializer.DeserializeVsCodeCopilot(source.SettingsJson);
             newDistro = settings.Distro ?? string.Empty;
-            newVsCodePaths = string.Join(";", settings.WorkspaceStoragePaths);
+            vsCodeWorkspaceStoragePaths = settings.WorkspaceStoragePaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            vsCodeWorkspaceStoragePathInput = string.Empty;
             newCodexHome = string.Empty;
             newClaudeCodeHome = string.Empty;
             newCopilotHome = string.Empty;
-            newVisualStudioPaths = string.Empty;
+            visualStudioSolutionPaths.Clear();
+            visualStudioSolutionPathInput = string.Empty;
             repositoryPaths.Clear();
             authorEmails.Clear();
         }
         else if (source.SourceType == ActivitySourceType.WindowsVisualStudioCopilot)
         {
             var settings = SourceSettingsSerializer.DeserializeVisualStudioCopilot(source.SettingsJson);
-            newVisualStudioPaths = string.Join(";", settings.SolutionPaths);
+            visualStudioSolutionPaths = settings.SolutionPaths.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            visualStudioSolutionPathInput = string.Empty;
             newDistro = string.Empty;
             newCodexHome = string.Empty;
             newClaudeCodeHome = string.Empty;
             newCopilotHome = string.Empty;
-            newVsCodePaths = string.Empty;
+            vsCodeWorkspaceStoragePaths.Clear();
+            vsCodeWorkspaceStoragePathInput = string.Empty;
             repositoryPaths.Clear();
             authorEmails.Clear();
         }
@@ -766,8 +888,10 @@
             newCodexHome = settings.CodexHome ?? string.Empty;
             newClaudeCodeHome = string.Empty;
             newCopilotHome = string.Empty;
-            newVsCodePaths = string.Empty;
-            newVisualStudioPaths = string.Empty;
+            vsCodeWorkspaceStoragePaths.Clear();
+            vsCodeWorkspaceStoragePathInput = string.Empty;
+            visualStudioSolutionPaths.Clear();
+            visualStudioSolutionPathInput = string.Empty;
             repositoryPaths.Clear();
             authorEmails.Clear();
         }
@@ -809,6 +933,10 @@
         {
             adoScopes.Add(new AzureDevOpsScopeForm());
         }
+        if (adoWorkItemScopes.Count == 0)
+        {
+            adoWorkItemScopes.Add(new AzureDevOpsWorkItemScopeForm());
+        }
 
         await DiagnoseAzureDevOpsAsync();
     }
@@ -820,6 +948,10 @@
         adoProjects = [];
         adoProjectLoadError = null;
         foreach (var scope in adoScopes)
+        {
+            scope.ClearSelections();
+        }
+        foreach (var scope in adoWorkItemScopes)
         {
             scope.ClearSelections();
         }
@@ -866,6 +998,11 @@
                 {
                     await LoadAdoRepositoriesAsync(scope);
                 }
+            }
+            foreach (var scope in adoWorkItemScopes)
+            {
+                scope.ProjectName = adoProjects.FirstOrDefault(project =>
+                    string.Equals(project.Id, scope.ProjectId, StringComparison.OrdinalIgnoreCase))?.Name ?? scope.ProjectName;
             }
         }
         catch (AzureDevOpsCliException exception)
@@ -960,13 +1097,33 @@
         scope.WorkLensProjectId = Guid.TryParse(projectId, out var parsed) ? parsed : null;
     }
 
+    private void ChangeAdoWorkItemProject(AzureDevOpsWorkItemScopeForm scope, string? projectId)
+    {
+        scope.ProjectId = projectId?.Trim() ?? string.Empty;
+        scope.ProjectName = adoProjects.FirstOrDefault(project =>
+            string.Equals(project.Id, scope.ProjectId, StringComparison.OrdinalIgnoreCase))?.Name ?? string.Empty;
+    }
+
+    private static void ChangeWorkItemWorkLensProject(AzureDevOpsWorkItemScopeForm scope, string? projectId) =>
+        scope.WorkLensProjectId = Guid.TryParse(projectId, out var parsed) ? parsed : null;
+
     private void AddAdoScope() => adoScopes.Add(new AzureDevOpsScopeForm());
+
+    private void AddAdoWorkItemScope() => adoWorkItemScopes.Add(new AzureDevOpsWorkItemScopeForm());
 
     private void RemoveAdoScope(AzureDevOpsScopeForm scope)
     {
         if (adoScopes.Count > 1)
         {
             adoScopes.Remove(scope);
+        }
+    }
+
+    private void RemoveAdoWorkItemScope(AzureDevOpsWorkItemScopeForm scope)
+    {
+        if (adoWorkItemScopes.Count > 1)
+        {
+            adoWorkItemScopes.Remove(scope);
         }
     }
 
@@ -1288,6 +1445,58 @@
     private void RemoveAuthorEmail(string email) =>
         authorEmails.RemoveAll(value => string.Equals(value, email, StringComparison.OrdinalIgnoreCase));
 
+    private void HandleVsCodeWorkspaceStoragePathKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            CommitVsCodeWorkspaceStoragePathInput();
+        }
+    }
+
+    private void HandleVsCodeWorkspaceStoragePathInput(ChangeEventArgs args)
+    {
+        vsCodeWorkspaceStoragePathInput = args.Value?.ToString() ?? string.Empty;
+        if (ContainsPathSeparator(vsCodeWorkspaceStoragePathInput))
+        {
+            CommitVsCodeWorkspaceStoragePathInput();
+        }
+    }
+
+    private void CommitVsCodeWorkspaceStoragePathInput()
+    {
+        AddPaths(vsCodeWorkspaceStoragePathInput, vsCodeWorkspaceStoragePaths);
+        vsCodeWorkspaceStoragePathInput = string.Empty;
+    }
+
+    private void RemoveVsCodeWorkspaceStoragePath(string path) =>
+        vsCodeWorkspaceStoragePaths.RemoveAll(value => string.Equals(value, path, StringComparison.OrdinalIgnoreCase));
+
+    private void HandleVisualStudioSolutionPathKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            CommitVisualStudioSolutionPathInput();
+        }
+    }
+
+    private void HandleVisualStudioSolutionPathInput(ChangeEventArgs args)
+    {
+        visualStudioSolutionPathInput = args.Value?.ToString() ?? string.Empty;
+        if (ContainsPathSeparator(visualStudioSolutionPathInput))
+        {
+            CommitVisualStudioSolutionPathInput();
+        }
+    }
+
+    private void CommitVisualStudioSolutionPathInput()
+    {
+        AddPaths(visualStudioSolutionPathInput, visualStudioSolutionPaths);
+        visualStudioSolutionPathInput = string.Empty;
+    }
+
+    private void RemoveVisualStudioSolutionPath(string path) =>
+        visualStudioSolutionPaths.RemoveAll(value => string.Equals(value, path, StringComparison.OrdinalIgnoreCase));
+
     private void ResetForm()
     {
         newName = string.Empty;
@@ -1297,13 +1506,18 @@
         newCodexHome = string.Empty;
         newClaudeCodeHome = string.Empty;
         newCopilotHome = string.Empty;
-        newVsCodePaths = string.Empty;
-        newVisualStudioPaths = string.Empty;
+        vsCodeWorkspaceStoragePaths.Clear();
+        vsCodeWorkspaceStoragePathInput = string.Empty;
+        visualStudioSolutionPaths.Clear();
+        visualStudioSolutionPathInput = string.Empty;
         newAdoOrganization = string.Empty;
         adoDiagnostics = null;
         adoProjects = [];
         adoProjectLoadError = null;
         adoScopes.Clear();
+        adoWorkItemScopes.Clear();
+        collectAdoPullRequests = true;
+        collectAdoWorkItems = true;
         repositoryPaths.Clear();
         repositoryPathInput = string.Empty;
         authorEmails.Clear();
@@ -1338,10 +1552,18 @@
         _ => "資料目錄（選填）"
     };
 
-    private static List<string> ParsePathList(string value) =>
-        value.Split([';', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+    private static bool ContainsPathSeparator(string value) => value.IndexOfAny([';', '\r', '\n']) >= 0;
+
+    private static void AddPaths(string value, List<string> paths)
+    {
+        foreach (var path in value.Split([';', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!paths.Contains(path, StringComparer.OrdinalIgnoreCase))
+            {
+                paths.Add(path);
+            }
+        }
+    }
 
     private static bool IsGitType(ActivitySourceType type) =>
         type is ActivitySourceType.WindowsGit or ActivitySourceType.WslGit or ActivitySourceType.MacOsGit;
@@ -1369,7 +1591,7 @@
         ActivitySourceType.WslCodex => "WSL Codex",
         ActivitySourceType.MacOsGit => "macOS Git",
         ActivitySourceType.MacOsCodex => "macOS Codex",
-        ActivitySourceType.AzureDevOpsPullRequest => "Azure DevOps PR",
+        ActivitySourceType.AzureDevOpsPullRequest => "Azure DevOps",
         ActivitySourceType.WindowsClaudeCode => "Windows Claude Code",
         ActivitySourceType.WslClaudeCode => "WSL Claude Code",
         ActivitySourceType.MacOsClaudeCode => "macOS Claude Code",
@@ -1412,7 +1634,7 @@
         (SourceKind.ClaudeCode, SourceLocation.Wsl) => "Claude Code－WSL",
         (SourceKind.Copilot, SourceLocation.Wsl) => "GitHub Copilot－WSL",
         (SourceKind.VsCodeCopilot, SourceLocation.Wsl) => "VS Code Copilot－WSL",
-        (SourceKind.AzureDevOps, _) => "Azure DevOps PR",
+        (SourceKind.AzureDevOps, _) => "Azure DevOps",
         (SourceKind.Git, _) => "Git－此電腦",
         (SourceKind.Codex, _) => "Codex－此電腦",
         (SourceKind.ClaudeCode, _) => "Claude Code－此電腦",
@@ -1508,6 +1730,37 @@
             TargetBranch = string.Empty;
             Repositories.Clear();
             Branches.Clear();
+        }
+    }
+
+    private sealed class AzureDevOpsWorkItemScopeForm
+    {
+        public AzureDevOpsWorkItemScopeForm()
+        {
+        }
+
+        public AzureDevOpsWorkItemScopeForm(AzureDevOpsWorkItemScope scope)
+        {
+            ProjectId = scope.ProjectId;
+            ProjectName = scope.ProjectName;
+            WorkLensProjectId = scope.WorkLensProjectId;
+        }
+
+        public string ProjectId { get; set; } = string.Empty;
+        public string ProjectName { get; set; } = string.Empty;
+        public Guid? WorkLensProjectId { get; set; }
+
+        public AzureDevOpsWorkItemScope ToSettings() => new()
+        {
+            ProjectId = ProjectId,
+            ProjectName = ProjectName,
+            WorkLensProjectId = WorkLensProjectId
+        };
+
+        public void ClearSelections()
+        {
+            ProjectId = string.Empty;
+            ProjectName = string.Empty;
         }
     }
 

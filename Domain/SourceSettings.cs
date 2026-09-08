@@ -42,7 +42,11 @@ public sealed class VisualStudioCopilotSourceSettings
 public sealed class AzureDevOpsSourceSettings
 {
     public string OrganizationUrl { get; set; } = string.Empty;
+    // Kept for backward-compatible PR source settings persisted by previous releases.
     public List<AzureDevOpsPullRequestScope> Scopes { get; set; } = [];
+    public bool CollectPullRequests { get; set; } = true;
+    public bool CollectWorkItems { get; set; }
+    public List<AzureDevOpsWorkItemScope> WorkItemScopes { get; set; } = [];
 }
 
 public sealed class AzureDevOpsPullRequestScope
@@ -52,6 +56,13 @@ public sealed class AzureDevOpsPullRequestScope
     public string RepositoryId { get; set; } = string.Empty;
     public string RepositoryName { get; set; } = string.Empty;
     public string TargetBranch { get; set; } = string.Empty;
+    public Guid? WorkLensProjectId { get; set; }
+}
+
+public sealed class AzureDevOpsWorkItemScope
+{
+    public string ProjectId { get; set; } = string.Empty;
+    public string ProjectName { get; set; } = string.Empty;
     public Guid? WorkLensProjectId { get; set; }
 }
 
@@ -96,6 +107,32 @@ public sealed class AzureDevOpsWorkItemRelation
     public string Rel { get; set; } = string.Empty;
     public string Url { get; set; } = string.Empty;
     public string? AttributesJson { get; set; }
+}
+
+public sealed class AzureDevOpsWorkItemActivityMetadata
+{
+    public string OrganizationUrl { get; set; } = string.Empty;
+    public string ProjectId { get; set; } = string.Empty;
+    public string ProjectName { get; set; } = string.Empty;
+    public AzureDevOpsWorkItemMetadata WorkItem { get; set; } = new();
+    public List<AzureDevOpsWorkItemFieldChange> FieldChanges { get; set; } = [];
+    public List<AzureDevOpsWorkItemDiscussion> Discussions { get; set; } = [];
+}
+
+public sealed class AzureDevOpsWorkItemFieldChange
+{
+    public DateTimeOffset ChangedAt { get; set; }
+    public string Field { get; set; } = string.Empty;
+    public string OldValue { get; set; } = string.Empty;
+    public string NewValue { get; set; } = string.Empty;
+}
+
+public sealed class AzureDevOpsWorkItemDiscussion
+{
+    public int Id { get; set; }
+    public DateTimeOffset OccurredAt { get; set; }
+    public bool IsEdited { get; set; }
+    public string Text { get; set; } = string.Empty;
 }
 
 public sealed class CodexSessionMetadata
@@ -311,6 +348,17 @@ public static class SourceSettingsSerializer
             var settings = JsonSerializer.Deserialize<AzureDevOpsSourceSettings>(json, Options)
                 ?? new AzureDevOpsSourceSettings();
             settings.Scopes ??= [];
+            settings.WorkItemScopes ??= [];
+            // A setting persisted before the Work Item feature has no boolean properties;
+            // treat it as the legacy PR-only collector rather than changing its behavior.
+            if (!json.Contains("collectPullRequests", StringComparison.OrdinalIgnoreCase))
+            {
+                settings.CollectPullRequests = true;
+            }
+            if (!json.Contains("collectWorkItems", StringComparison.OrdinalIgnoreCase))
+            {
+                settings.CollectWorkItems = false;
+            }
             settings.Scopes.RemoveAll(scope => scope is null);
             foreach (var scope in settings.Scopes)
             {
@@ -319,6 +367,12 @@ public static class SourceSettingsSerializer
                 scope.RepositoryId ??= string.Empty;
                 scope.RepositoryName ??= string.Empty;
                 scope.TargetBranch ??= string.Empty;
+            }
+            settings.WorkItemScopes.RemoveAll(scope => scope is null);
+            foreach (var scope in settings.WorkItemScopes)
+            {
+                scope.ProjectId ??= string.Empty;
+                scope.ProjectName ??= string.Empty;
             }
             return settings;
         }
@@ -366,6 +420,29 @@ public static class SourceSettingsSerializer
         }
     }
 
+    public static string SerializeAzureDevOpsWorkItemActivityMetadata(AzureDevOpsWorkItemActivityMetadata metadata) =>
+        JsonSerializer.Serialize(metadata, Options);
+
+    public static AzureDevOpsWorkItemActivityMetadata? DeserializeAzureDevOpsWorkItemActivityMetadata(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            var metadata = JsonSerializer.Deserialize<AzureDevOpsWorkItemActivityMetadata>(json, Options);
+            if (metadata is null) return null;
+            metadata.WorkItem ??= new AzureDevOpsWorkItemMetadata();
+            metadata.WorkItem.Fields ??= new(StringComparer.OrdinalIgnoreCase);
+            metadata.WorkItem.Relations ??= [];
+            metadata.FieldChanges ??= [];
+            metadata.Discussions ??= [];
+            return metadata;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     public static string NormalizeAzureDevOpsOrganizationUrl(string? value)
     {
         var normalized = (value ?? string.Empty).Trim().TrimEnd('/');
@@ -390,6 +467,9 @@ public static class SourceSettingsSerializer
 
     public static string AzureDevOpsScopeKey(AzureDevOpsPullRequestScope scope) =>
         $"{(scope.ProjectId ?? string.Empty).Trim()}|{(scope.RepositoryId ?? string.Empty).Trim()}|{NormalizeAzureDevOpsBranch(scope.TargetBranch)}";
+
+    public static string AzureDevOpsWorkItemScopeKey(AzureDevOpsWorkItemScope scope) =>
+        (scope.ProjectId ?? string.Empty).Trim();
 
     public static string SerializeMetadata(CodexSessionMetadata metadata) =>
         JsonSerializer.Serialize(metadata, Options);
