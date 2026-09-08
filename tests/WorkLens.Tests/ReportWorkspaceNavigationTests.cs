@@ -18,6 +18,10 @@ public sealed class ReportWorkspaceNavigationTests
         Assert.Contains("產生 AI 摘要", workspace, StringComparison.Ordinal);
         Assert.Contains("還原上一版", workspace, StringComparison.Ordinal);
         Assert.Contains("不受左側歷程篩選影響", workspace, StringComparison.Ordinal);
+        Assert.Contains(
+            "exception is JSException or JSDisconnectedException",
+            workspace,
+            StringComparison.Ordinal);
         Assert.Contains("href=\"/reports\"", navigation, StringComparison.Ordinal);
         Assert.DoesNotContain("/history", navigation, StringComparison.Ordinal);
     }

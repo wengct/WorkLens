@@ -252,7 +252,7 @@
         if (editorAttached)
         {
             try { await JS.InvokeVoidAsync("workLensReportEditor.detach", "report-body-editor"); }
-            catch (JSException) { }
+            catch (Exception exception) when (exception is JSException or JSDisconnectedException) { }
         }
     }
 
