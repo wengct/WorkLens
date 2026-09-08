@@ -84,5 +84,13 @@ exit 23
         Unregister-ScheduledTask -TaskName $TestTask -Confirm:$false
     }
     if ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($TestRoot)) -ne $TempRoot) { throw "Unsafe cleanup path." }
-    Remove-Item -LiteralPath $TestRoot -Recurse -Force
+    for ($attempt = 1; $attempt -le 10; $attempt++) {
+        try {
+            Remove-Item -LiteralPath $TestRoot -Recurse -Force
+            break
+        } catch {
+            if ($attempt -eq 10) { throw }
+            Start-Sleep -Milliseconds 250
+        }
+    }
 }
