@@ -50,8 +50,8 @@
 
 <div class="summary-workspace">
     <div class="summary-history-column">
-        <details class="panel history-browser">
-            <summary><strong>瀏覽日期</strong><small>週／月檢視只用來瀏覽歷程</small></summary>
+        <details class="panel history-browser" open>
+            <summary><span><strong>瀏覽日期</strong><small>週／月檢視只用來瀏覽歷程</small></span><span class="history-browser-toggle">點此展開／收合</span></summary>
             <section class="history-calendar-panel">
             <div class="panel-heading">
                 <div><h2>@CalendarTitle()</h2><p>@(kind == ReportKind.Daily ? "點選日期，查看當日歷程與摘要。" : "點選任一天，查看該週歷程與摘要。")</p></div>

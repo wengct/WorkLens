@@ -785,8 +785,11 @@ button.calendar-day:hover { border-color: #aeb8dc; transform: translateY(-1px); 
 .source-health-list li, .unfinished-drafts li { margin-block: 8px; overflow-wrap: anywhere; }
 .source-health-list span { display: block; }
 .history-browser > summary, .report-prompt-picker > summary, .report-secondary-actions > summary { cursor: pointer; }
-.history-browser > summary { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
+.history-browser > summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; align-items: baseline; list-style: none; }
+.history-browser > summary::-webkit-details-marker { display: none; }
+.history-browser > summary > span:first-child { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; }
 .history-browser > summary small { color: var(--muted, #697386); }
+.history-browser-toggle { color: var(--primary); font-size: 11px; font-weight: 700; }
 .history-browser .history-calendar-panel { margin-top: 14px; }
 .report-prompt-picker, .report-secondary-actions { margin-top: 12px; }
 .report-secondary-actions > div { margin-top: 10px; }
