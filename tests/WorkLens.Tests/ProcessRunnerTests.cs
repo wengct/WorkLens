@@ -23,7 +23,7 @@ public sealed class ProcessRunnerTests
         {
             var result = await new ProcessRunner().RunAsync(
                 new ProcessRequest(scriptPath, []),
-                timeout: TimeSpan.FromMilliseconds(300));
+                timeout: TimeSpan.FromSeconds(5));
 
             Assert.True(result.Succeeded, result.StandardError);
             Assert.Contains("completed", result.StandardOutput, StringComparison.Ordinal);

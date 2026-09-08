@@ -2,6 +2,10 @@
 
 WorkLens 的所有重要變更皆記錄於此文件。
 
+## [1.6.1] - 2026-09-09
+
+- 修正 Windows 發行驗證中，背景子程序管線測試的逾時設定過短，避免 CI 偶發失敗而中斷套件發佈。
+
 ## [1.6.0] - 2026-09-09
 
 - Azure DevOps 資料來源現在可在同一組 Organization 設定中分別收集 PR 與 Work Item；Work Item 只納入目前登入使用者的欄位異動與自己撰寫／修改的 Discussion，按日合併並可映射至 WorkLens Project。
