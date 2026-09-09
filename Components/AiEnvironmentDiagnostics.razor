@@ -1,0 +1,42 @@
+@using WorkLens.Services
+
+<div class="panel">
+    <div class="panel-heading">
+        <div>
+            <h2>環境診斷</h2>
+            <p>@Detection.Validation.Summary</p>
+        </div>
+    </div>
+    <div class="form-grid">
+        <div class="field">
+            <label>執行檔</label>
+            <div class="hint">@(Detection.ExecutablePath ?? "未找到")</div>
+        </div>
+        <div class="field">
+            <label>版本</label>
+            <div class="hint">@(Detection.Version ?? "未取得")</div>
+        </div>
+        <div class="field">
+            <label>Node.js</label>
+            <div class="hint">@(Detection.NodeAvailable ? "可用" : "不可用")</div>
+        </div>
+        <div class="field">
+            <label>Chrome</label>
+            <div class="hint">@(Detection.ChromeAvailable ? "可用" : "不可用")</div>
+        </div>
+    </div>
+    @if (Detection.Validation.Details is { Count: > 0 })
+    {
+        <ul class="hint ai-diagnostic-details">
+            @foreach (var detail in Detection.Validation.Details)
+            {
+                <li>@detail</li>
+            }
+        </ul>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public required AiDetectionResult Detection { get; set; }
+}
