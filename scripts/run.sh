@@ -15,7 +15,22 @@ executable="${install_dir}/versions/${version}/WorkLens"
 
 export ASPNETCORE_URLS="http://127.0.0.1:${port}"
 export DOTNET_ENVIRONMENT="Production"
-export PATH="${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+
+# launchd does not load interactive shell profiles, so Node installed by nvm
+# is otherwise invisible to WorkLens and ask-bridge. Resolve nvm's default
+# Node installation when it is available, without hard-coding a version.
+nvm_dir="${NVM_DIR:-${HOME}/.nvm}"
+nvm_node_bin=""
+if [[ -s "${nvm_dir}/nvm.sh" ]]; then
+  # shellcheck disable=SC1090
+  . "${nvm_dir}/nvm.sh" --no-use
+  nvm_node="$(nvm which default 2>/dev/null || true)"
+  if [[ -x "$nvm_node" ]]; then
+    nvm_node_bin="$(dirname "$nvm_node")"
+  fi
+fi
+
+export PATH="${HOME}/.local/bin:${nvm_node_bin:+${nvm_node_bin}:}/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
 app_pid=""
 cleanup() { rm -f "$pid_file"; }
 terminate() {
