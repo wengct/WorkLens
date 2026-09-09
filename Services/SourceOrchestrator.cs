@@ -104,14 +104,35 @@ public sealed class SourceOrchestrator(
         var source = await db.ActivitySources.SingleOrDefaultAsync(x => x.Id == sourceId, cancellationToken);
         if (source is null)
         {
+            logger.LogWarning("資料來源驗證失敗：找不到來源 {SourceId}", sourceId);
             return SourceValidationResult.Invalid(SourceHealthStatus.Error, "找不到資料來源。");
         }
 
-        var result = await registry.Get(source.SourceType).ValidateAsync(source, cancellationToken);
+        SourceValidationResult result;
+        try
+        {
+            result = await registry.Get(source.SourceType).ValidateAsync(source, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            logger.LogError(exception, "資料來源 {Source} 驗證發生未預期錯誤", SourceLogLabel(source));
+            throw;
+        }
+
         source.HealthStatus = source.Enabled ? result.Status : SourceHealthStatus.Disabled;
         source.LastError = result.IsValid ? null : result.Summary;
         source.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
+
+        if (!result.IsValid)
+        {
+            logger.LogWarning(
+                "資料來源 {Source} 驗證失敗，狀態：{Status}，原因：{Summary}",
+                SourceLogLabel(source),
+                result.Status,
+                result.Summary);
+        }
+
         return result;
     }
 

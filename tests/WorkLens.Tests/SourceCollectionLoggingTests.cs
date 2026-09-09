@@ -11,6 +11,58 @@ namespace WorkLens.Tests;
 public sealed class SourceCollectionLoggingTests
 {
     [Fact]
+    public async Task ValidateAsync_writes_validation_failure_to_the_local_log()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
+        var sourceId = Guid.NewGuid();
+        await using (var setup = new WorkLensDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            setup.ActivitySources.Add(new ActivitySource
+            {
+                Id = sourceId,
+                DisplayName = "Invalid source",
+                SourceType = ActivitySourceType.WindowsCodex,
+                Enabled = true,
+                HealthStatus = SourceHealthStatus.Ready
+            });
+            await setup.SaveChangesAsync();
+        }
+
+        var logDirectory = Path.Combine(Path.GetTempPath(), "WorkLens.Tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var provider = new LocalFileLoggerProvider(logDirectory);
+            using var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(provider));
+            var factory = new TestDbContextFactory(options);
+            var orchestrator = new SourceOrchestrator(
+                factory,
+                new SourceRegistry([new InvalidAdapter()]),
+                new ReportInvalidationService(factory),
+                loggerFactory.CreateLogger<SourceOrchestrator>());
+
+            var result = await orchestrator.ValidateAsync(sourceId);
+
+            Assert.False(result.IsValid);
+            var logFile = Assert.Single(Directory.GetFiles(logDirectory, "worklens-*.log"));
+            var content = await File.ReadAllTextAsync(logFile);
+            Assert.Contains("[Warning]", content, StringComparison.Ordinal);
+            Assert.Contains("資料來源 Invalid source", content, StringComparison.Ordinal);
+            Assert.Contains("驗證失敗", content, StringComparison.Ordinal);
+            Assert.Contains("測試驗證失敗", content, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(logDirectory))
+            {
+                Directory.Delete(logDirectory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task RecoverStaleCollectionsAsync_recovers_only_expired_running_sources()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
@@ -282,6 +334,18 @@ public sealed class SourceCollectionLoggingTests
             batch.Warnings.Add("Azure Boards 查詢失敗");
             return Task.FromResult(batch);
         }
+    }
+
+    private sealed class InvalidAdapter : IActivitySourceAdapter
+    {
+        public string SourceType => ActivitySourceType.WindowsCodex.ToString();
+        public SourceCapabilities Capabilities { get; } = new(SupportsHistory: true);
+
+        public Task<SourceValidationResult> ValidateAsync(ActivitySource source, CancellationToken cancellationToken) =>
+            Task.FromResult(SourceValidationResult.Invalid(SourceHealthStatus.Error, "測試驗證失敗"));
+
+        public Task<CollectionBatch> CollectAsync(CollectionRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(new CollectionBatch());
     }
 
     private sealed class BlockingAdapter : IActivitySourceAdapter
