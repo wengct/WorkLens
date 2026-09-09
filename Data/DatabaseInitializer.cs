@@ -96,6 +96,7 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
         await EnsureAiFeatureSettingsSchemaAsync(db, cancellationToken);
         await EnsureAiFeatureSettingsAsync(db, legacyAiEnabled, cancellationToken);
         await EnsureSensitiveWordsSchemaAsync(db, cancellationToken);
+        await EnsureSensitiveScanExclusionsSchemaAsync(db, cancellationToken);
         await RemoveLegacyAiProviderEnabledColumnAsync(db, cancellationToken);
         await EnsureUseHeadlessColumnAsync(db, cancellationToken);
         await EnsureWorkEntryTitleColumnAsync(db, cancellationToken);
@@ -366,6 +367,22 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
                 "UpdatedAt" TEXT NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_SensitiveWords_Value" ON "SensitiveWords" ("Value" COLLATE NOCASE);
+            """;
+        await db.Database.ExecuteSqlRawAsync(sql, cancellationToken);
+    }
+
+    private static async Task EnsureSensitiveScanExclusionsSchemaAsync(
+        WorkLensDbContext db,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            CREATE TABLE IF NOT EXISTS "SensitiveScanExclusions" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_SensitiveScanExclusions" PRIMARY KEY,
+                "Value" TEXT NOT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                "UpdatedAt" TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_SensitiveScanExclusions_Value" ON "SensitiveScanExclusions" ("Value" COLLATE NOCASE);
             """;
         await db.Database.ExecuteSqlRawAsync(sql, cancellationToken);
     }

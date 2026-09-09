@@ -9,6 +9,28 @@ namespace WorkLens.Tests;
 public sealed class DatabaseInitializerTests
 {
     [Fact]
+    public async Task Initialize_adds_scan_exclusions_table_to_an_existing_database()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
+        await using (var setup = new WorkLensDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            await setup.Database.ExecuteSqlRawAsync("DROP TABLE \"SensitiveScanExclusions\";");
+        }
+
+        var initializer = new DatabaseInitializer(new Factory(options));
+        await initializer.InitializeAsync();
+        await initializer.InitializeAsync();
+
+        await using var verify = new WorkLensDbContext(options);
+        verify.SensitiveScanExclusions.Add(new SensitiveScanExclusion { Value = "ExampleToken" });
+        await verify.SaveChangesAsync();
+        Assert.Single(await verify.SensitiveScanExclusions.ToListAsync());
+    }
+
+    [Fact]
     public async Task Initialize_adds_provider_type_and_headless_setting_to_an_existing_database()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

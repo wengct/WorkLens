@@ -2,6 +2,7 @@
 @using WorkLens.Domain
 @inject IAiContentSanitizer ContentSanitizer
 @inject SensitiveWordService SensitiveWords
+@inject SensitiveScanExclusionService ScanExclusions
 @inject ToastService Toasts
 
 <PageTitle>機敏資訊防護｜WorkLens</PageTitle>
@@ -25,55 +26,86 @@
     </div>
 }
 
-<section class="panel sensitive-settings-panel">
-    <div class="panel-heading">
-        <div><h2>必要防護狀態</h2><p>掃描失敗、執行檔缺失或遮蔽後仍有命中時，WorkLens 會停止這次 AI 傳送。</p></div>
-        @if (sanitizerStatus is not null)
-        {
-            <span class="badge @(sanitizerStatus.Available ? "badge-ready" : "badge-error")">@(sanitizerStatus.Available ? "可用" : "不可用")</span>
-        }
-    </div>
-    <div class="form-grid">
-        <div class="field"><label>leak-hunter</label><div class="hint">@(sanitizerStatus?.Available == true ? sanitizerStatus.Version : sanitizerStatus?.Summary ?? "檢查中…")<br />規則版本：@AiSanitizationRules.CurrentVersion</div></div>
-        <div class="field"><label>固定偵測</label><div class="hint">機敏憑證、台灣個人資料、Email 與自訂敏感詞</div></div>
-    </div>
-</section>
-
-<section class="panel sensitive-settings-panel">
-    <div class="panel-heading">
-        <div><h2>自訂敏感詞</h2><p>輸入客戶名稱、內部代號等詞彙。系統會去除前後空白、忽略大小寫並採字面比對。</p></div>
-    </div>
-    <div class="field">
-        <label for="sensitive-word">新增自訂敏感詞</label>
-        <div class="button-row">
-            <input id="sensitive-word" @bind="newSensitiveWord" @bind:event="oninput" placeholder="例如：客戶名稱或內部代號" />
-            <button class="button button-secondary" type="button" @onclick="AddSensitiveWordAsync" disabled="@isBusy">新增</button>
-        </div>
-    </div>
-    @if (sensitiveWords.Count > 0)
-    {
-        <div class="sensitive-word-list">
-            @foreach (var word in sensitiveWords)
+<div class="sensitive-settings-stack">
+    <section class="panel sensitive-settings-panel">
+        <div class="panel-heading">
+            <div><h2>必要防護狀態</h2><p>掃描失敗、執行檔缺失或遮蔽後仍有命中時，WorkLens 會停止這次 AI 傳送。</p></div>
+            @if (sanitizerStatus is not null)
             {
-                <div class="sensitive-word-row"><span>@word.Value</span><button class="button button-danger button-small" type="button" @onclick="() => DeleteSensitiveWordAsync(word.Id)" disabled="@isBusy">刪除</button></div>
+                <span class="badge @(sanitizerStatus.Available ? "badge-ready" : "badge-error")">@(sanitizerStatus.Available ? "可用" : "不可用")</span>
             }
         </div>
-    }
-    else
-    {
-        <p class="empty-state sensitive-word-empty">尚未設定自訂敏感詞。固定偵測仍會照常套用。</p>
-    }
-</section>
+        <div class="form-grid">
+            <div class="field"><label>leak-hunter</label><div class="hint">@(sanitizerStatus?.Available == true ? sanitizerStatus.Version : sanitizerStatus?.Summary ?? "檢查中…")<br />規則版本：@AiSanitizationRules.CurrentVersion</div></div>
+            <div class="field"><label>固定偵測</label><div class="hint">機敏憑證、台灣個人資料、Email 與自訂敏感詞</div></div>
+        </div>
+    </section>
+
+    <section class="panel sensitive-settings-panel">
+        <div class="panel-heading">
+            <div><h2>自訂敏感詞</h2><p>輸入客戶名稱、內部代號等詞彙。系統會去除前後空白、忽略大小寫並採字面比對。</p></div>
+        </div>
+        <div class="field">
+            <label for="sensitive-word">新增自訂敏感詞</label>
+            <div class="button-row">
+                <input id="sensitive-word" @bind="newSensitiveWord" @bind:event="oninput" placeholder="例如：客戶名稱或內部代號" />
+                <button class="button button-secondary" type="button" @onclick="AddSensitiveWordAsync" disabled="@isBusy">新增</button>
+            </div>
+        </div>
+        @if (sensitiveWords.Count > 0)
+        {
+            <div class="sensitive-word-list">
+                @foreach (var word in sensitiveWords)
+                {
+                    <div class="sensitive-word-row"><span>@word.Value</span><button class="button button-danger button-small" type="button" @onclick="() => DeleteSensitiveWordAsync(word.Id)" disabled="@isBusy">刪除</button></div>
+                }
+            </div>
+        }
+        else
+        {
+            <p class="empty-state sensitive-word-empty">尚未設定自訂敏感詞。固定偵測仍會照常套用。</p>
+        }
+    </section>
+
+    <section class="panel sensitive-settings-panel">
+        <div class="panel-heading">
+            <div><h2>掃描排除關鍵字</h2><p>只略過 leak-hunter 完整命中的值，並會原樣傳送給 AI。Email 與自訂敏感詞仍會遮蔽。</p></div>
+        </div>
+        <div class="field">
+            <label for="scan-exclusion">新增掃描排除關鍵字</label>
+            <div class="button-row">
+                <input id="scan-exclusion" @bind="newScanExclusion" @bind:event="oninput" placeholder="例如：掃描器誤判的完整字串" />
+                <button class="button button-secondary" type="button" @onclick="AddScanExclusionAsync" disabled="@isBusy">新增</button>
+            </div>
+        </div>
+        @if (scanExclusions.Count > 0)
+        {
+            <div class="sensitive-word-list">
+                @foreach (var exclusion in scanExclusions)
+                {
+                    <div class="sensitive-word-row"><span>@exclusion.Value</span><button class="button button-danger button-small" type="button" @onclick="() => DeleteScanExclusionAsync(exclusion.Id)" disabled="@isBusy">刪除</button></div>
+                }
+            </div>
+        }
+        else
+        {
+            <p class="empty-state sensitive-word-empty">尚未設定掃描排除關鍵字。</p>
+        }
+    </section>
+</div>
 
 @code {
     private string newSensitiveWord = string.Empty;
+    private string newScanExclusion = string.Empty;
     private IReadOnlyList<SensitiveWord> sensitiveWords = [];
+    private IReadOnlyList<SensitiveScanExclusion> scanExclusions = [];
     private AiSanitizerStatus? sanitizerStatus;
     private bool isBusy;
 
     protected override async Task OnInitializedAsync()
     {
         sensitiveWords = await SensitiveWords.GetAllAsync();
+        scanExclusions = await ScanExclusions.GetAllAsync();
         await RefreshStatusAsync();
     }
 
@@ -121,6 +153,43 @@
             await SensitiveWords.DeleteAsync(id);
             sensitiveWords = await SensitiveWords.GetAllAsync();
             Toasts.Success("自訂敏感詞已刪除。");
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task AddScanExclusionAsync()
+    {
+        if (isBusy) return;
+        try
+        {
+            isBusy = true;
+            await ScanExclusions.SaveAsync(new SensitiveScanExclusion { Value = newScanExclusion });
+            newScanExclusion = string.Empty;
+            scanExclusions = await ScanExclusions.GetAllAsync();
+            Toasts.Success("掃描排除關鍵字已新增。");
+        }
+        catch (ArgumentException exception)
+        {
+            Toasts.Error(exception.Message);
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task DeleteScanExclusionAsync(Guid id)
+    {
+        if (isBusy) return;
+        try
+        {
+            isBusy = true;
+            await ScanExclusions.DeleteAsync(id);
+            scanExclusions = await ScanExclusions.GetAllAsync();
+            Toasts.Success("掃描排除關鍵字已刪除。");
         }
         finally
         {

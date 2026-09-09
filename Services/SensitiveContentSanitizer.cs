@@ -111,6 +111,7 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
             }
 
             var customWords = await GetCustomWordsAsync(cancellationToken);
+            var scanExclusions = await GetScanExclusionsAsync(cancellationToken);
             var rangesByFile = new Dictionary<string, List<RedactionRange>>(StringComparer.OrdinalIgnoreCase);
             foreach (var finding in firstScan.Findings)
             {
@@ -125,6 +126,11 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
                 if (range is null)
                 {
                     return Failed("無法可靠定位機敏資訊，為保護資料安全，本次未傳送 AI。", status.Version);
+                }
+
+                if (IsScanExcluded(finding, scanExclusions))
+                {
+                    continue;
                 }
 
                 AddRange(rangesByFile, fileKey, range with { Category = category });
@@ -178,9 +184,20 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
                 maxFileSizeMb,
                 status.Version,
                 cancellationToken);
-            if (!secondScan.IsValid || secondScan.Findings.Count > 0)
+            if (!secondScan.IsValid)
             {
                 return Failed("機敏資訊遮蔽後仍未通過安全檢查，本次未傳送 AI。", status.Version);
+            }
+
+            foreach (var finding in secondScan.Findings)
+            {
+                var fileKey = finding.FilePath.Replace('\\', '/');
+                if (!sanitizedSegments.TryGetValue(fileKey, out var segment) ||
+                    LocateFinding(segment.Text, finding) is null ||
+                    !IsScanExcluded(finding, scanExclusions))
+                {
+                    return Failed("機敏資訊遮蔽後仍未通過安全檢查，本次未傳送 AI。", status.Version);
+                }
             }
 
             foreach (var pair in sanitizedSegments)
@@ -313,6 +330,18 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
         return values.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
+    private async Task<IReadOnlyList<string>> GetScanExclusionsAsync(CancellationToken cancellationToken)
+    {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        var values = await db.SensitiveScanExclusions
+            .AsNoTracking()
+            .Select(x => x.Value)
+            .Select(x => x.Trim())
+            .Where(x => x != string.Empty)
+            .ToListAsync(cancellationToken);
+        return values.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
     private static async Task WriteSegmentsAsync(
         string directory,
         IReadOnlyDictionary<string, ScanSegment> segments,
@@ -397,6 +426,10 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
             start = index + 1;
         }
     }
+
+    private static bool IsScanExcluded(LeakHunterFinding finding, IReadOnlyList<string> exclusions) =>
+        !string.IsNullOrEmpty(finding.Secret) &&
+        exclusions.Any(value => value.Equals(finding.Secret, StringComparison.OrdinalIgnoreCase));
 
     private static void AddRange(
         IDictionary<string, List<RedactionRange>> rangesByFile,

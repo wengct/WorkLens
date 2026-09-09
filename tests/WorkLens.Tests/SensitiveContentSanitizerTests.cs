@@ -87,6 +87,113 @@ public sealed class SensitiveContentSanitizerTests
     }
 
     [Fact]
+    public async Task Scanner_finding_matching_an_exclusion_passes_without_redaction()
+    {
+        const string excludedValue = "ExampleToken";
+        await using var fixture = await SanitizerFixture.CreateAsync((_, invocation) => invocation switch
+        {
+            1 => new ProcessResult(0, "leak-hunter 0.5.4", string.Empty),
+            _ => new ProcessResult(1, ReportJson(new object[] { new
+            {
+                type = "synthetic_secret",
+                filePath = "work-data.md",
+                lineNumber = 1,
+                columnNumber = 1,
+                secret = excludedValue
+            }}), string.Empty)
+        });
+        await fixture.AddScanExclusionAsync("exampletoken");
+
+        var result = await fixture.Sanitizer.PrepareAsync(CreateRequest(fixture, excludedValue));
+
+        Assert.True(result.Succeeded, result.Summary.Error);
+        Assert.Equal(AiSanitizationStatus.Clean, result.Summary.Status);
+        Assert.Equal(excludedValue, result.PreparedRequest!.InputMarkdown);
+        Assert.Equal(2, fixture.Runner.Calls.Count);
+    }
+
+    [Fact]
+    public async Task Custom_word_overrides_a_matching_scanner_exclusion()
+    {
+        const string value = "ExampleToken";
+        await using var fixture = await SanitizerFixture.CreateAsync((_, invocation) => invocation switch
+        {
+            1 => new ProcessResult(0, "leak-hunter 0.5.4", string.Empty),
+            2 => new ProcessResult(1, ReportJson(new object[] { new
+            {
+                type = "synthetic_secret",
+                filePath = "work-data.md",
+                lineNumber = 1,
+                columnNumber = 1,
+                secret = value
+            }}), string.Empty),
+            _ => new ProcessResult(0, ReportJson(), string.Empty)
+        });
+        await fixture.AddScanExclusionAsync(value);
+        await fixture.AddSensitiveWordAsync(value);
+
+        var result = await fixture.Sanitizer.PrepareAsync(CreateRequest(fixture, value));
+
+        Assert.True(result.Succeeded, result.Summary.Error);
+        Assert.Equal(AiSanitizationStatus.Redacted, result.Summary.Status);
+        Assert.Contains("[已遮蔽：自訂敏感詞]", result.PreparedRequest!.InputMarkdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Email_rule_overrides_a_matching_scanner_exclusion()
+    {
+        const string email = "person@example.invalid";
+        await using var fixture = await SanitizerFixture.CreateAsync((_, invocation) => invocation switch
+        {
+            1 => new ProcessResult(0, "leak-hunter 0.5.4", string.Empty),
+            2 => new ProcessResult(1, ReportJson(new object[] { new
+            {
+                type = "email",
+                filePath = "work-data.md",
+                lineNumber = 1,
+                columnNumber = 1,
+                secret = email
+            }}), string.Empty),
+            _ => new ProcessResult(0, ReportJson(), string.Empty)
+        });
+        await fixture.AddScanExclusionAsync(email);
+
+        var result = await fixture.Sanitizer.PrepareAsync(CreateRequest(fixture, email));
+
+        Assert.True(result.Succeeded, result.Summary.Error);
+        Assert.Equal(AiSanitizationStatus.Redacted, result.Summary.Status);
+        Assert.Contains("[已遮蔽：個人資料]", result.PreparedRequest!.InputMarkdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Excluded_finding_remaining_after_other_redaction_is_allowed()
+    {
+        const string excludedValue = "ExampleToken";
+        const string secret = "ActualSecret";
+        await using var fixture = await SanitizerFixture.CreateAsync((_, invocation) => invocation switch
+        {
+            1 => new ProcessResult(0, "leak-hunter 0.5.4", string.Empty),
+            2 => new ProcessResult(1, ReportJson(new object[]
+            {
+                new { type = "synthetic_secret", filePath = "work-data.md", lineNumber = 1, columnNumber = 1, secret = excludedValue },
+                new { type = "synthetic_secret", filePath = "work-data.md", lineNumber = 1, columnNumber = 14, secret }
+            }), string.Empty),
+            _ => new ProcessResult(1, ReportJson(new object[]
+            {
+                new { type = "synthetic_secret", filePath = "work-data.md", lineNumber = 1, columnNumber = 1, secret = excludedValue }
+            }), string.Empty)
+        });
+        await fixture.AddScanExclusionAsync(excludedValue);
+
+        var result = await fixture.Sanitizer.PrepareAsync(CreateRequest(fixture, $"{excludedValue} {secret}"));
+
+        Assert.True(result.Succeeded, result.Summary.Error);
+        Assert.Equal(AiSanitizationStatus.Redacted, result.Summary.Status);
+        Assert.Contains(excludedValue, result.PreparedRequest!.InputMarkdown, StringComparison.Ordinal);
+        Assert.Contains("[已遮蔽：機敏憑證]", result.PreparedRequest.InputMarkdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task Any_nonzero_exit_with_complete_json_is_accepted()
     {
         await using var fixture = await SanitizerFixture.CreateAsync((_, invocation) => invocation switch
@@ -356,6 +463,13 @@ public sealed class SensitiveContentSanitizerTests
         {
             await using var db = new WorkLensDbContext(Options);
             db.SensitiveWords.Add(new SensitiveWord { Value = value });
+            await db.SaveChangesAsync();
+        }
+
+        public async Task AddScanExclusionAsync(string value)
+        {
+            await using var db = new WorkLensDbContext(Options);
+            db.SensitiveScanExclusions.Add(new SensitiveScanExclusion { Value = value });
             await db.SaveChangesAsync();
         }
 

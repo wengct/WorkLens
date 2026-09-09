@@ -18,6 +18,7 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
     public DbSet<AiProviderConfiguration> AiProviders => Set<AiProviderConfiguration>();
     public DbSet<AiFeatureSettings> AiFeatureSettings => Set<AiFeatureSettings>();
     public DbSet<SensitiveWord> SensitiveWords => Set<SensitiveWord>();
+    public DbSet<SensitiveScanExclusion> SensitiveScanExclusions => Set<SensitiveScanExclusion>();
     public DbSet<BackupRecord> BackupRecords => Set<BackupRecord>();
     public DbSet<PromptTemplate> PromptTemplates => Set<PromptTemplate>();
     public DbSet<ScheduleDefinition> ScheduleDefinitions => Set<ScheduleDefinition>();
@@ -92,6 +93,14 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
             .UseCollation("NOCASE");
 
         modelBuilder.Entity<SensitiveWord>()
+            .HasIndex(x => x.Value)
+            .IsUnique();
+
+        modelBuilder.Entity<SensitiveScanExclusion>()
+            .Property(x => x.Value)
+            .UseCollation("NOCASE");
+
+        modelBuilder.Entity<SensitiveScanExclusion>()
             .HasIndex(x => x.Value)
             .IsUnique();
 

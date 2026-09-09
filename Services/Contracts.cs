@@ -88,7 +88,7 @@ public enum AiSensitiveDataCategory
 
 public static class AiSanitizationRules
 {
-    public const string CurrentVersion = "worklens-sensitive-rules-v1";
+    public const string CurrentVersion = "worklens-sensitive-rules-v2";
 }
 
 public sealed record AiRedactionNotice(

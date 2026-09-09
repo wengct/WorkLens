@@ -269,6 +269,14 @@ public sealed class SensitiveWord
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class SensitiveScanExclusion
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Value { get; set; } = string.Empty;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public enum AiReasoningLevel
 {
     Default,

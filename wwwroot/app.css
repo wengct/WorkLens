@@ -308,7 +308,8 @@ p { color: var(--muted); line-height: 1.65; }
 .settings-split > .panel { margin-top: 0; }
 .ai-settings-stack { display: grid; gap: 18px; }
 .ai-settings-stack > .panel { margin-top: 0; }
-.sensitive-settings-panel { margin-bottom: 18px; }
+.sensitive-settings-stack { display: grid; gap: 18px; }
+.sensitive-settings-stack > .sensitive-settings-panel { margin: 0; }
 .sensitive-word-list { display: grid; gap: 8px; margin-top: 16px; }
 .sensitive-word-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; color: #344361; background: #f8f9fc; border: 1px solid var(--line); border-radius: 9px; font-size: 13px; }
 .sensitive-word-empty { margin: 16px 0 0; padding: 24px 16px; }

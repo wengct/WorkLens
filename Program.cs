@@ -196,6 +196,7 @@ builder.Services.AddScoped<ManualSourceService>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<AiConfigurationService>();
 builder.Services.AddScoped<SensitiveWordService>();
+builder.Services.AddScoped<SensitiveScanExclusionService>();
 builder.Services.AddScoped<BackupService>();
 builder.Services.AddScoped<PromptTemplateService>();
 builder.Services.AddScoped<ScheduleRunner>();
