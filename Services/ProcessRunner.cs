@@ -51,6 +51,7 @@ public sealed class ProcessRunner : IProcessRunner
                 RedirectStandardInput = standardInput is not null,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
+                StandardInputEncoding = standardInput is not null ? new UTF8Encoding(false) : null,
                 StandardOutputEncoding = Encoding.UTF8,
                 StandardErrorEncoding = Encoding.UTF8
             }

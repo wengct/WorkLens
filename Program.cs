@@ -199,6 +199,7 @@ builder.Services.AddScoped<SensitiveWordService>();
 builder.Services.AddScoped<SensitiveScanExclusionService>();
 builder.Services.AddScoped<BackupService>();
 builder.Services.AddScoped<PromptTemplateService>();
+builder.Services.AddScoped<ConfigurationTransferService>();
 builder.Services.AddScoped<ScheduleRunner>();
 builder.Services.AddScoped<ScheduleService>();
 builder.Services.AddScoped<ToastService>();

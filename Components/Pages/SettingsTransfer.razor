@@ -1,0 +1,89 @@
+@page "/settings-transfer"
+@inject ConfigurationTransferService Transfer
+@inject IJSRuntime JS
+@inject ToastService Toasts
+
+<PageTitle>設定移轉｜WorkLens</PageTitle>
+
+<div class="page-heading"><div><p class="eyebrow">Settings</p><h1>設定移轉</h1><p>選擇要搬移的設定；工作紀錄、摘要、來源活動與 API Key 不會包含在設定檔中。</p></div></div>
+
+<div class="settings-stack">
+    <section class="panel">
+        <div class="panel-heading"><div><h2>匯出設定</h2><p>所有分類預設不勾選。含有 Email 或機敏規則的檔案請視為機密檔案保管。</p></div></div>
+        <div class="form-grid">
+            <label class="inline-checkbox full"><input type="checkbox" @bind="selection.AiSettings" /> AI 設定 <span class="hint">Provider、模型、Endpoint 與預設組；不含 API Key。匯入後需重新驗證並手動啟用 AI。</span></label>
+            <label class="inline-checkbox full"><input type="checkbox" @bind="selection.Prompts" /> Prompt 範本</label>
+            <label class="inline-checkbox full"><input type="checkbox" @bind="selection.Sources" @bind:after="OnSourcesChanged" /> 資料來源 <span class="hint">來源匯入後會維持停用。</span></label>
+            <label class="inline-checkbox full"><input type="checkbox" @bind="selection.GitAuthorEmails" disabled="@(!selection.Sources)" /> Git 作者 Email <span class="hint">個人資料，僅能與資料來源一併匯出。</span></label>
+            <label class="inline-checkbox full"><input type="checkbox" @bind="selection.SensitiveWords" /> 自訂敏感詞 <span class="hint">會以明文匯出。</span></label>
+            <label class="inline-checkbox full"><input type="checkbox" @bind="selection.ScanExclusions" /> 掃描排除關鍵字 <span class="hint">高風險：內容可能是真實憑證值。</span></label>
+            @if (selection.AiSettings || selection.Sources)
+            {
+                <div class="alert alert-warning full">
+                    匯入提醒：AI Provider 與資料來源會在新電腦保持停用並需要重新驗證；請確認本機路徑、登入狀態與 API Key 後再手動啟用。
+                </div>
+            }
+            <div class="form-actions"><button class="button button-primary" @onclick="ExportAsync" disabled="@(!selection.HasSelection)">下載設定檔</button></div>
+        </div>
+    </section>
+
+    <section class="panel">
+        <div class="panel-heading"><div><h2>匯入設定</h2><p>先解析設定檔並預覽衝突；未包含的分類不會受到影響。</p></div></div>
+        <div class="transfer-file-picker"><InputFile OnChange="ReadImportAsync" accept="application/json,.json" /></div>
+        @if (preview is not null)
+        {
+            @if (!preview.IsValid) { <div class="alert alert-error">@foreach (var error in preview.Errors) { <div>@error</div> }</div> }
+            else
+            {
+                <div class="alert alert-warning"><strong>匯入提醒</strong>@foreach (var notice in preview.Notices) { <div>@notice</div> }</div>
+                <p>設定檔建立於 @preview.Document!.ExportedAt.LocalDateTime.ToString("yyyy/MM/dd HH:mm")，包含：@IncludedNames(preview.Document.Includes)。</p>
+                @foreach (var conflict in conflicts)
+                {
+                    <div class="field transfer-conflict">
+                        <label>@conflict.Label</label>
+                        <div class="button-row" role="group" aria-label="@($"{conflict.Label} 匯入方式")">
+                            <button type="button" class="@ActionClass(conflict.Key, TransferConflictAction.Skip)" @onclick="() => SetAction(conflict.Key, TransferConflictAction.Skip)">略過</button>
+                            <button type="button" class="@ActionClass(conflict.Key, TransferConflictAction.Update)" @onclick="() => SetAction(conflict.Key, TransferConflictAction.Update)">更新既有設定</button>
+                            @if (conflict.AllowCopy)
+                            {
+                                <button type="button" class="@ActionClass(conflict.Key, TransferConflictAction.Copy)" @onclick="() => SetAction(conflict.Key, TransferConflictAction.Copy)">建立副本</button>
+                            }
+                        </div>
+                    </div>
+                }
+                <div class="form-actions"><button class="button button-primary" @onclick="OpenImportConfirmation" disabled="@busy">開始匯入</button></div>
+            }
+        }
+    </section>
+</div>
+
+<ConfirmDialog Open="importConfirmationOpen"
+               Title="確認套用匯入設定？"
+               Message="即將套用已選擇的設定分類。AI Provider 與資料來源匯入後會保持停用，請完成本機環境驗證後再手動啟用。"
+               ConfirmText="確認匯入"
+               BusyText="匯入中…"
+               ConfirmButtonClass="button-primary"
+               IsBusy="@busy"
+               OnConfirm="ImportAsync"
+               OnCancel="CancelImportConfirmation" />
+
+@code {
+    private TransferSelectionEditor selection = new();
+    private ConfigurationTransferPreview? preview;
+    private readonly Dictionary<string, TransferConflictAction> actions = [];
+    private List<ConflictItem> conflicts = [];
+    private bool busy;
+    private bool importConfirmationOpen;
+    private async Task ExportAsync() { var json = await Transfer.ExportAsync(new ConfigurationTransferSelection(selection.AiSettings, selection.Prompts, selection.Sources, selection.GitAuthorEmails, selection.SensitiveWords, selection.ScanExclusions)); await JS.InvokeVoidAsync("workLensSettingsTransfer.download", $"worklens-settings-{DateTimeOffset.Now:yyyyMMdd-HHmmss}.json", json); }
+    private void OnSourcesChanged() { if (!selection.Sources) selection.GitAuthorEmails = false; }
+    private async Task ReadImportAsync(InputFileChangeEventArgs args) { try { await using var stream = args.File.OpenReadStream(2 * 1024 * 1024); using var reader = new StreamReader(stream); preview = Transfer.Preview(await reader.ReadToEndAsync()); actions.Clear(); conflicts = preview.IsValid ? BuildConflicts(preview.Document!) : []; } catch (Exception exception) { preview = new ConfigurationTransferPreview(null, [$"讀取設定檔失敗：{exception.Message}"], []); } }
+    private List<ConflictItem> BuildConflicts(ConfigurationTransferDocument document) { var result = new List<ConflictItem>(); if (document.Includes.AiSettings) foreach (var item in document.AiProviders) Add($"ai:{item.Name}", $"AI 設定：{item.Name}", true); if (document.Includes.Prompts) foreach (var item in document.Prompts) Add($"prompt:{item.Name}", $"Prompt：{item.Name}", true); if (document.Includes.Sources) foreach (var item in document.Sources) Add($"source:{item.SourceType}:{item.DisplayName}", $"資料來源：{item.DisplayName}", true); if (document.Includes.SensitiveWords) foreach (var item in document.SensitiveWords) Add($"word:{item.Value}", "自訂敏感詞", false); if (document.Includes.ScanExclusions) foreach (var item in document.ScanExclusions) Add($"exclusion:{item}", "掃描排除關鍵字", false); return result; void Add(string key, string label, bool copy) { actions[key] = TransferConflictAction.Update; result.Add(new ConflictItem(key, label, copy)); } }
+    private void SetAction(string key, TransferConflictAction action) => actions[key] = action;
+    private string ActionClass(string key, TransferConflictAction action) => actions.GetValueOrDefault(key) == action ? "button button-primary" : "button button-secondary";
+    private void OpenImportConfirmation() { if (preview?.IsValid == true) importConfirmationOpen = true; }
+    private void CancelImportConfirmation() => importConfirmationOpen = false;
+    private async Task ImportAsync() { if (preview?.Document is null || !preview.IsValid) return; busy = true; try { var result = await Transfer.ApplyAsync(preview.Document, actions); if (result.Succeeded) { Toasts.Success($"設定匯入完成，已套用 {result.AppliedCount} 項設定。"); preview = null; conflicts = []; importConfirmationOpen = false; } else Toasts.Error(string.Join("；", result.Errors)); } finally { busy = false; } }
+    private static string IncludedNames(ConfigurationTransferSelection value) => string.Join("、", new[] { value.AiSettings ? "AI 設定" : null, value.Prompts ? "Prompt 範本" : null, value.Sources ? "資料來源" : null, value.GitAuthorEmails ? "Git 作者 Email" : null, value.SensitiveWords ? "自訂敏感詞" : null, value.ScanExclusions ? "掃描排除關鍵字" : null }.Where(x => x is not null));
+    private sealed class TransferSelectionEditor { public bool AiSettings { get; set; } public bool Prompts { get; set; } public bool Sources { get; set; } public bool GitAuthorEmails { get; set; } public bool SensitiveWords { get; set; } public bool ScanExclusions { get; set; } public bool HasSelection => AiSettings || Prompts || Sources || SensitiveWords || ScanExclusions; }
+    private sealed record ConflictItem(string Key, string Label, bool AllowCopy);
+}

@@ -2,6 +2,11 @@
 
 WorkLens 的所有重要變更皆記錄於此文件。
 
+## [Unreleased]
+
+- 新增「設定移轉」頁，可依分類選擇匯出 AI 設定、Prompt、資料來源與機敏規則，並在另一台電腦預覽衝突後匯入；API Key、工作資料與收集狀態不會匯出，匯入的資料來源會保持停用以待重新驗證。
+- 修正繁體中文 Windows 上 ask-bridge 測試連線因標準輸入使用 Big5 而發生 UTF-8 解碼錯誤；傳給 CLI 的標準輸入統一使用不含 BOM 的 UTF-8。
+
 ## [1.7.1] - 2026-09-09
 
 - 修正 Windows 發行測試中背景服務與驗證查詢共用 in-memory SQLite connection 的偶發 active-statement 鎖定，改以每次測試專屬的暫存資料庫驗證啟動 recovery。
