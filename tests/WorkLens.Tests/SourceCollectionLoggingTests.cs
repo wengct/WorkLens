@@ -60,51 +60,64 @@ public sealed class SourceCollectionLoggingTests
     [Fact]
     public async Task Hosted_service_startup_recovers_a_stale_running_source()
     {
-        await using var connection = new SqliteConnection("Data Source=:memory:");
-        await connection.OpenAsync();
-        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
-        var sourceId = Guid.NewGuid();
-        await using (var setup = new WorkLensDbContext(options))
-        {
-            await setup.Database.EnsureCreatedAsync();
-            setup.ActivitySources.Add(new ActivitySource
-            {
-                Id = sourceId,
-                DisplayName = "Stale Azure DevOps",
-                SourceType = ActivitySourceType.WindowsCodex,
-                Enabled = true,
-                HealthStatus = SourceHealthStatus.Running,
-                LastSuccessAt = DateTimeOffset.UtcNow,
-                UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-3)
-            });
-            await setup.SaveChangesAsync();
-        }
-
-        var factory = new TestDbContextFactory(options);
-        var orchestrator = new SourceOrchestrator(
-            factory,
-            new SourceRegistry([new SuccessfulAdapter()]),
-            new ReportInvalidationService(factory),
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<SourceOrchestrator>.Instance);
-        var service = new SourceCollectionHostedService(
-            factory,
-            orchestrator,
-            Microsoft.Extensions.Logging.Abstractions.NullLogger<SourceCollectionHostedService>.Instance);
-
-        await service.StartAsync(CancellationToken.None);
+        var databaseDirectory = Path.Combine(Path.GetTempPath(), "WorkLens.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(databaseDirectory);
         try
         {
-            var recovered = await WaitUntilAsync(async () =>
+            var databasePath = Path.Combine(databaseDirectory, "worklens.db");
+            var options = new DbContextOptionsBuilder<WorkLensDbContext>()
+                .UseSqlite($"Data Source={databasePath};Pooling=False")
+                .Options;
+            var sourceId = Guid.NewGuid();
+            await using (var setup = new WorkLensDbContext(options))
             {
-                await using var verify = new WorkLensDbContext(options);
-                return (await verify.ActivitySources.SingleAsync(item => item.Id == sourceId)).HealthStatus == SourceHealthStatus.Ready;
-            }, TimeSpan.FromSeconds(1));
+                await setup.Database.EnsureCreatedAsync();
+                setup.ActivitySources.Add(new ActivitySource
+                {
+                    Id = sourceId,
+                    DisplayName = "Stale Azure DevOps",
+                    SourceType = ActivitySourceType.WindowsCodex,
+                    Enabled = true,
+                    HealthStatus = SourceHealthStatus.Running,
+                    LastSuccessAt = DateTimeOffset.UtcNow,
+                    UpdatedAt = DateTimeOffset.UtcNow.AddMinutes(-3)
+                });
+                await setup.SaveChangesAsync();
+            }
 
-            Assert.True(recovered);
+            var factory = new TestDbContextFactory(options);
+            var orchestrator = new SourceOrchestrator(
+                factory,
+                new SourceRegistry([new SuccessfulAdapter()]),
+                new ReportInvalidationService(factory),
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<SourceOrchestrator>.Instance);
+            var service = new SourceCollectionHostedService(
+                factory,
+                orchestrator,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<SourceCollectionHostedService>.Instance);
+
+            await service.StartAsync(CancellationToken.None);
+            try
+            {
+                var recovered = await WaitUntilAsync(async () =>
+                {
+                    await using var verify = new WorkLensDbContext(options);
+                    return (await verify.ActivitySources.SingleAsync(item => item.Id == sourceId)).HealthStatus == SourceHealthStatus.Ready;
+                }, TimeSpan.FromSeconds(1));
+
+                Assert.True(recovered);
+            }
+            finally
+            {
+                await service.StopAsync(CancellationToken.None);
+            }
         }
         finally
         {
-            await service.StopAsync(CancellationToken.None);
+            if (Directory.Exists(databaseDirectory))
+            {
+                Directory.Delete(databaseDirectory, recursive: true);
+            }
         }
     }
 

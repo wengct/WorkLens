@@ -25,6 +25,7 @@ WorkLens 是 .NET 10 Blazor Server 應用程式。
 
 - 資料庫升級必須採新增式、可重複執行，並確保既有安裝可安全升級。除非使用者明確要求變更資料，否則保留既有工作項目、佐證資料、報告、排程及備份。
 - 測試不得依賴開發者的 WorkLens 資料；使用暫存目錄或記憶體內 SQLite 資料庫。
+- 背景服務測試若會同時由多個 DbContext 讀寫 SQLite，不要讓它們共用同一個 `Data Source=:memory:` connection；改用每個測試專屬的暫存檔資料庫、`Pooling=False`，讓各 DbContext 使用獨立連線並可在測試結束清理檔案，避免 Windows 上的 active-statement 競態與檔案鎖定。
 - 不得提交資料庫、log、報告、備份、repository 路徑、作者電子郵件、AI 提示詞或回應、cookie、token、憑證、瀏覽器設定檔及本機 `appsettings` 覆寫設定。
 - 執行期間的資料必須保存在平台專屬的 WorkLens 資料目錄，而非 repository 內。
 - 除非需求明確改變此產品決策，否則維持僅繫結 loopback 位址及本機優先的隱私模式。

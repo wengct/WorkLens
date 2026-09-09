@@ -2,6 +2,10 @@
 
 WorkLens 的所有重要變更皆記錄於此文件。
 
+## [1.7.1] - 2026-09-09
+
+- 修正 Windows 發行測試中背景服務與驗證查詢共用 in-memory SQLite connection 的偶發 active-statement 鎖定，改以每次測試專屬的暫存資料庫驗證啟動 recovery。
+
 ## [1.7.0] - 2026-09-09
 
 - 機敏資訊防護新增掃描排除關鍵字，可略過 leak-hunter 對完整值的誤判；Email 與自訂敏感詞仍會遮蔽，且沒有內容需要遮蔽時手動 AI 整理會直接送出。
