@@ -464,8 +464,8 @@ public sealed class AzureDevOpsPullRequestSourceAdapter(AzureDevOpsCliService cl
         var daily = new Dictionary<DateOnly, AzureDevOpsWorkItemActivityMetadata>();
         foreach (var update in updates)
         {
-            if (IsPlaceholderTimestamp(update.RevisedDate) ||
-                !IsWithin(update.RevisedDate, since, until) ||
+            if (IsPlaceholderTimestamp(update.ChangedDate) ||
+                !IsWithin(update.ChangedDate, since, until) ||
                 !AzureDevOpsCliService.IsIdentityMatch(update.RevisedBy, identity))
             {
                 continue;
@@ -475,7 +475,7 @@ public sealed class AzureDevOpsPullRequestSourceAdapter(AzureDevOpsCliService cl
                 .Where(change => !IsAuditField(change.Field))
                 .Select(change => new AzureDevOpsWorkItemFieldChange
                 {
-                    ChangedAt = update.RevisedDate,
+                    ChangedAt = update.ChangedDate,
                     Field = change.Field,
                     OldValue = change.OldValue,
                     NewValue = change.NewValue
@@ -486,7 +486,7 @@ public sealed class AzureDevOpsPullRequestSourceAdapter(AzureDevOpsCliService cl
                 continue;
             }
 
-            var metadata = GetDailyMetadata(daily, update.RevisedDate, organizationUrl, scope, workItem);
+            var metadata = GetDailyMetadata(daily, update.ChangedDate, organizationUrl, scope, workItem);
             metadata.FieldChanges.AddRange(changes);
         }
 
@@ -562,8 +562,8 @@ public sealed class AzureDevOpsPullRequestSourceAdapter(AzureDevOpsCliService cl
         updates.Any(update =>
             AzureDevOpsCliService.IsIdentityMatch(update.RevisedBy, identity) &&
             (update.Fields.Any(change => string.Equals(change.Field, "System.History", StringComparison.OrdinalIgnoreCase)) ||
-             (!IsPlaceholderTimestamp(update.RevisedDate) &&
-              IsWithin(update.RevisedDate, since, until) &&
+             (!IsPlaceholderTimestamp(update.ChangedDate) &&
+              IsWithin(update.ChangedDate, since, until) &&
               update.Fields.Any(change => !IsAuditField(change.Field)))));
 
     private static async Task<IReadOnlyList<TResult>> SelectBoundedAsync<TSource, TResult>(

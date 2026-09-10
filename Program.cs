@@ -192,6 +192,7 @@ builder.Services.AddScoped<WorkLogService>();
 builder.Services.AddScoped<WorkDraftService>();
 builder.Services.AddScoped<SourceConfigurationService>();
 builder.Services.AddScoped<ActivityQueryService>();
+builder.Services.AddScoped<SourceEvidenceService>();
 builder.Services.AddScoped<ManualSourceService>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<AiConfigurationService>();

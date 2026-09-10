@@ -1,6 +1,7 @@
 @page "/reports"
 @inject WorkLogService WorkLogs
 @inject ActivityQueryService Activities
+@inject SourceEvidenceService SourceEvidence
 @inject SourceConfigurationService SourceConfig
 @inject SourceOrchestrator Orchestrator
 @inject ReportService ReportService
@@ -92,6 +93,7 @@
                     @if (kind == ReportKind.Daily)
                     {
                         <a class="button button-secondary button-small" href="/?date=@selectedDate.ToString("yyyy-MM-dd")">開啟並修改</a>
+                        <button class="button button-danger button-small" @onclick="() => deleteAutomaticForDatePending = true" disabled="@isDeletingAutomaticForDate">刪除本日全部自動活動</button>
                     }
                     <button class="button button-secondary button-small" @onclick="BackfillPeriodAsync" disabled="@isBackfilling">@(isBackfilling ? "收集中…" : "重新收集來源")</button>
                 </div>
@@ -120,6 +122,15 @@
     <ReportWorkspace @ref="reportWorkspace" Kind="kind" AnchorDate="selectedDate" OnReportChanged="ReloadAsync" />
 </div>
 
+<ConfirmDialog Open="deleteAutomaticForDatePending"
+               Title="刪除本日全部自動活動？"
+               Message="@DeleteAutomaticForDateMessage"
+               ConfirmText="刪除本日自動活動"
+               BusyText="刪除中…"
+               IsBusy="isDeletingAutomaticForDate"
+               OnConfirm="DeleteAutomaticForDateAsync"
+               OnCancel="CancelDeleteAutomaticForDate" />
+
 @code {
     [SupplyParameterFromQuery(Name = "date")] public DateTime? RequestedDate { get; set; }
     [SupplyParameterFromQuery(Name = "kind")] public string? RequestedKind { get; set; }
@@ -142,6 +153,8 @@
     private IReadOnlyList<SourceEvidence> evidence = [];
     private IReadOnlyList<ReportDocument> reports = [];
     private bool isBackfilling;
+    private bool deleteAutomaticForDatePending;
+    private bool isDeletingAutomaticForDate;
     private ReportWorkspace? reportWorkspace;
     private static readonly string[] MonthWeekdays = ["日", "一", "二", "三", "四", "五", "六"];
     private static readonly string[] WeekWeekdays = ["一", "二", "三", "四", "五", "六", "日"];
@@ -152,6 +165,8 @@
     private IReadOnlyList<WorkEntry> DetailEntries => entries.Where(entry => entry.WorkDate >= PeriodStart && entry.WorkDate <= PeriodEnd).OrderBy(entry => entry.WorkDate).ThenBy(entry => entry.CreatedAt).ToList();
     private IReadOnlyList<SourceEvidence> DetailEvidence => evidence.Where(item => DateOnly.FromDateTime(item.OccurredAt.LocalDateTime) >= PeriodStart && DateOnly.FromDateTime(item.OccurredAt.LocalDateTime) <= PeriodEnd).OrderBy(item => item.OccurredAt).ToList();
     private string SelectedPeriodTitle => kind == ReportKind.Daily ? selectedDate.ToString("yyyy/MM/dd") : $"{PeriodStart:yyyy/MM/dd}－{PeriodEnd:MM/dd}";
+    private string DeleteAutomaticForDateMessage =>
+        $"將永久刪除 {selectedDate:yyyy/MM/dd} 的全部自動來源活動，不受目前篩選條件影響；手動參考資料、其他日期、來源設定與原始來源不受影響。相關摘要會標示為需要重產，之後重新收集仍可能再次匯入。";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -293,6 +308,32 @@
         }
         catch (Exception exception) { Toasts.Error(exception.Message); }
         finally { isBackfilling = false; }
+    }
+
+    private void CancelDeleteAutomaticForDate() => deleteAutomaticForDatePending = false;
+
+    private async Task DeleteAutomaticForDateAsync()
+    {
+        if (isDeletingAutomaticForDate) return;
+        isDeletingAutomaticForDate = true;
+        try
+        {
+            var deletedCount = await SourceEvidence.DeleteAutomaticForDateAsync(selectedDate);
+            deleteAutomaticForDatePending = false;
+            if (deletedCount == 0)
+            {
+                Toasts.Info("本日沒有自動來源活動可刪除。");
+            }
+            else
+            {
+                Toasts.Success($"已刪除本日 {deletedCount} 筆自動來源活動；手動參考資料與原始來源不受影響。");
+            }
+            await ReloadAsync();
+        }
+        finally
+        {
+            isDeletingAutomaticForDate = false;
+        }
     }
 
     private static DateOnly StartOfWeek(DateOnly day) => day.AddDays(-(int)day.DayOfWeek + (day.DayOfWeek == DayOfWeek.Sunday ? -6 : 1));

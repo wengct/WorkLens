@@ -82,7 +82,7 @@ public sealed class AzureDevOpsWorkItemSourceAdapterTests
                 return Json("""
                     {"value":[
                       {"revisedDate":"2026-09-08T01:00:00Z","revisedBy":{"uniqueName":"other@example.com"},"fields":{"System.State":{"oldValue":"New","newValue":"Active"}}},
-                      {"revisedDate":"2026-09-08T02:00:00Z","revisedBy":{"uniqueName":"me@example.com"},"fields":{"System.State":{"oldValue":"New","newValue":"Active"},"System.ChangedDate":{"oldValue":"x","newValue":"y"}}},
+                      {"revisedDate":"2026-09-08T02:00:00Z","revisedBy":{"uniqueName":"me@example.com"},"fields":{"System.State":{"oldValue":"New","newValue":"Active"},"System.ChangedDate":{"oldValue":"2026-09-08T01:59:00Z","newValue":"2026-09-08T02:00:00Z"}}},
                       {"revisedDate":"9999-01-01T00:00:00Z","revisedBy":{"uniqueName":"me@example.com"},"fields":{"System.PersonId":{"oldValue":"old-person","newValue":"new-person"}}}
                     ]}
                     """);
@@ -130,6 +130,44 @@ public sealed class AzureDevOpsWorkItemSourceAdapterTests
         Assert.Single(metadata.Discussions);
         Assert.Equal("我完成 review", metadata.Discussions[0].Text);
         Assert.Equal(1, batch.SuccessfulRepositories);
+    }
+
+    [Fact]
+    public async Task CollectAsync_does_not_treat_a_superseded_revision_as_current_activity()
+    {
+        var runner = CreateSingleWorkItemRunner("""
+            {"value":[
+              {"revisedDate":"2026-09-10T06:39:11.577Z","revisedBy":{"uniqueName":"me@example.com"},"fields":{"System.State":{"oldValue":"Committed","newValue":"Done"},"System.ChangedDate":{"oldValue":"2026-07-01T06:26:04.307Z","newValue":"2026-07-01T06:27:47.970Z"}}}
+            ]}
+            """);
+
+        var batch = await CollectSingleWorkItemAsync(
+            runner,
+            DateTimeOffset.Parse("2026-09-10T00:00:00Z"),
+            DateTimeOffset.Parse("2026-09-11T00:00:00Z"));
+
+        Assert.Empty(batch.Evidence);
+    }
+
+    [Fact]
+    public async Task CollectAsync_collects_the_current_revision_using_its_changed_date()
+    {
+        var runner = CreateSingleWorkItemRunner("""
+            {"value":[
+              {"revisedDate":"9999-01-01T00:00:00Z","revisedBy":{"uniqueName":"me@example.com"},"fields":{"System.State":{"oldValue":"Committed","newValue":"Done"},"System.ChangedDate":{"oldValue":"2026-09-09T06:39:11.577Z","newValue":"2026-09-10T06:39:11.577Z"}}}
+            ]}
+            """);
+
+        var batch = await CollectSingleWorkItemAsync(
+            runner,
+            DateTimeOffset.Parse("2026-09-10T00:00:00Z"),
+            DateTimeOffset.Parse("2026-09-11T00:00:00Z"));
+
+        var evidence = Assert.Single(batch.Evidence);
+        Assert.Equal(DateTimeOffset.Parse("2026-09-10T06:39:11.577Z"), evidence.OccurredAt);
+        var metadata = SourceSettingsSerializer.DeserializeAzureDevOpsWorkItemActivityMetadata(evidence.MetadataJson);
+        Assert.NotNull(metadata);
+        Assert.Equal(DateTimeOffset.Parse("2026-09-10T06:39:11.577Z"), Assert.Single(metadata!.FieldChanges).ChangedAt);
     }
 
     [Fact]
@@ -232,6 +270,67 @@ public sealed class AzureDevOpsWorkItemSourceAdapterTests
     };
 
     private static ProcessResult Json(string output) => new(0, output, string.Empty);
+
+    private static FakeProcessRunner CreateSingleWorkItemRunner(string updatesJson) => new((request, _) =>
+    {
+        var command = string.Join(' ', request.Arguments);
+        if (command.StartsWith("account show ", StringComparison.Ordinal))
+        {
+            return Json("""{"user":{"name":"me@example.com","type":"user"}}""");
+        }
+        if (command.StartsWith("ad signed-in-user show ", StringComparison.Ordinal))
+        {
+            return Json("""{"id":"entra-id","displayName":"Me","userPrincipalName":"me@example.com"}""");
+        }
+        if (command.StartsWith("boards query ", StringComparison.Ordinal))
+        {
+            return Json("""{"workItems":[{"id":85054,"url":"https://dev.azure.com/example/project/_apis/wit/workItems/85054"}]}""");
+        }
+        if (command.Contains("--resource updates", StringComparison.Ordinal))
+        {
+            return Json(updatesJson);
+        }
+        if (command.StartsWith("boards work-item show ", StringComparison.Ordinal))
+        {
+            return Json("""
+                {"id":85054,"url":"https://dev.azure.com/example/project/_apis/wit/workItems/85054","fields":{"System.WorkItemType":"Product Backlog Item","System.Title":"API Client Management","System.State":"Done"},"relations":[]}
+                """);
+        }
+        if (command.Contains("--resource comments", StringComparison.Ordinal))
+        {
+            return Json("""{"comments":[]}""");
+        }
+
+        throw new Xunit.Sdk.XunitException($"Unexpected Azure CLI command: {command}");
+    });
+
+    private static Task<CollectionBatch> CollectSingleWorkItemAsync(
+        FakeProcessRunner runner,
+        DateTimeOffset since,
+        DateTimeOffset until)
+    {
+        var source = new ActivitySource
+        {
+            Id = Guid.NewGuid(),
+            SourceType = ActivitySourceType.AzureDevOpsPullRequest,
+            SettingsJson = SourceSettingsSerializer.Serialize(new AzureDevOpsSourceSettings
+            {
+                OrganizationUrl = "https://dev.azure.com/example",
+                CollectPullRequests = false,
+                CollectWorkItems = true,
+                WorkItemScopes = [new AzureDevOpsWorkItemScope
+                {
+                    ProjectId = "project",
+                    ProjectName = "Project",
+                    WorkLensProjectId = Guid.NewGuid()
+                }]
+            })
+        };
+
+        return new AzureDevOpsPullRequestSourceAdapter(new AzureDevOpsCliService(runner)).CollectAsync(
+            new CollectionRequest(source, since, until),
+            CancellationToken.None);
+    }
 
     private sealed class FakeProcessRunner(Func<ProcessRequest, string?, ProcessResult> handler) : IProcessRunner
     {

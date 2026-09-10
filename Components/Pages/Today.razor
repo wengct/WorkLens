@@ -2,6 +2,7 @@
 @page "/today"
 @inject WorkLogService WorkLogs
 @inject ActivityQueryService Activities
+@inject SourceEvidenceService SourceEvidence
 @inject ManualSourceService ManualSources
 @inject SourceConfigurationService SourceConfig
 @inject ReportService Reports
@@ -121,6 +122,12 @@
             </li>
         }
     </ul>
+    @if (evidence.Any(item => item.Kind != EvidenceKind.Manual))
+    {
+        <div class="button-row">
+            <button type="button" class="button button-danger button-small" @onclick="() => deleteAutomaticForDatePending = true">刪除本日全部自動活動</button>
+        </div>
+    }
     @if (evidence.Count == 0)
     {
         <p class="muted">此日期尚無已匯入的來源活動。</p>
@@ -187,6 +194,9 @@
                                     <div class="markdown-source">@item.CommitMessage</div>
                                 }
                             }
+                            <div class="button-row" style="margin-top: 8px">
+                                <button class="button button-danger button-small" @onclick="() => pendingSourceEvidenceDeleteId = item.Id">刪除本機紀錄</button>
+                            </div>
                         </div>
                     </div>
                 }
@@ -225,6 +235,24 @@
                OnConfirm="ConfirmManualSourceDeleteAsync"
                OnCancel="CancelManualSourceDelete" />
 
+<ConfirmDialog Open="pendingSourceEvidenceDeleteId is not null"
+               Title="刪除這筆來源活動？"
+               Message="只會刪除 WorkLens 本機紀錄，不會修改原始來源。刪除後相關摘要會標示為需要重產；若原始資料仍符合條件，重新收集時可能再次匯入。"
+               ConfirmText="刪除本機紀錄"
+               BusyText="刪除中…"
+               IsBusy="isDeleting"
+               OnConfirm="ConfirmSourceEvidenceDeleteAsync"
+               OnCancel="CancelSourceEvidenceDelete" />
+
+<ConfirmDialog Open="deleteAutomaticForDatePending"
+               Title="刪除本日全部自動活動？"
+               Message="@DeleteAutomaticForDateMessage"
+               ConfirmText="刪除本日自動活動"
+               BusyText="刪除中…"
+               IsBusy="isDeleting"
+               OnConfirm="DeleteAutomaticForDateAsync"
+               OnCancel="CancelDeleteAutomaticForDate" />
+
 </div>
 
 @code {
@@ -250,6 +278,8 @@
     private WorkDraftInput modalInitial = new();
     private Guid? pendingDeleteId;
     private Guid? pendingManualDeleteId;
+    private Guid? pendingSourceEvidenceDeleteId;
+    private bool deleteAutomaticForDatePending;
     private bool isDeleting;
     private string sourceRefreshError = "";
     private int quickGeneration;
@@ -259,6 +289,8 @@
     private string QuickKey => $"{selectedDate}:{quickGeneration}";
     private string ModalKey => $"{selectedDate}:{activeKind}:{activeTargetId}:{modalGeneration}";
     private WorkDraftInput QuickInitial => new() { Date = selectedDate.ToString("yyyy-MM-dd") };
+    private string DeleteAutomaticForDateMessage =>
+        $"將永久刪除 {selectedDate:yyyy/MM/dd} 的所有自動來源活動，但保留手動參考資料、其他日期與來源設定；原始來源不受影響。相關摘要會標示為需要重產，之後重新收集仍可能再次匯入。";
 
     protected override async Task OnParametersSetAsync()
     {
@@ -457,10 +489,49 @@
         }
         finally { isDeleting = false; }
     }
+    private async Task DeleteSourceEvidenceAsync(Guid id)
+    {
+        if (isDeleting) return;
+        isDeleting = true;
+        try
+        {
+            var deleted = await SourceEvidence.DeleteAsync(id);
+            pendingSourceEvidenceDeleteId = null;
+            if (deleted)
+            {
+                Toasts.Success("來源活動的本機紀錄已刪除；原始來源不受影響。");
+            }
+            await ReloadAsync();
+        }
+        finally { isDeleting = false; }
+    }
+    private async Task DeleteAutomaticForDateAsync()
+    {
+        if (isDeleting) return;
+        isDeleting = true;
+        try
+        {
+            var deletedCount = await SourceEvidence.DeleteAutomaticForDateAsync(selectedDate);
+            deleteAutomaticForDatePending = false;
+            if (deletedCount == 0)
+            {
+                Toasts.Info("本日沒有自動來源活動可刪除。");
+            }
+            else
+            {
+                Toasts.Success($"已刪除本日 {deletedCount} 筆自動來源活動；手動參考資料與原始來源不受影響。");
+            }
+            await ReloadAsync();
+        }
+        finally { isDeleting = false; }
+    }
     private Task ConfirmDeleteAsync() => pendingDeleteId is Guid id ? DeleteAsync(id) : Task.CompletedTask;
     private Task ConfirmManualSourceDeleteAsync() => pendingManualDeleteId is Guid id ? DeleteManualSourceAsync(id) : Task.CompletedTask;
+    private Task ConfirmSourceEvidenceDeleteAsync() => pendingSourceEvidenceDeleteId is Guid id ? DeleteSourceEvidenceAsync(id) : Task.CompletedTask;
     private void CancelDelete() => pendingDeleteId = null;
     private void CancelManualSourceDelete() => pendingManualDeleteId = null;
+    private void CancelSourceEvidenceDelete() => pendingSourceEvidenceDeleteId = null;
+    private void CancelDeleteAutomaticForDate() => deleteAutomaticForDatePending = false;
     private string ProjectName(Guid? id) => id is Guid projectId ? projects.FirstOrDefault(x => x.Id == projectId)?.Name ?? "已停用專案" : "未分類";
     private string ReportStateText() => report is null ? "未產生" : report.IsStale ? "需重產" : "最新";
 

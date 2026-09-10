@@ -50,7 +50,7 @@ public sealed record AzureDevOpsWorkItemReference(int Id, string Url);
 public sealed record AzureDevOpsWorkItemFieldUpdate(string Field, string OldValue, string NewValue);
 
 public sealed record AzureDevOpsWorkItemUpdate(
-    DateTimeOffset RevisedDate,
+    DateTimeOffset ChangedDate,
     string RevisedBy,
     IReadOnlyList<AzureDevOpsWorkItemFieldUpdate> Fields);
 
@@ -803,12 +803,11 @@ public sealed class AzureDevOpsCliService(IProcessRunner processRunner)
                     }
                 }
                 return new AzureDevOpsWorkItemUpdate(
-                    GetDateTimeOffset(item, "revisedDate"),
+                    GetDateTimeOffset(GetObject(fieldsElement, "System.ChangedDate"), "newValue"),
                     GetIdentityName(revisedBy),
                     fields);
             })
-            .Where(item => item.RevisedDate != default)
-            .OrderBy(item => item.RevisedDate)
+            .OrderBy(item => item.ChangedDate)
             .ToList();
     }
 
