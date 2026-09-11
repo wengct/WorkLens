@@ -29,7 +29,7 @@
     </section>
 
     <section class="panel">
-        <div class="panel-heading"><div><h2>@(isNew ? "新增 Prompt" : "編輯 Prompt")</h2><p>固定 JSON 與工時驗證契約不會被範本內容取代。</p></div></div>
+        <div class="panel-heading"><div><h2>@(isNew ? "新增 Prompt" : "編輯 Prompt")</h2><p>固定 JSON 與工作紀錄驗證契約不會被範本內容取代。</p></div></div>
         <div class="form-grid">
             <div class="field full"><label for="prompt-name">名稱</label><input id="prompt-name" @bind="editing.Name" /></div>
             <div class="field full"><label for="prompt-content">Prompt 內容</label><textarea id="prompt-content" class="prompt-input prompt-library-editor" @bind="editing.Content" @bind:event="oninput"></textarea></div>

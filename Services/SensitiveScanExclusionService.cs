@@ -28,7 +28,7 @@ public sealed class SensitiveScanExclusionService(IDbContextFactory<WorkLensDbCo
 
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         var duplicate = await db.SensitiveScanExclusions.AnyAsync(
-            x => x.Id != exclusion.Id && x.Value == value,
+            x => x.Id != exclusion.Id && EF.Functions.Collate(x.Value, "NOCASE") == value,
             cancellationToken);
         if (duplicate)
         {

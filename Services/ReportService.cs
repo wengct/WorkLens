@@ -59,8 +59,12 @@ public sealed class ReportService(
             .OrderBy(x => x.OccurredAt)
             .ToList();
 
-        var remoteEvidence = await db.RemoteSourceEvidence.AsNoTracking().Where(x => !x.IsDeleted && x.OccurredAt >= start && x.OccurredAt < end).ToListAsync(cancellationToken);
-        evidence.AddRange(remoteEvidence.Select(ActivityQueryService.ToEvidence));
+        var remoteEvidence = await db.RemoteSourceEvidence.AsNoTracking()
+            .Where(x => !x.IsDeleted)
+            .ToListAsync(cancellationToken);
+        evidence.AddRange(remoteEvidence
+            .Where(x => x.OccurredAt >= start && x.OccurredAt < end)
+            .Select(ActivityQueryService.ToEvidence));
         evidence = evidence.OrderBy(x => x.OccurredAt).ToList();
         var hours = WorkLogService.CalculateHours(entries);
         var projects = await GetProjectNamesAsync(db, cancellationToken);
@@ -120,8 +124,12 @@ public sealed class ReportService(
             .Where(x => x.OccurredAt >= start && x.OccurredAt < end)
             .OrderBy(x => x.OccurredAt)
             .ToList();
-        var remoteEvidence = await db.RemoteSourceEvidence.AsNoTracking().Where(x => !x.IsDeleted && x.OccurredAt >= start && x.OccurredAt < end).ToListAsync(cancellationToken);
-        evidence.AddRange(remoteEvidence.Select(ActivityQueryService.ToEvidence));
+        var remoteEvidence = await db.RemoteSourceEvidence.AsNoTracking()
+            .Where(x => !x.IsDeleted)
+            .ToListAsync(cancellationToken);
+        evidence.AddRange(remoteEvidence
+            .Where(x => x.OccurredAt >= start && x.OccurredAt < end)
+            .Select(ActivityQueryService.ToEvidence));
         evidence = evidence.OrderBy(x => x.OccurredAt).ToList();
         var hours = WorkLogService.CalculateHours(entries);
         var periodKey = $"{monday:yyyy}-W{ISOWeek.GetWeekOfYear(monday.ToDateTime(TimeOnly.MinValue)):00}";

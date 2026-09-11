@@ -19,6 +19,10 @@ public sealed class ReportWorkspaceNavigationTests
         Assert.Contains("點此展開／收合", reports, StringComparison.Ordinal);
         Assert.Contains("產生 AI 摘要", workspace, StringComparison.Ordinal);
         Assert.Contains("還原上一版", workspace, StringComparison.Ordinal);
+        Assert.Contains("<section class=\"report-prompt-picker\"", workspace, StringComparison.Ordinal);
+        Assert.Contains("<section class=\"report-secondary-actions\"", workspace, StringComparison.Ordinal);
+        Assert.DoesNotContain("<details class=\"report-prompt-picker\"", workspace, StringComparison.Ordinal);
+        Assert.DoesNotContain("<details class=\"report-secondary-actions\"", workspace, StringComparison.Ordinal);
         Assert.Contains("不受左側歷程篩選影響", workspace, StringComparison.Ordinal);
         Assert.Contains(
             "exception is JSException or JSDisconnectedException",

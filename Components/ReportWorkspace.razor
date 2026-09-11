@@ -54,9 +54,15 @@
     {
         <textarea id="report-body-editor" class="report-body" @bind="report.Body" aria-label="工作摘要內容"></textarea>
         <div class="report-ai-controls">
-            <details class="report-prompt-picker"><summary>整理方式：@(selectedPromptId is null ? "使用系統設定" : "自訂範本")</summary><div class="field"><label for="manual-report-prompt">選擇整理方式</label><select id="manual-report-prompt" value="@SelectedPromptValue" @onchange="SetSelectedPrompt" disabled="@IsBusy"><option value="">使用系統設定</option>@foreach (var prompt in promptOptions) { <option value="@prompt.Id">@prompt.Name</option> }</select></div></details>
+            <section class="report-prompt-picker" aria-labelledby="report-prompt-heading">
+                <h3 id="report-prompt-heading" class="report-control-heading">整理方式：@(selectedPromptId is null ? "使用系統設定" : "自訂範本")</h3>
+                <div class="field"><label for="manual-report-prompt">選擇整理方式</label><select id="manual-report-prompt" value="@SelectedPromptValue" @onchange="SetSelectedPrompt" disabled="@IsBusy"><option value="">使用系統設定</option>@foreach (var prompt in promptOptions) { <option value="@prompt.Id">@prompt.Name</option> }</select></div>
+            </section>
             <div class="button-row report-editor-actions"><button class="button button-secondary" @onclick="SaveChangesAsync" disabled="@IsBusy">儲存文字</button></div>
-            <details class="report-secondary-actions"><summary>其他操作</summary><div class="button-row"><button class="button button-secondary button-small" type="button" @onclick="GenerateAsync" disabled="@IsBusy">產生基本摘要</button><button class="button button-secondary button-small" type="button" @onclick="DownloadMarkdownAsync" disabled="@IsBusy">下載 Markdown</button><button class="button button-secondary button-small" type="button" @onclick="DownloadCsvAsync" disabled="@IsBusy">下載 CSV</button>@if (previousRevision is not null) { <button class="button button-secondary button-small" type="button" @onclick="RestorePreviousAsync" disabled="@IsBusy">還原上一版（@previousRevision.CapturedAt.LocalDateTime.ToString("yyyy/MM/dd HH:mm")）</button> }</div></details>
+            <section class="report-secondary-actions" aria-labelledby="report-secondary-actions-heading">
+                <h3 id="report-secondary-actions-heading" class="report-control-heading">其他操作</h3>
+                <div class="button-row"><button class="button button-secondary button-small" type="button" @onclick="GenerateAsync" disabled="@IsBusy">產生基本摘要</button><button class="button button-secondary button-small" type="button" @onclick="DownloadMarkdownAsync" disabled="@IsBusy">下載 Markdown</button><button class="button button-secondary button-small" type="button" @onclick="DownloadCsvAsync" disabled="@IsBusy">下載 CSV</button>@if (previousRevision is not null) { <button class="button button-secondary button-small" type="button" @onclick="RestorePreviousAsync" disabled="@IsBusy">還原上一版（@previousRevision.CapturedAt.LocalDateTime.ToString("yyyy/MM/dd HH:mm")）</button> }</div>
+            </section>
         </div>
     }
 </section>

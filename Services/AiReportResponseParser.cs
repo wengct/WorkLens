@@ -11,7 +11,6 @@ public static class AiReportResponseParser
             using var document = JsonDocument.Parse(ExtractJson(raw));
             var root = document.RootElement;
             var reportId = root.GetProperty("reportId").GetGuid();
-            var totalHours = root.GetProperty("totalHours").GetDouble();
             var body = root.GetProperty("body").GetString();
             var returnedIds = root.GetProperty("workEntryIds")
                 .EnumerateArray()
@@ -19,11 +18,9 @@ public static class AiReportResponseParser
                 .ToHashSet();
             if (reportId != request.ReportId ||
                 body is null ||
-                !double.IsFinite(totalHours) ||
-                Math.Abs(totalHours - request.TotalHours) > 0.01 ||
                 !returnedIds.SetEquals(request.WorkEntryIds))
             {
-                return new AiReportResult(false, null, raw, "AI 回覆未通過報告 ID、工作紀錄或工時驗證。");
+                return new AiReportResult(false, null, raw, "AI 回覆未通過報告 ID 或工作紀錄驗證。");
             }
 
             return new AiReportResult(true, body, raw, null);

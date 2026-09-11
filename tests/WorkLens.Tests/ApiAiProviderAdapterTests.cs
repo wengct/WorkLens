@@ -74,6 +74,19 @@ public sealed class ApiAiProviderAdapterTests
     }
 
     [Fact]
+    public async Task Generate_does_not_require_total_hours()
+    {
+        const string report = "{\"reportId\":\"11111111-1111-1111-1111-111111111111\",\"workEntryIds\":[\"22222222-2222-2222-2222-222222222222\"],\"body\":\"整理完成\"}";
+        var handler = new RecordingHandler(ProviderResponse("openai", report));
+        var adapter = new ApiAiProviderAdapter("openai", new HttpClient(handler), new StubSecretProtector());
+
+        var result = await adapter.GenerateAsync(Configuration("openai"), Request(), CancellationToken.None);
+
+        Assert.True(result.Succeeded, result.Error);
+        Assert.Equal("整理完成", result.Body);
+    }
+
+    [Fact]
     public async Task Generate_sends_the_prepared_masked_content_without_the_raw_value()
     {
         const string marker = "[已遮蔽：機敏憑證]";

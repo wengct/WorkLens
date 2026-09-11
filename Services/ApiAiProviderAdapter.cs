@@ -338,10 +338,10 @@ public sealed class ApiAiProviderAdapter(
     }
 
     private static string BuildPrompt(AiPreparedRequest request) =>
-        "請根據以下工作資料產生工時回報。只輸出 JSON，不要輸出 markdown code fence。" +
-        "JSON 必須包含 reportId、workEntryIds、totalHours、body；不得虛構、變更或省略輸入的工時與工作紀錄 ID。\n" +
+        "請根據以下工作資料產生工作回報。只輸出 JSON，不要輸出 markdown code fence。" +
+        "JSON 必須包含 reportId、workEntryIds、body；不得虛構、變更或省略輸入的工作紀錄 ID。\n" +
         $"reportId={request.ReportId}\nworkEntryIds={JsonSerializer.Serialize(request.WorkEntryIds)}\n" +
-        $"totalHours={request.TotalHours}\n整理偏好：\n{request.EffectivePrompt.Trim()}\n工作資料：\n{request.InputMarkdown}";
+        $"整理偏好：\n{request.EffectivePrompt.Trim()}\n工作資料：\n{request.InputMarkdown}";
 
     private static string SummarizeError(string responseBody)
     {

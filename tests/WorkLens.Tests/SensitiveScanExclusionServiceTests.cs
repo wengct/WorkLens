@@ -31,6 +31,29 @@ public sealed class SensitiveScanExclusionServiceTests
         Assert.Empty(await service.GetAllAsync());
     }
 
+    [Fact]
+    public async Task Save_rejects_case_insensitive_duplicates_after_upgrading_an_existing_database()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
+        await using (var setup = new WorkLensDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            await setup.Database.ExecuteSqlRawAsync("DROP TABLE \"SensitiveScanExclusions\";");
+        }
+
+        await new DatabaseInitializer(new Factory(options)).InitializeAsync();
+
+        var service = new SensitiveScanExclusionService(new Factory(options));
+        await service.SaveAsync(new SensitiveScanExclusion { Value = "ExampleToken" });
+
+        var duplicate = await Assert.ThrowsAsync<ArgumentException>(() =>
+            service.SaveAsync(new SensitiveScanExclusion { Value = "exampletoken" }));
+
+        Assert.Contains("不可重複", duplicate.Message, StringComparison.Ordinal);
+    }
+
     private sealed class Factory(DbContextOptions<WorkLensDbContext> options)
         : IDbContextFactory<WorkLensDbContext>
     {
