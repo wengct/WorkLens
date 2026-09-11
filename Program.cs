@@ -188,6 +188,7 @@ builder.Services.AddSingleton<SourceRegistry>();
 builder.Services.AddSingleton<SourceOrchestrator>();
 builder.Services.AddSingleton<ReportInvalidationService>();
 
+builder.Services.AddSingleton<SyncService>();
 builder.Services.AddScoped<WorkLogService>();
 builder.Services.AddScoped<WorkDraftService>();
 builder.Services.AddScoped<SourceConfigurationService>();
@@ -207,6 +208,7 @@ builder.Services.AddScoped<ToastService>();
 
 builder.Services.AddHostedService<SourceCollectionHostedService>();
 builder.Services.AddHostedService<ReportScheduleHostedService>();
+builder.Services.AddHostedService<SyncHostedService>();
 
 var app = builder.Build();
 

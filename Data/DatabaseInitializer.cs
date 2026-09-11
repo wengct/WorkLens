@@ -82,6 +82,7 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
             );
             """, cancellationToken);
         await EnsureSchedulingSchemaAsync(db, cancellationToken);
+        await EnsureSyncSchemaAsync(db, cancellationToken);
         var legacyAiEnabled = await ReadLegacyAiEnabledAsync(db, cancellationToken);
         await EnsureColumnAsync(db, "AiProviders", "ProviderType", "TEXT NOT NULL DEFAULT 'ask-bridge'", cancellationToken);
         await EnsureColumnAsync(db, "AiProviders", "ProtectedApiKey", "TEXT NULL", cancellationToken);
@@ -694,4 +695,91 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
             await db.SaveChangesAsync(cancellationToken);
         }
     }
+    private static Task EnsureSyncSchemaAsync(WorkLensDbContext db, CancellationToken cancellationToken) =>
+        db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "SyncConfigurations" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_SyncConfigurations" PRIMARY KEY,
+                "DeviceId" TEXT NOT NULL,
+                "DeviceName" TEXT NOT NULL,
+                "SyncSpaceId" TEXT NULL,
+                "FolderPath" TEXT NULL,
+                "Enabled" INTEGER NOT NULL,
+                "LastExportedAt" TEXT NULL,
+                "LastImportedAt" TEXT NULL,
+                "LastError" TEXT NULL
+            );
+            CREATE TABLE IF NOT EXISTS "SyncEntityStates" (
+                "EntityKind" TEXT NOT NULL,
+                "EntityId" TEXT NOT NULL,
+                "Version" INTEGER NOT NULL,
+                "ContentHash" TEXT NOT NULL,
+                "IsDeleted" INTEGER NOT NULL,
+                CONSTRAINT "PK_SyncEntityStates" PRIMARY KEY ("EntityKind", "EntityId")
+            );
+            CREATE TABLE IF NOT EXISTS "SyncOutboxEvents" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_SyncOutboxEvents" PRIMARY KEY,
+                "EntityKind" TEXT NOT NULL,
+                "EntityId" TEXT NOT NULL,
+                "Version" INTEGER NOT NULL,
+                "Operation" TEXT NOT NULL,
+                "PayloadJson" TEXT NOT NULL,
+                "OccurredAt" TEXT NOT NULL,
+                "PublishedAt" TEXT NULL
+            );
+            CREATE INDEX IF NOT EXISTS "IX_SyncOutboxEvents_PublishedAt" ON "SyncOutboxEvents" ("PublishedAt");
+            CREATE TABLE IF NOT EXISTS "SyncProcessedEvents" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_SyncProcessedEvents" PRIMARY KEY,
+                "ContentHash" TEXT NOT NULL,
+                "ProcessedAt" TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS "SyncProcessedBatches" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_SyncProcessedBatches" PRIMARY KEY,
+                "SyncSpaceId" TEXT NOT NULL,
+                "ContentHash" TEXT NOT NULL,
+                "ProcessedAt" TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_SyncProcessedBatches_SyncSpaceId_ContentHash" ON "SyncProcessedBatches" ("SyncSpaceId", "ContentHash");            CREATE TABLE IF NOT EXISTS "RemoteWorkEntries" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_RemoteWorkEntries" PRIMARY KEY,
+                "OriginDeviceId" TEXT NOT NULL,
+                "OriginDeviceName" TEXT NOT NULL,
+                "OriginEntityId" TEXT NOT NULL,
+                "Version" INTEGER NOT NULL,
+                "IsDeleted" INTEGER NOT NULL,
+                "WorkDate" TEXT NOT NULL,
+                "Hours" REAL NOT NULL,
+                "Title" TEXT NOT NULL,
+                "WorkContent" TEXT NOT NULL,
+                "ProjectName" TEXT NULL,
+                "CreatedAt" TEXT NOT NULL,
+                "UpdatedAt" TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_RemoteWorkEntries_OriginDeviceId_OriginEntityId" ON "RemoteWorkEntries" ("OriginDeviceId", "OriginEntityId");
+            CREATE TABLE IF NOT EXISTS "RemoteSourceEvidence" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_RemoteSourceEvidence" PRIMARY KEY,
+                "OriginDeviceId" TEXT NOT NULL,
+                "OriginDeviceName" TEXT NOT NULL,
+                "OriginEntityId" TEXT NOT NULL,
+                "Version" INTEGER NOT NULL,
+                "IsDeleted" INTEGER NOT NULL,
+                "ProjectName" TEXT NULL,
+                "SourceId" TEXT NOT NULL,
+                "RepositoryKey" TEXT NOT NULL,
+                "RepositoryPath" TEXT NOT NULL,
+                "Environment" TEXT NOT NULL,
+                "Kind" TEXT NOT NULL,
+                "ExternalKey" TEXT NOT NULL,
+                "Title" TEXT NOT NULL,
+                "CommitMessage" TEXT NOT NULL,
+                "OccurredAt" TEXT NOT NULL,
+                "CommitHash" TEXT NULL,
+                "ParentHashes" TEXT NULL,
+                "PatchId" TEXT NULL,
+                "Branch" TEXT NULL,
+                "MetadataJson" TEXT NOT NULL,
+                "ReachabilityStatus" TEXT NOT NULL,
+                "FirstObservedAt" TEXT NOT NULL,
+                "LastObservedAt" TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_RemoteSourceEvidence_OriginDeviceId_OriginEntityId" ON "RemoteSourceEvidence" ("OriginDeviceId", "OriginEntityId");
+            """, cancellationToken);
 }

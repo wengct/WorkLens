@@ -35,6 +35,11 @@ public sealed class WorkLogService(
             .Where(entry => entry.WorkDate >= startDate && entry.WorkDate <= endDate &&
                             (projectId == null || entry.ProjectId == projectId))
             .ToListAsync(cancellationToken);
+        if (projectId is null)
+        {
+            var remote = await db.RemoteWorkEntries.AsNoTracking().Where(x => !x.IsDeleted && x.WorkDate >= startDate && x.WorkDate <= endDate).ToListAsync(cancellationToken);
+            entries.AddRange(remote.Select(ActivityQueryService.ToWorkEntry));
+        }
         return entries
             .Where(entry => string.IsNullOrWhiteSpace(query) ||
                             entry.Title.Contains(query, StringComparison.OrdinalIgnoreCase) ||

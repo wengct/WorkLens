@@ -1,0 +1,42 @@
+@page "/sync"
+@inject SyncService SyncService
+@inject FolderPickerService Folders
+@inject ToastService Toasts
+
+<PageTitle>跨電腦同步｜WorkLens</PageTitle>
+
+<div class="page-heading"><div><p class="eyebrow">Sync</p><h1>跨電腦同步</h1><p>使用雲端硬碟 client 已同步到本機的資料夾交換 JSONL 資料。WorkLens 不會登入或控制雲端服務。</p></div></div>
+
+<div class="settings-stack">
+    <section class="panel">
+        <div class="panel-heading"><div><h2>同步資料夾</h2><p>在第一台電腦建立空間；其他電腦選擇同一資料夾後加入。</p></div></div>
+        <div class="form-grid">
+            <label>裝置名稱<input @bind="deviceName" maxlength="80" /></label>
+            <label class="full">本機同步資料夾<div class="input-with-button"><input @bind="folderPath" placeholder="例如 OneDrive\WorkLensSync" /><button type="button" class="button button-secondary" @onclick="PickFolderAsync">選擇…</button></div></label>
+            <label class="inline-checkbox full"><input type="checkbox" @bind="createSpace" /> 此資料夾尚未建立同步空間，建立新的空間</label>
+            <div class="form-actions"><button class="button button-primary" @onclick="SaveAsync" disabled="@busy">@(busy ? "設定中…" : "儲存並啟用")</button><button class="button button-secondary" @onclick="RunSyncAsync" disabled="@(busy || status?.Enabled != true)">立即同步</button>@if (status?.Enabled == true) { <button class="button button-secondary" @onclick="PauseAsync" disabled="@busy">暫停同步</button> }</div>
+        </div>
+    </section>
+    <section class="panel">
+        <div class="panel-heading"><div><h2>目前狀態</h2><p>寫出成功只代表資料已交給本機同步 client；其他電腦何時匯入取決於其 client 與 WorkLens。</p></div></div>
+        @if (status is null) { <p>正在讀取狀態…</p> }
+        else { <dl class="settings-summary"><dt>狀態</dt><dd>@(status.Enabled ? "已啟用" : "已暫停")</dd><dt>裝置</dt><dd>@status.DeviceName</dd><dt>同步空間</dt><dd>@(status.SyncSpaceId ?? "尚未設定")</dd><dt>待寫出事件</dt><dd>@status.PendingEvents</dd><dt>最近寫出</dt><dd>@Format(status.LastExportedAt)</dd><dt>最近匯入</dt><dd>@Format(status.LastImportedAt)</dd></dl>
+            @if (!string.IsNullOrWhiteSpace(status.LastError)) { <p class="alert alert-error">@status.LastError</p> }
+        }
+    </section>
+    <section class="panel"><div class="panel-heading"><div><h2>同步內容</h2><p>同步正式工時、人工參考資料與已蒐集來源活動。草稿、摘要、AI 設定、排程、備份和憑證不會同步。從其他裝置匯入的紀錄為唯讀。</p></div></div></section>
+</div>
+
+@code {
+    private SyncStatus? status;
+    private string folderPath = string.Empty;
+    private string deviceName = Environment.MachineName;
+    private bool createSpace;
+    private bool busy;
+    protected override async Task OnInitializedAsync() { status = await SyncService.GetStatusAsync(); folderPath = status.FolderPath ?? string.Empty; deviceName = status.DeviceName; }
+    private async Task PickFolderAsync() { var result = await Folders.PickAsync(folderPath); if (result.Selected) folderPath = result.Path!; else if (!string.IsNullOrWhiteSpace(result.Error)) Toasts.Error(result.Error); }
+    private async Task SaveAsync() { busy = true; try { status = await SyncService.ConfigureAsync(folderPath, deviceName, createSpace); Toasts.Success("跨電腦同步已啟用。"); } catch (Exception exception) { Toasts.Error(exception.Message); } finally { busy = false; } }
+    private async Task RunSyncAsync() { busy = true; try { status = await SyncService.SyncAsync(); Toasts.Success("同步作業已完成。"); } finally { busy = false; } }
+    private async Task PauseAsync() { await SyncService.PauseAsync(); status = await SyncService.GetStatusAsync(); Toasts.Info("已暫停同步；本機資料不受影響。"); }
+    private static string Format(DateTimeOffset? value) => value?.ToLocalTime().ToString("yyyy/MM/dd HH:mm") ?? "尚無";
+}

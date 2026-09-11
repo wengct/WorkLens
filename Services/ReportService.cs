@@ -50,12 +50,18 @@ public sealed class ReportService(
             .Where(x => x.WorkDate == date)
             .ToListAsync(cancellationToken);
         entries = entries.OrderBy(x => x.CreatedAt).ToList();
+        var remoteEntries = await db.RemoteWorkEntries.AsNoTracking().Where(x => !x.IsDeleted && x.WorkDate == date).ToListAsync(cancellationToken);
+        entries.AddRange(remoteEntries.Select(ActivityQueryService.ToWorkEntry));
+        entries = entries.OrderBy(x => x.CreatedAt).ToList();
         var allEvidence = await db.SourceEvidence.AsNoTracking().ToListAsync(cancellationToken);
         var evidence = allEvidence
             .Where(x => x.OccurredAt >= start && x.OccurredAt < end)
             .OrderBy(x => x.OccurredAt)
             .ToList();
 
+        var remoteEvidence = await db.RemoteSourceEvidence.AsNoTracking().Where(x => !x.IsDeleted && x.OccurredAt >= start && x.OccurredAt < end).ToListAsync(cancellationToken);
+        evidence.AddRange(remoteEvidence.Select(ActivityQueryService.ToEvidence));
+        evidence = evidence.OrderBy(x => x.OccurredAt).ToList();
         var hours = WorkLogService.CalculateHours(entries);
         var projects = await GetProjectNamesAsync(db, cancellationToken);
         var body = BuildBody(date.ToString("yyyy-MM-dd"), entries, evidence, hours, "每日", projects);
@@ -106,11 +112,17 @@ public sealed class ReportService(
             .OrderBy(x => x.WorkDate)
             .ThenBy(x => x.CreatedAt)
             .ToList();
+        var remoteEntries = await db.RemoteWorkEntries.AsNoTracking().Where(x => !x.IsDeleted && x.WorkDate >= monday && x.WorkDate < weekEnd).ToListAsync(cancellationToken);
+        entries.AddRange(remoteEntries.Select(ActivityQueryService.ToWorkEntry));
+        entries = entries.OrderBy(x => x.WorkDate).ThenBy(x => x.CreatedAt).ToList();
         var allEvidence = await db.SourceEvidence.AsNoTracking().ToListAsync(cancellationToken);
         var evidence = allEvidence
             .Where(x => x.OccurredAt >= start && x.OccurredAt < end)
             .OrderBy(x => x.OccurredAt)
             .ToList();
+        var remoteEvidence = await db.RemoteSourceEvidence.AsNoTracking().Where(x => !x.IsDeleted && x.OccurredAt >= start && x.OccurredAt < end).ToListAsync(cancellationToken);
+        evidence.AddRange(remoteEvidence.Select(ActivityQueryService.ToEvidence));
+        evidence = evidence.OrderBy(x => x.OccurredAt).ToList();
         var hours = WorkLogService.CalculateHours(entries);
         var periodKey = $"{monday:yyyy}-W{ISOWeek.GetWeekOfYear(monday.ToDateTime(TimeOnly.MinValue)):00}";
         var projects = await GetProjectNamesAsync(db, cancellationToken);
@@ -509,6 +521,9 @@ public sealed class ReportService(
             .OrderBy(x => x.WorkDate)
             .ThenBy(x => x.CreatedAt)
             .ToList();
+        var remoteEntries = await db.RemoteWorkEntries.AsNoTracking().Where(x => !x.IsDeleted && x.WorkDate >= reportStartDate && x.WorkDate < reportEndDate).ToListAsync(cancellationToken);
+        entries.AddRange(remoteEntries.Select(ActivityQueryService.ToWorkEntry));
+        entries = entries.OrderBy(x => x.WorkDate).ThenBy(x => x.CreatedAt).ToList();
         var builder = new StringBuilder();
         builder.AppendLine("工作日期,時數,標題,工作內容");
         foreach (var entry in entries)

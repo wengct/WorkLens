@@ -23,6 +23,13 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
     public DbSet<PromptTemplate> PromptTemplates => Set<PromptTemplate>();
     public DbSet<ScheduleDefinition> ScheduleDefinitions => Set<ScheduleDefinition>();
     public DbSet<ScheduleExecution> ScheduleExecutions => Set<ScheduleExecution>();
+    public DbSet<SyncConfiguration> SyncConfigurations => Set<SyncConfiguration>();
+    public DbSet<SyncEntityState> SyncEntityStates => Set<SyncEntityState>();
+    public DbSet<SyncOutboxEvent> SyncOutboxEvents => Set<SyncOutboxEvent>();
+    public DbSet<SyncProcessedEvent> SyncProcessedEvents => Set<SyncProcessedEvent>();
+    public DbSet<SyncProcessedBatch> SyncProcessedBatches => Set<SyncProcessedBatch>();
+    public DbSet<RemoteWorkEntry> RemoteWorkEntries => Set<RemoteWorkEntry>();
+    public DbSet<RemoteSourceEvidence> RemoteSourceEvidence => Set<RemoteSourceEvidence>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -119,5 +126,15 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
         modelBuilder.Entity<ScheduleExecution>()
             .HasIndex(x => new { x.ScheduleId, x.PeriodKey })
             .IsUnique();
+
+        modelBuilder.Entity<SyncEntityState>().HasKey(x => new { x.EntityKind, x.EntityId });
+        modelBuilder.Entity<SyncOutboxEvent>().Property(x => x.EntityKind).HasConversion<string>();
+        modelBuilder.Entity<SyncOutboxEvent>().Property(x => x.Operation).HasConversion<string>();
+        modelBuilder.Entity<SyncOutboxEvent>().HasIndex(x => x.PublishedAt);
+        modelBuilder.Entity<SyncProcessedBatch>().HasIndex(x => new { x.SyncSpaceId, x.ContentHash }).IsUnique();
+        modelBuilder.Entity<RemoteWorkEntry>().HasIndex(x => new { x.OriginDeviceId, x.OriginEntityId }).IsUnique();
+        modelBuilder.Entity<RemoteSourceEvidence>().Property(x => x.Kind).HasConversion<string>();
+        modelBuilder.Entity<RemoteSourceEvidence>().Property(x => x.ReachabilityStatus).HasConversion<string>();
+        modelBuilder.Entity<RemoteSourceEvidence>().HasIndex(x => new { x.OriginDeviceId, x.OriginEntityId }).IsUnique();
     }
 }

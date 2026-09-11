@@ -112,6 +112,9 @@ Windows 也可以使用 `winget install --exact --id Microsoft.AzureCLI` 安裝 
 
 設定來源時，WorkLens 會以 `az ad signed-in-user show` 取得目前登入者的 Entra 身分與 UPN。Entra object ID 與 Azure DevOps 的 IdentityRef ID 是不同識別碼，因此 PR、Work Item 異動與 Discussion 的本人篩選會以 UPN／帳號欄位核對，不會直接比較兩者。
 
+## 跨電腦同步
+
+在「跨電腦同步」指定雲端硬碟 client 已下載到本機的同一資料夾，即可讓多台 WorkLens 交換工作資料。WorkLens 只讀寫這個本機資料夾，不會登入 OneDrive、Google Drive、Dropbox 或其他雲端服務；Windows 與 macOS 使用相同 JSONL 協定。第一台建立同步空間，其餘電腦選擇相同資料夾後加入。同步內容包含正式工作紀錄、人工參考資料與已蒐集來源活動；草稿、摘要、AI 設定、排程、備份及憑證保留本機。其他電腦匯入的資料為唯讀。
 ## 隱私與版控邊界
 
 此 repository 僅包含程式碼與安全的預設設定。執行期間的資料會儲存在 repository 外部，預設位置為：
