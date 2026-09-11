@@ -4,6 +4,13 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-09-11
+
+- 重新設計跨電腦同步設定與狀態區塊，統一表單輸入樣式、保持同步狀態可見、提供明確的同步空間錯誤指引，改善窄螢幕排列，並使用不同於設定移轉的導覽圖示。
+- 修正從機敏資訊送出前預覽確認後，AI 整理等待畫面被對話框遮住的問題。
+- 更換 AI 整理等待動畫，改回瀏覽器原生 WebP 播放，並修正常駐 loading 容器造成的每日摘要版面偏移。
+- 掃描排除關鍵字現在也會套用至 WorkLens 的 Email 檢查；完整相符的指定 Email 不再遮蔽，並在 AI 整理期間顯示等待動畫。
+
 ## [1.10.0] - 2026-09-11
 
 - 新增以通用本機同步資料夾與不可變 JSONL 批次交換的個人多電腦同步功能；可啟用、暫停或立即同步，且預設關閉。
@@ -233,7 +240,9 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.4.1...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.10.1...HEAD
+[1.10.1]: https://github.com/wengct/WorkLens/compare/v1.10.0...v1.10.1
+[1.10.0]: https://github.com/wengct/WorkLens/compare/v1.9.0...v1.10.0
 [1.4.1]: https://github.com/wengct/WorkLens/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/wengct/WorkLens/compare/v1.3.2...v1.4.0
 [1.2.2]: https://github.com/wengct/WorkLens/compare/v1.2.1...v1.2.2

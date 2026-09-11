@@ -10,6 +10,26 @@ namespace WorkLens.Tests;
 public sealed class SyncServiceTests
 {
     [Fact]
+    public async Task Joining_a_folder_without_a_marker_explains_how_to_create_or_join_a_space()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "worklens-sync-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await using var fixture = await Fixture.CreateAsync();
+            var service = new SyncService(fixture.Factory, NullLogger<SyncService>.Instance);
+
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.ConfigureAsync(root, "電腦 A", false));
+
+            Assert.Contains("第一台電腦", error.Message, StringComparison.Ordinal);
+            Assert.Contains("加入既有空間", error.Message, StringComparison.Ordinal);
+            Assert.Contains(".worklens-sync-space.json", error.Message, StringComparison.Ordinal);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public async Task Jsonl_sync_imports_work_entry_on_another_installation_without_duplicateing_it()
     {
         var root = Path.Combine(Path.GetTempPath(), "worklens-sync-" + Guid.NewGuid().ToString("N"));

@@ -7,12 +7,15 @@
 
 <NavigationLock OnBeforeInternalNavigation="BeforeNavigationAsync" />
 
-@if (isGeneratingAi)
-{
-    <OperationProgress Title="AI 正在整理摘要" Detail="通常會在 90 秒內完成；逾時或取消時會保留原內容。" Overlay="true">
+<div class="ai-progress-host @(isGeneratingAi ? "is-active" : null)" aria-hidden="@(!isGeneratingAi)">
+    <OperationProgress Title="AI 正在整理摘要"
+                       Detail="通常會在 90 秒內完成；逾時或取消時會保留原內容。"
+                       Overlay="true"
+                       ImageSource="/images/ai-generating.webp"
+                       ImageAlt="AI 正在整理摘要的等待動畫">
         <Actions><button class="button button-secondary" type="button" @onclick="CancelAiGeneration">取消整理</button></Actions>
     </OperationProgress>
-}
+</div>
 
 <section class="panel report-workspace" aria-label="工作摘要編輯區">
     <div class="panel-heading">
@@ -304,13 +307,15 @@
     private async Task SendPreparedAiAsync()
     {
         if (pendingAiPreparation is null || isGeneratingAi) return;
+        var prepared = pendingAiPreparation;
+        pendingAiPreparation = null;
         isGeneratingAi = true;
         aiCancellation = new CancellationTokenSource();
         await InvokeAsync(StateHasChanged);
         await Task.Yield();
         try
         {
-            await SendPreparedAiCoreAsync();
+            await SendPreparedAiCoreAsync(prepared);
         }
         catch (Exception exception)
         {
@@ -325,10 +330,10 @@
         }
     }
 
-    private async Task SendPreparedAiCoreAsync()
+    private async Task SendPreparedAiCoreAsync(AiPreparedReport? preparedRequest = null)
     {
-        if (pendingAiPreparation is null) return;
-        var prepared = pendingAiPreparation;
+        var prepared = preparedRequest ?? pendingAiPreparation;
+        if (prepared is null) return;
         pendingAiPreparation = null;
         var result = await ReportService.SendPreparedWithAiAsync(prepared, aiCancellation?.Token ?? CancellationToken.None);
         if (aiCancellation?.IsCancellationRequested == true)

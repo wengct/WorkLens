@@ -37,7 +37,7 @@ public sealed class SyncService(IDbContextFactory<WorkLensDbContext> factory, IL
         }
         else
         {
-            if (!createSpace) throw new InvalidOperationException("找不到同步空間識別檔；請等待雲端同步完成，或選擇建立新的同步空間。");
+            if (!createSpace) throw new InvalidOperationException("選取的資料夾不是 WorkLens 同步空間，找不到 .worklens-sync-space.json。若這是第一台電腦，請勾選「建立新的同步空間」；若要加入既有空間，請選擇包含識別檔的資料夾並確認雲端同步已完成。");
             spaceId = Guid.NewGuid().ToString("N");
             var temporary = markerPath + ".tmp";
             await File.WriteAllTextAsync(temporary, JsonSerializer.Serialize(new Marker(ProtocolVersion, spaceId), Json), new UTF8Encoding(false), ct);

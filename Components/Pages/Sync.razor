@@ -5,26 +5,72 @@
 
 <PageTitle>跨電腦同步｜WorkLens</PageTitle>
 
-<div class="page-heading"><div><p class="eyebrow">Sync</p><h1>跨電腦同步</h1><p>使用雲端硬碟 client 已同步到本機的資料夾交換 JSONL 資料。WorkLens 不會登入或控制雲端服務。</p></div></div>
+<div class="page-heading"><div><p class="eyebrow">Sync</p><h1>跨電腦同步</h1><p>透過已同步到本機的雲端硬碟資料夾，安全交換不同電腦上的工作資料。</p></div></div>
 
-<div class="settings-stack">
-    <section class="panel">
-        <div class="panel-heading"><div><h2>同步資料夾</h2><p>在第一台電腦建立空間；其他電腦選擇同一資料夾後加入。</p></div></div>
-        <div class="form-grid">
-            <label>裝置名稱<input @bind="deviceName" maxlength="80" /></label>
-            <label class="full">本機同步資料夾<div class="input-with-button"><input @bind="folderPath" placeholder="例如 OneDrive\WorkLensSync" /><button type="button" class="button button-secondary" @onclick="PickFolderAsync">選擇…</button></div></label>
-            <label class="inline-checkbox full"><input type="checkbox" @bind="createSpace" /> 此資料夾尚未建立同步空間，建立新的空間</label>
-            <div class="form-actions"><button class="button button-primary" @onclick="SaveAsync" disabled="@busy">@(busy ? "設定中…" : "儲存並啟用")</button><button class="button button-secondary" @onclick="RunSyncAsync" disabled="@(busy || status?.Enabled != true)">立即同步</button>@if (status?.Enabled == true) { <button class="button button-secondary" @onclick="PauseAsync" disabled="@busy">暫停同步</button> }</div>
+<div class="sync-page-stack">
+    <section class="panel sync-setup-panel">
+        <div class="sync-panel-heading">
+            <div class="sync-panel-icon" aria-hidden="true">⟳</div>
+            <div><h2>連接同步空間</h2><p>第一台電腦建立新空間；其他電腦選擇相同資料夾即可加入。</p></div>
+            <span class="badge @(status is null ? "badge-running" : status.Enabled ? "badge-ready" : "badge-disabled")">@(status is null ? "正在讀取" : status.Enabled ? "同步已啟用" : "目前已暫停")</span>
+        </div>
+        <div class="sync-form-grid">
+            <div class="field sync-field">
+                <label for="sync-device-name">這台裝置的名稱</label>
+                <span class="hint">用來辨識資料是由哪一台電腦寫出。</span>
+                <input id="sync-device-name" @bind="deviceName" maxlength="80" />
+            </div>
+            <div class="field sync-field sync-folder-field">
+                <label for="sync-folder-path">本機同步資料夾</label>
+                <span class="hint">請選擇 OneDrive、Dropbox 或其他已由同步程式管理的本機資料夾。</span>
+                <div class="sync-folder-input"><input id="sync-folder-path" @bind="folderPath" placeholder="例如 OneDrive\WorkLensSync" /><button type="button" class="button button-secondary" @onclick="PickFolderAsync">選擇資料夾</button></div>
+            </div>
+            <label class="sync-create-option">
+                <input type="checkbox" @bind="createSpace" />
+                <span><strong>建立新的同步空間</strong><small>只有第一台電腦需要勾選；加入既有空間時請保持未勾選。</small></span>
+            </label>
+        </div>
+        <div class="sync-actions">
+            <button class="button button-primary" @onclick="SaveAsync" disabled="@busy">@(busy ? "設定中…" : "儲存並啟用")</button>
+            <button class="button button-secondary" @onclick="RunSyncAsync" disabled="@(busy || status?.Enabled != true)">立即同步</button>
+            @if (status?.Enabled == true)
+            {
+                <button class="button button-secondary" @onclick="PauseAsync" disabled="@busy">暫停同步</button>
+            }
         </div>
     </section>
-    <section class="panel">
-        <div class="panel-heading"><div><h2>目前狀態</h2><p>寫出成功只代表資料已交給本機同步 client；其他電腦何時匯入取決於其 client 與 WorkLens。</p></div></div>
-        @if (status is null) { <p>正在讀取狀態…</p> }
-        else { <dl class="settings-summary"><dt>狀態</dt><dd>@(status.Enabled ? "已啟用" : "已暫停")</dd><dt>裝置</dt><dd>@status.DeviceName</dd><dt>同步空間</dt><dd>@(status.SyncSpaceId ?? "尚未設定")</dd><dt>待寫出事件</dt><dd>@status.PendingEvents</dd><dt>最近寫出</dt><dd>@Format(status.LastExportedAt)</dd><dt>最近匯入</dt><dd>@Format(status.LastImportedAt)</dd></dl>
-            @if (!string.IsNullOrWhiteSpace(status.LastError)) { <p class="alert alert-error">@status.LastError</p> }
+
+    <section class="panel sync-status-panel">
+        <div class="panel-heading"><div><h2>目前狀態</h2><p>寫出成功代表資料已交給本機同步程式；其他電腦會依各自的同步進度匯入。</p></div></div>
+        @if (status is null)
+        {
+            <OperationProgress Title="正在讀取同步狀態…" />
+        }
+        else
+        {
+            <dl class="sync-status-grid">
+                <div class="sync-status-primary"><dt>同步狀態</dt><dd><span class="sync-status-dot @(status.Enabled ? "is-active" : null)"></span>@(status.Enabled ? "已啟用" : "已暫停")</dd></div>
+                <div><dt>裝置</dt><dd>@status.DeviceName</dd></div>
+                <div><dt>待寫出事件</dt><dd class="sync-status-number">@status.PendingEvents</dd></div>
+                <div><dt>最近寫出</dt><dd>@Format(status.LastExportedAt)</dd></div>
+                <div><dt>最近匯入</dt><dd>@Format(status.LastImportedAt)</dd></div>
+                <div class="sync-space-id"><dt>同步空間</dt><dd>@(status.SyncSpaceId ?? "尚未設定")</dd></div>
+            </dl>
+            @if (!string.IsNullOrWhiteSpace(status.LastError))
+            {
+                <p class="alert alert-error">@status.LastError</p>
+            }
         }
     </section>
-    <section class="panel"><div class="panel-heading"><div><h2>同步內容</h2><p>同步正式工時、人工參考資料與已蒐集來源活動。草稿、摘要、AI 設定、排程、備份和憑證不會同步。從其他裝置匯入的紀錄為唯讀。</p></div></div></section>
+
+    <section class="panel sync-scope-panel">
+        <div class="panel-heading"><div><h2>同步內容與隱私</h2><p>WorkLens 只讀寫你指定的本機資料夾，不會登入或控制任何雲端服務。</p></div></div>
+        <div class="sync-scope-grid">
+            <div class="sync-scope-card is-included"><span class="sync-scope-symbol" aria-hidden="true">✓</span><div><h3>會同步</h3><p>正式工時、人工參考資料，以及已蒐集的來源活動。</p></div></div>
+            <div class="sync-scope-card"><span class="sync-scope-symbol" aria-hidden="true">—</span><div><h3>保留在本機</h3><p>草稿、摘要、AI 設定、排程、備份與憑證。</p></div></div>
+        </div>
+        <p class="sync-readonly-note">從其他裝置匯入的紀錄會標示為唯讀，避免在不同電腦重複修改。</p>
+    </section>
 </div>
 
 @code {

@@ -2,6 +2,10 @@
 {
     <div class="processing-overlay" role="status" aria-live="polite">
         <div class="processing-card">
+            @if (!string.IsNullOrWhiteSpace(ImageSource))
+            {
+                <img class="operation-progress-image" src="@ImageSource" alt="@ImageAlt" />
+            }
             <div class="operation-progress-copy">
                 <strong>@Title</strong>
                 @if (!string.IsNullOrWhiteSpace(Detail))
@@ -33,6 +37,8 @@ else
     [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
     [Parameter] public string Detail { get; set; } = string.Empty;
     [Parameter] public bool Overlay { get; set; }
+    [Parameter] public string? ImageSource { get; set; }
+    [Parameter] public string ImageAlt { get; set; } = string.Empty;
     [Parameter] public RenderFragment? Actions { get; set; }
 
 }

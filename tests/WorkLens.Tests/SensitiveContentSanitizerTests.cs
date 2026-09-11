@@ -140,7 +140,7 @@ public sealed class SensitiveContentSanitizerTests
     }
 
     [Fact]
-    public async Task Email_rule_overrides_a_matching_scanner_exclusion()
+    public async Task Email_matching_a_scanner_exclusion_passes_without_redaction()
     {
         const string email = "person@example.invalid";
         await using var fixture = await SanitizerFixture.CreateAsync((_, invocation) => invocation switch
@@ -156,13 +156,14 @@ public sealed class SensitiveContentSanitizerTests
             }}), string.Empty),
             _ => new ProcessResult(0, ReportJson(), string.Empty)
         });
-        await fixture.AddScanExclusionAsync(email);
+        await fixture.AddScanExclusionAsync(email.ToUpperInvariant());
 
         var result = await fixture.Sanitizer.PrepareAsync(CreateRequest(fixture, email));
 
         Assert.True(result.Succeeded, result.Summary.Error);
-        Assert.Equal(AiSanitizationStatus.Redacted, result.Summary.Status);
-        Assert.Contains("[已遮蔽：個人資料]", result.PreparedRequest!.InputMarkdown, StringComparison.Ordinal);
+        Assert.Equal(AiSanitizationStatus.Clean, result.Summary.Status);
+        Assert.Equal(email, result.PreparedRequest!.InputMarkdown);
+        Assert.Equal(2, fixture.Runner.Calls.Count);
     }
 
     [Fact]

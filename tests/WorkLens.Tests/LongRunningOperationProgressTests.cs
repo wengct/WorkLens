@@ -37,4 +37,42 @@ public sealed class LongRunningOperationProgressTests
         Assert.Contains("aria-live=\"polite\"", razor, StringComparison.Ordinal);
         Assert.Contains("operation-progress-track", razor, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task Ai_progress_uses_the_supplied_waiting_animation()
+    {
+        var path = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..",
+            "Components", "ReportWorkspace.razor"));
+        var razor = await File.ReadAllTextAsync(path);
+
+        Assert.Contains("ImageSource=\"/images/ai-generating.webp\"", razor, StringComparison.Ordinal);
+        Assert.Contains("AI 正在整理摘要的等待動畫", razor, StringComparison.Ordinal);
+        Assert.Contains("class=\"ai-progress-host @(isGeneratingAi ? \"is-active\" : null)\"", razor, StringComparison.Ordinal);
+        Assert.Contains("aria-hidden=\"@(!isGeneratingAi)\"", razor, StringComparison.Ordinal);
+        Assert.Contains("<img class=\"operation-progress-image\"", await File.ReadAllTextAsync(Path.Combine(
+            AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Components", "OperationProgress.razor")), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Sending_a_sanitized_preview_closes_it_before_rendering_ai_progress()
+    {
+        var root = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", ".."));
+        var razor = await File.ReadAllTextAsync(Path.Combine(root, "Components", "ReportWorkspace.razor"));
+        var css = await File.ReadAllTextAsync(Path.Combine(root, "wwwroot", "app.css"));
+        var sendStart = razor.IndexOf("private async Task SendPreparedAiAsync()", StringComparison.Ordinal);
+        var sendEnd = razor.IndexOf("private async Task SendPreparedAiCoreAsync", sendStart, StringComparison.Ordinal);
+        var send = razor[sendStart..sendEnd];
+
+        var closePreview = send.IndexOf("pendingAiPreparation = null;", StringComparison.Ordinal);
+        var renderProgress = send.IndexOf("StateHasChanged", StringComparison.Ordinal);
+        Assert.True(closePreview >= 0 && renderProgress >= 0 && closePreview < renderProgress);
+        Assert.Contains(".processing-overlay { position: fixed; z-index: 1200;", css, StringComparison.Ordinal);
+        Assert.Contains(".ai-progress-host:not(.is-active) .processing-overlay", css, StringComparison.Ordinal);
+        Assert.Contains(".ai-progress-host { display: contents; }", css, StringComparison.Ordinal);
+        Assert.DoesNotContain("@if (isGeneratingAi)", razor, StringComparison.Ordinal);
+    }
 }

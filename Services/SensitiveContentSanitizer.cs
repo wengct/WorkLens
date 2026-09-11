@@ -138,7 +138,8 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
 
             foreach (var pair in segments)
             {
-                foreach (var match in FindEmailMatches(pair.Value.Text))
+                foreach (var match in FindEmailMatches(pair.Value.Text)
+                             .Where(match => !IsScanExcluded(pair.Value.Text, match, scanExclusions)))
                 {
                     AddRange(rangesByFile, pair.Key, match with { Category = AiSensitiveDataCategory.PersonalData });
                 }
@@ -202,7 +203,9 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
 
             foreach (var pair in sanitizedSegments)
             {
-                if (FindEmailMatches(pair.Value.Text).Any(match => !IsInsideRedactionMarker(pair.Value.Text, match.Start, match.End)) ||
+                if (FindEmailMatches(pair.Value.Text).Any(match =>
+                        !IsInsideRedactionMarker(pair.Value.Text, match.Start, match.End) &&
+                        !IsScanExcluded(pair.Value.Text, match, scanExclusions)) ||
                     customWords.Any(word => FindLiteralMatches(pair.Value.Text, word)
                         .Any(match => !IsInsideRedactionMarker(pair.Value.Text, match.Start, match.End))))
                 {
@@ -430,6 +433,14 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
     private static bool IsScanExcluded(LeakHunterFinding finding, IReadOnlyList<string> exclusions) =>
         !string.IsNullOrEmpty(finding.Secret) &&
         exclusions.Any(value => value.Equals(finding.Secret, StringComparison.OrdinalIgnoreCase));
+
+    private static bool IsScanExcluded(
+        string text,
+        RedactionRange range,
+        IReadOnlyList<string> exclusions) =>
+        exclusions.Any(value =>
+            value.Length == range.End - range.Start &&
+            text.AsSpan(range.Start, value.Length).Equals(value, StringComparison.OrdinalIgnoreCase));
 
     private static void AddRange(
         IDictionary<string, List<RedactionRange>> rangesByFile,
