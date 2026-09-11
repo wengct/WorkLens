@@ -14,43 +14,27 @@
     <div><p class="eyebrow">Review, write, export</p><h1>工作摘要</h1><p>從工作歷程選擇日期或週期，在同一頁完成摘要。</p></div>
 </div>
 
+<div class="report-page-stack">
 <section class="panel report-period-panel">
-    <div class="panel-heading"><div><h2>選擇摘要期間</h2><p>每日查看單日；每週會彙整週一至週日。</p></div></div>
-    <div class="report-range-note">
-        @if (kind == ReportKind.Daily)
-        {
-            <span><strong>每日報告：</strong>涵蓋所選日期 00:00 至 24:00 的人工紀錄與來源活動；目前範圍為 @SelectedPeriodTitle。</span>
-        }
-        else
-        {
-            <span><strong>每週報告：</strong>涵蓋所選日期所在週，固定由星期一至星期日；目前範圍為 @SelectedPeriodTitle。</span>
-        }
-    </div>
-    <div class="button-row">
-        <div class="view-switch" aria-label="摘要期間種類">
-            <button type="button" class="@(kind == ReportKind.Daily ? "active" : string.Empty)" @onclick="() => RequestPeriodChangeAsync(ReportKind.Daily, selectedDate)">每日</button>
-            <button type="button" class="@(kind == ReportKind.Weekly ? "active" : string.Empty)" @onclick="() => RequestPeriodChangeAsync(ReportKind.Weekly, selectedDate)">每週</button>
+    <div class="report-period-toolbar">
+        <span class="report-period-label">摘要期間：<strong>@SelectedPeriodTitle</strong></span>
+        <div class="button-row">
+            <div class="view-switch" aria-label="摘要期間種類">
+                <button type="button" class="@(kind == ReportKind.Daily ? "active" : string.Empty)" @onclick="() => RequestPeriodChangeAsync(ReportKind.Daily, selectedDate)">每日</button>
+                <button type="button" class="@(kind == ReportKind.Weekly ? "active" : string.Empty)" @onclick="() => RequestPeriodChangeAsync(ReportKind.Weekly, selectedDate)">每週</button>
+            </div>
+            <button class="button button-secondary" type="button" @onclick="() => RequestPeriodChangeAsync(kind, selectedDate.AddDays(kind == ReportKind.Daily ? -1 : -7))">← @(kind == ReportKind.Daily ? "前一天" : "前一週")</button>
+            <input class="period-date-picker" type="date" value="@selectedDate.ToString("yyyy-MM-dd")" @onchange="ChangeDateAsync" aria-label="摘要日期" />
+            <button class="button button-secondary" type="button" @onclick="() => RequestPeriodChangeAsync(kind, DateOnly.FromDateTime(DateTime.Today))">@(kind == ReportKind.Daily ? "今天" : "本週")</button>
+            <button class="button button-secondary" type="button" @onclick="() => RequestPeriodChangeAsync(kind, selectedDate.AddDays(kind == ReportKind.Daily ? 1 : 7))">@(kind == ReportKind.Daily ? "後一天" : "後一週") →</button>
         </div>
-        <button class="button button-secondary" type="button" @onclick="() => RequestPeriodChangeAsync(kind, selectedDate.AddDays(kind == ReportKind.Daily ? -1 : -7))">← @(kind == ReportKind.Daily ? "前一天" : "前一週")</button>
-        <input class="period-date-picker" type="date" value="@selectedDate.ToString("yyyy-MM-dd")" @onchange="ChangeDateAsync" aria-label="摘要日期" />
-        <button class="button button-secondary" type="button" @onclick="() => RequestPeriodChangeAsync(kind, DateOnly.FromDateTime(DateTime.Today))">@(kind == ReportKind.Daily ? "今天" : "本週")</button>
-        <button class="button button-secondary" type="button" @onclick="() => RequestPeriodChangeAsync(kind, selectedDate.AddDays(kind == ReportKind.Daily ? 1 : 7))">@(kind == ReportKind.Daily ? "後一天" : "後一週") →</button>
     </div>
 </section>
 
-<details class="panel history-filter-panel">
-    <summary class="history-filter-summary"><span><strong>篩選歷程</strong><small>僅篩選歷程，不影響摘要範圍 · @FilterSummary()</small></span><span>展開設定</span></summary>
-    <div class="form-grid history-filter-grid">
-        <div class="field"><label>專案</label><select @bind="filterProject"><option value="">全部專案</option>@foreach (var project in projects) { <option value="@project.Id">@(project.IsArchived ? "[已停用] " : string.Empty)@project.Name</option> }</select></div>
-        <div class="field"><label>內容</label><input @bind="filterQuery" placeholder="搜尋工作內容、repository 或 commit message" /></div>
-        <div class="field"><label>資料種類</label><select @bind="filterMode"><option value="all">全部</option><option value="manual">工作紀錄</option><option value="sources">參考資料與來源活動</option></select></div>
-        <div class="field"><label class="inline-checkbox"><input type="checkbox" @bind="filterCurrentOnly" /> 只看目前有效來源</label></div>
-        <div class="form-actions"><button class="button button-primary" @onclick="ApplyFilters">套用篩選</button></div>
-    </div>
-</details>
+
 
 <div class="summary-workspace">
-    <div class="summary-history-column">
+<ReportWorkspace @ref="reportWorkspace" Kind="kind" AnchorDate="selectedDate" OnReportChanged="ReloadAsync" />
         <details class="panel history-browser" open>
             <summary><span><strong>瀏覽日期</strong><small>週／月檢視只用來瀏覽歷程</small></span><span class="history-browser-toggle">點此展開／收合</span></summary>
             <section class="history-calendar-panel">
@@ -86,6 +70,20 @@
             </section>
         </details>
 
+</div>
+
+<div class="report-history-stack">
+<details class="panel history-filter-panel">
+    <summary class="history-filter-summary"><span><strong>篩選歷程</strong><small>僅篩選歷程，不影響摘要範圍 · @FilterSummary()</small></span><span>展開設定</span></summary>
+    <div class="form-grid history-filter-grid">
+        <div class="field"><label>專案</label><select @bind="filterProject"><option value="">全部專案</option>@foreach (var project in projects) { <option value="@project.Id">@(project.IsArchived ? "[已停用] " : string.Empty)@project.Name</option> }</select></div>
+        <div class="field"><label>內容</label><input @bind="filterQuery" placeholder="搜尋工作內容、repository 或 commit message" /></div>
+        <div class="field"><label>資料種類</label><select @bind="filterMode"><option value="all">全部</option><option value="manual">工作紀錄</option><option value="sources">參考資料與來源活動</option></select></div>
+        <div class="field"><label class="inline-checkbox"><input type="checkbox" @bind="filterCurrentOnly" /> 只看目前有效來源</label></div>
+        <div class="form-actions"><button class="button button-primary" @onclick="ApplyFilters">套用篩選</button></div>
+    </div>
+</details>
+
         <section class="panel history-day-detail">
             <div class="panel-heading">
                 <div><h2>@SelectedPeriodTitle 明細</h2><p>@WorkLogService.CalculateHours(DetailEntries).ToString("0.##") 小時 · @DetailEntries.Count 筆人工紀錄 · @DetailEvidence.Count 筆來源活動</p></div>
@@ -117,9 +115,7 @@
                 </div></div>
             }
         </section>
-    </div>
-
-    <ReportWorkspace @ref="reportWorkspace" Kind="kind" AnchorDate="selectedDate" OnReportChanged="ReloadAsync" />
+</div>
 </div>
 
 <ConfirmDialog Open="deleteAutomaticForDatePending"

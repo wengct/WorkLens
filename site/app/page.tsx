@@ -59,11 +59,22 @@ export default function Home() {
         <nav aria-label="主要導覽">
           <a href="#story">為什麼</a>
           <a href="#product">如何運作</a>
+          <a href="#workflow">持續回報</a>
+          <a href="#ai-assistance">AI 聚焦</a>
           <a href="#sensitive-protection">機敏防護</a>
           <a href="#privacy">Local-first</a>
         </nav>
         <a className="header-action" href="#install">下載使用 <ArrowRight size={16} /></a>
       </header>
+
+      <nav className="section-dock" aria-label="快速章節導覽">
+        <a href="#story"><span>01</span><strong>散落的痕跡</strong></a>
+        <a href="#product"><span>02</span><strong>重新聚焦</strong></a>
+        <a href="#workflow"><span>03</span><strong>持續回報</strong></a>
+        <a href="#ai-assistance"><span>04</span><strong>AI 聚焦引擎</strong></a>
+        <a href="#sensitive-protection"><span>05</span><strong>機敏資訊防護</strong></a>
+        <a href="#privacy"><span>06</span><strong>Local-first</strong></a>
+      </nav>
 
       <section className="hero page-width">
         <div className="hero-index" aria-hidden="true">WORK / 001</div>
@@ -121,9 +132,9 @@ export default function Home() {
           </div>
 
           <figure className="product-shot">
-            <div className="shot-toolbar"><span><i /> PRODUCT VIEW</span><span>工作摘要・每週歷程</span></div>
-            <img src={`${assetPrefix}/worklens-summary.png`} alt="WorkLens 工作摘要畫面，顯示每週工作歷程、每日明細與可編輯的每日摘要" width="1920" height="989" />
-            <figcaption><span>01</span> 從整週概覽、每日明細到完整摘要，所有工作脈絡都在同一個畫面裡。</figcaption>
+            <div className="shot-toolbar"><span><i /> PRODUCT VIEW</span><span>工作摘要・每日工作區</span></div>
+            <img src={`${assetPrefix}/worklens-report-workspace.png`} alt="WorkLens 工作摘要工作區，顯示每日摘要、固定整理工具列與日期瀏覽歷程" width="1536" height="639" />
+            <figcaption><span>01</span> 在同一個工作區完成摘要整理、AI 協助、儲存與日期瀏覽。</figcaption>
           </figure>
 
           <div className="product-flow">
@@ -149,8 +160,24 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="assistance page-width">
-        <div className="section-label"><span>03</span><p>AI 聚焦引擎</p></div>
+      <section className="workflow-section" id="workflow">
+        <div className="page-width workflow-layout">
+          <div className="section-label workflow-label"><span>03</span><p>持續回報</p></div>
+          <div className="workflow-heading">
+            <p className="overline">FROM FIRST NOTE TO A STEADY RHYTHM</p>
+            <h2>把回報這件事，<br />放回工作的節奏裡。</h2>
+            <p>從第一筆紀錄到定期摘要，WorkLens 把輸入、整理、保護與延續放在同一條流程中，讓你不必在忙碌結束後重新拼湊今天。</p>
+          </div>
+          <div className="workflow-grid">
+            <article><PenLine size={22} /><small>01 / CAPTURE</small><h3>先記下，再慢慢補完</h3><p>工作填寫優先顯示輸入區，未完成內容會暫存為本機草稿；重新開啟也能從原處繼續。</p></article>
+            <article><FileText size={22} /><small>02 / SHAPE</small><h3>用固定工作區整理摘要</h3><p>摘要頁將整理方式、AI 整理與儲存放在固定工具列；可套用 Prompt 範本、保留上一版，並隨時還原。</p></article>
+            <article><CalendarDays size={22} /><small>03 / CONTINUE</small><h3>讓日常流程自己延續</h3><p>可安排日報、週報與備份；設定也能選擇分類移轉，或以個人同步資料夾交換跨電腦的工作紀錄。</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section className="assistance page-width" id="ai-assistance">
+        <div className="section-label"><span>04</span><p>AI 聚焦引擎</p></div>
         <div className="assistance-title">
           <p className="overline">AI FOR WORK DISCOVERY</p>
           <h2>讓 AI 沿著痕跡，<br />找回你真正做過的事。</h2>
@@ -165,7 +192,7 @@ export default function Home() {
 
       <section className="sensitive-section" id="sensitive-protection">
         <div className="page-width sensitive-layout">
-          <div className="section-label sensitive-label"><span>04</span><p>機敏資訊防護</p></div>
+          <div className="section-label sensitive-label"><span>05</span><p>機敏資訊防護</p></div>
           <div className="sensitive-heading">
             <p className="overline">A SAFETY CHECK BEFORE AI</p>
             <h2><span className="heading-line">送出 AI 之前，</span><span className="heading-line">先把機敏資訊留在本機。</span></h2>
@@ -219,7 +246,7 @@ export default function Home() {
 
       <section className="privacy-section" id="privacy">
         <div className="page-width privacy-layout">
-          <div className="section-label light-label"><span>05</span><p>Local-first</p></div>
+          <div className="section-label light-label"><span>06</span><p>Local-first</p></div>
           <div className="privacy-statement">
             <p className="overline">A PRINCIPLE, NOT A FEATURE</p>
             <h2><span className="heading-line">工作紀錄，</span><span className="heading-line">首先應該屬於</span><span className="heading-line">工作的人。</span></h2>

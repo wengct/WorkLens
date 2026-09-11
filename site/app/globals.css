@@ -67,6 +67,13 @@ img { display: block; max-width: 100%; }
 .site-header nav a { transition: color .18s ease; }
 .site-header nav a:hover { color: white; }
 .header-action { min-height: 40px; display: inline-flex; align-items: center; gap: 9px; padding: 0 15px; color: var(--night); background: var(--focus); border-radius: 5px; font-size: .83rem; font-weight: 750; }
+.section-dock { position: fixed; top: 50%; right: max(1.25rem, calc((100vw - 1400px) / 2)); z-index: 5; display: grid; gap: 10px; transform: translateY(-50%); }
+.section-dock a { display: grid; grid-template-columns: 27px max-content; align-items: center; gap: 8px; min-height: 23px; color: #dce7f2; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .63rem; font-weight: 700; letter-spacing: .07em; }
+.section-dock a > span { display: grid; place-items: center; width: 24px; height: 24px; color: #dce7f2; border: 1px solid rgba(220,231,242,.36); border-radius: 50%; background: rgba(7,17,31,.32); transition: color .18s ease, border-color .18s ease, background .18s ease; }
+.section-dock strong { max-width: 0; overflow: hidden; padding: 0; color: #f4f7fb; border-radius: 4px; background: rgba(7,17,31,.88); font-size: inherit; font-weight: 700; line-height: 1; opacity: 0; transform: translateX(-5px); transition: max-width .2s ease, padding .2s ease, opacity .16s ease, transform .2s ease; white-space: nowrap; }
+.section-dock a:hover > span, .section-dock a:focus-visible > span { color: var(--night); border-color: var(--focus); background: var(--focus); }
+.section-dock a:hover strong, .section-dock a:focus-visible strong { max-width: 150px; padding: 7px 9px; opacity: 1; transform: translateX(0); }
+.section-dock a:focus-visible { outline: none; }
 
 .hero { min-height: calc(100vh - 86px); display: grid; grid-template-columns: 90px minmax(0,1fr) minmax(300px,.52fr); align-items: center; gap: 48px; padding-block: 72px 88px; }
 .hero-index { align-self: stretch; display: flex; align-items: flex-end; padding-bottom: 7px; color: #56667b; font-family: ui-monospace, monospace; font-size: .66rem; letter-spacing: .12em; writing-mode: vertical-rl; transform: rotate(180deg); }
@@ -110,6 +117,7 @@ img { display: block; max-width: 100%; }
 
 .product-section { padding-block: 130px 140px; color: var(--foreground); background: transparent; }
 .product-heading { display: grid; grid-template-columns: 150px minmax(430px,1fr) minmax(300px,.55fr); gap: 60px; align-items: end; }
+.product-heading > .section-label { align-self: start; }
 .light-label { color: #536176; }
 .light-label span { color: #4659c8; }
 .product-section .light-label { color: #aeb9c7; }
@@ -129,6 +137,22 @@ img { display: block; max-width: 100%; }
 .product-flow svg { margin-top: 42px; color: var(--focus); }
 .product-flow h3 { margin: 22px 0 10px; font-size: 1.15rem; }
 .product-flow p { margin: 0; color: #f0f3f5; font-size: .9rem; line-height: 1.8; }
+
+.workflow-section { padding-block: 132px; color: #f4f7fb; text-shadow: 0 2px 18px rgba(7,17,31,.42); }
+.workflow-layout { display: grid; grid-template-columns: 150px 1fr; gap: 60px; }
+.workflow-layout > .section-label, .assistance > .section-label, .sensitive-layout > .section-label, .privacy-layout > .section-label { align-self: start; }
+.workflow-label { color: #dce7f2; font-weight: 720; }
+.workflow-label span { color: var(--focus); background: rgba(7,17,31,.42); }
+.workflow-heading { max-width: 760px; }
+.workflow-heading .overline { margin-bottom: 17px; color: var(--focus); }
+.workflow-heading h2 { margin: 0; color: #fff; font-size: clamp(2.35rem, 4vw, 4.1rem); font-weight: 720; letter-spacing: -.06em; line-height: 1.16; }
+.workflow-heading > p:last-child { max-width: 670px; margin: 28px 0 0; color: #edf4fa; font-size: .97rem; line-height: 1.9; }
+.workflow-grid { grid-column: 2; display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 10px; }
+.workflow-grid article { min-height: 260px; padding: 29px 26px; border: 1px solid rgba(120,228,218,.28); border-radius: 12px; background: rgba(7,17,31,.7); box-shadow: 0 16px 35px rgba(7,17,31,.2); }
+.workflow-grid svg { color: var(--focus); }
+.workflow-grid small { display: block; margin-top: 29px; color: #b9cbe0; font-family: ui-monospace, monospace; font-size: .65rem; font-weight: 700; letter-spacing: .09em; }
+.workflow-grid h3 { margin: 10px 0 12px; color: #fff; font-size: 1.03rem; }
+.workflow-grid p { margin: 0; color: #e1eaf2; font-size: .88rem; line-height: 1.8; }
 
 .assistance { display: grid; grid-template-columns: 150px 1fr; gap: 60px; padding-block: 130px; color: #17283a; }
 .assistance > .section-label { color: #17364b; font-weight: 720; }
@@ -235,14 +259,20 @@ img { display: block; max-width: 100%; }
 .source-brands > p svg { flex-shrink: 0; color: var(--focus); }
 
 @media (max-width: 1060px) {
+  .site-header { gap: 18px; }
+  .site-header nav { gap: 18px; font-size: .8rem; }
   .hero { grid-template-columns: 55px 1fr; }
   .hero-aside { grid-column: 2; align-self: auto; max-width: 600px; margin: 0; }
-  .trace-layout, .product-heading, .sensitive-layout, .privacy-layout { grid-template-columns: 110px 1fr; }
-  .trace-list, .product-heading > p, .sensitive-flow, .sensitive-preview, .sensitive-notes, .privacy-rules { grid-column: 2; }
+  .trace-layout, .product-heading, .workflow-layout, .sensitive-layout, .privacy-layout { grid-template-columns: 110px 1fr; }
+  .trace-list, .product-heading > p, .workflow-grid, .sensitive-flow, .sensitive-preview, .sensitive-notes, .privacy-rules { grid-column: 2; }
   .sensitive-flow { grid-template-columns: repeat(2, 1fr); }
   .product-heading > p { max-width: 680px; }
   .install-layout { grid-template-columns: 1fr; }
   .terminal-card { width: 100%; }
+}
+
+@media (max-width: 1359px) {
+  .section-dock { display: none; }
 }
 
 @media (max-width: 760px) {
@@ -255,9 +285,9 @@ img { display: block; max-width: 100%; }
   .hero-index { display: none; }
   .hero h1 { font-size: clamp(3rem, 14vw, 4.35rem); line-height: 1.1; }
   .hero-aside { grid-column: 1; max-width: none; }
-  .trace-section, .product-section, .assistance, .sensitive-section, .privacy-section, .process-section, .install-section { padding-block: 90px; }
-  .trace-layout, .product-heading, .sensitive-layout, .privacy-layout, .assistance { grid-template-columns: 1fr; gap: 38px; }
-  .trace-list, .product-heading > p, .sensitive-flow, .sensitive-preview, .sensitive-notes, .privacy-rules, .assistance-grid, .ai-outcome { grid-column: 1; }
+  .trace-section, .product-section, .workflow-section, .assistance, .sensitive-section, .privacy-section, .process-section, .install-section { padding-block: 90px; }
+  .trace-layout, .product-heading, .workflow-layout, .sensitive-layout, .privacy-layout, .assistance { grid-template-columns: 1fr; gap: 38px; }
+  .trace-list, .product-heading > p, .workflow-grid, .sensitive-flow, .sensitive-preview, .sensitive-notes, .privacy-rules, .assistance-grid, .ai-outcome { grid-column: 1; }
   .question-section { grid-template-columns: 1fr; gap: 35px; padding-block: 100px; }
   .question-line { flex-direction: row; align-items: center; }
   .question-line i { width: 90px; height: 1px; }
@@ -266,10 +296,12 @@ img { display: block; max-width: 100%; }
   .product-shot { margin-top: 50px; }
   .shot-toolbar span:last-child { display: none; }
   .product-shot figcaption { align-items: start; }
-  .product-flow, .assistance-grid, .sensitive-flow, .sensitive-notes { grid-template-columns: 1fr; }
-  .product-flow article, .assistance-grid article, .sensitive-flow article { min-height: auto; padding-block: 27px; }
+  .product-flow, .workflow-grid, .assistance-grid, .sensitive-flow, .sensitive-notes { grid-template-columns: 1fr; }
+  .product-flow article, .workflow-grid article, .assistance-grid article, .sensitive-flow article { min-height: auto; padding-block: 27px; }
   .product-flow svg { margin-top: 25px; }
   .assistance-grid { margin-top: 15px; }
+  .workflow-grid { margin-top: 0; }
+  .workflow-grid small { margin-top: 24px; }
   .assistance-grid small { margin-top: 24px; }
   .sensitive-heading > p:last-child { margin-top: 24px; }
   .sensitive-flow { margin-top: 0; }

@@ -6,10 +6,10 @@ const siteUrl = 'https://wengct.github.io/WorkLens/';
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: 'WorkLens — 讓每一天的投入，都有跡可循',
-  description: '以 local-first 為核心，讓 AI 從 Git、Codex 與日常紀錄中發掘工作、還原脈絡；送出前先在本機遮蔽機敏資訊。',
+  description: '以 local-first 為核心，從工作紀錄、AI 對話到日報與週報，讓 AI 重整工作脈絡；支援草稿、範本、排程與本機機敏遮蔽。',
   openGraph: {
     title: 'WorkLens — 讓每一天的投入，都有跡可循',
-    description: '讓 AI 沿著散落的工作痕跡，找回你真正做過的事；機敏資訊先在本機檢查與遮蔽。',
+    description: '從零散工作痕跡到穩定的日報與週報流程；機敏資訊先在本機檢查與遮蔽。',
     type: 'website',
     locale: 'zh_TW',
     url: siteUrl,
@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   twitter: {
     card: 'summary',
     title: 'WorkLens — 讓每一天的投入，都有跡可循',
-    description: '讓 AI 沿著散落的工作痕跡，找回你真正做過的事；機敏資訊先在本機檢查與遮蔽。',
+    description: '從零散工作痕跡到穩定的日報與週報流程；機敏資訊先在本機檢查與遮蔽。',
   },
 };
 

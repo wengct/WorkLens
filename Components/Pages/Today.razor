@@ -31,19 +31,6 @@
     </div>
 </div>
 
-@{ var confirmedHours = WorkLogService.CalculateHours(entries); }
-<div class="stats-grid today-stats" aria-label="當日概況">
-    <a class="stat-card stat-card-link" href="#today-records"><div class="stat-label">確認工時</div><div class="stat-value @(confirmedHours > 8 ? "text-danger" : null)">@confirmedHours.ToString("0.##")</div><div class="stat-note">查看人工紀錄</div></a>
-    <a class="stat-card stat-card-link" href="#today-records"><div class="stat-label">工作紀錄</div><div class="stat-value">@entries.Count</div><div class="stat-note">前往查看與編輯</div></a>
-    <a class="stat-card stat-card-link" href="#source-activity"><div class="stat-label">來源活動</div><div class="stat-value">@evidence.Count</div><div class="stat-note">前往查看活動</div></a>
-    <div class="stat-card">
-        <div class="stat-label">每日摘要</div>
-        <div class="stat-value report-state">
-            <a class="today-report-link @(report is null || report.IsStale ? "today-report-pending" : null)" href="/reports?kind=Daily&date=@selectedDate.ToString("yyyy-MM-dd")" title="前往處理每日摘要">@ReportStateText()</a>
-        </div>
-    </div>
-</div>
-
 <div class="today-workspace">
 <div id="work-input" class="panel today-quick-add">
     <div class="panel-heading">
@@ -67,6 +54,20 @@
         </section>
     </div>
 }
+
+<div class="today-records-stack">
+@{ var confirmedHours = WorkLogService.CalculateHours(entries); }
+<div class="stats-grid today-stats" aria-label="當日概況">
+    <a class="stat-card stat-card-link" href="#today-records"><div class="stat-label">確認工時</div><div class="stat-value @(confirmedHours > 8 ? "text-danger" : null)">@confirmedHours.ToString("0.##")</div><div class="stat-note">查看人工紀錄</div></a>
+    <a class="stat-card stat-card-link" href="#today-records"><div class="stat-label">工作紀錄</div><div class="stat-value">@entries.Count</div><div class="stat-note">前往查看與編輯</div></a>
+    <a class="stat-card stat-card-link" href="#source-activity"><div class="stat-label">來源活動</div><div class="stat-value">@evidence.Count</div><div class="stat-note">前往查看活動</div></a>
+    <div class="stat-card">
+        <div class="stat-label">每日摘要</div>
+        <div class="stat-value report-state">
+            <a class="today-report-link @(report is null || report.IsStale ? "today-report-pending" : null)" href="/reports?kind=Daily&date=@selectedDate.ToString("yyyy-MM-dd")" title="前往處理每日摘要">@ReportStateText()</a>
+        </div>
+    </div>
+</div>
 
 <div id="today-records" class="panel today-records">
     <div class="panel-heading"><div><h2>工作紀錄</h2><p>會計入確認工時；修改會讓相關報告標示為需要重產。</p></div></div>
@@ -105,6 +106,8 @@
         </div>
     }
 </div>
+</div>
+
 </div>
 
 <SourceStatusSummary Sources="sources" Date="selectedDate" ActivityCount="evidence.Count" />

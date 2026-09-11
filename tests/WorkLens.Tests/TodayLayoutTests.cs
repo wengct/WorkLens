@@ -3,6 +3,22 @@ namespace WorkLens.Tests;
 public sealed class TodayLayoutTests
 {
     [Fact]
+    public async Task Status_cards_form_two_columns_above_records_in_the_right_column()
+    {
+        var root = FindRepositoryRoot();
+        var razor = await File.ReadAllTextAsync(Path.Combine(root, "Components", "Pages", "Today.razor"));
+        var css = await File.ReadAllTextAsync(Path.Combine(root, "wwwroot", "app.css"));
+        var column = razor.IndexOf("class=\"today-records-stack\"", StringComparison.Ordinal);
+        var stats = razor.IndexOf("aria-label=\"當日概況\"", StringComparison.Ordinal);
+        var records = razor.IndexOf("id=\"today-records\"", StringComparison.Ordinal);
+
+        Assert.True(column >= 0 && column < stats && stats < records);
+        Assert.Contains(".today-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 0; }", css);
+        Assert.Contains(".today-records-stack { display: grid; gap: 14px; min-width: 0; }", css);
+        Assert.Contains(".today-records-stack > .panel { margin-top: 0; }", css);
+    }
+
+    [Fact]
     public async Task Unfinished_drafts_are_nested_above_work_records()
     {
         var root = FindRepositoryRoot();
@@ -26,6 +42,9 @@ public sealed class TodayLayoutTests
         Assert.Contains("class=\"button-row today-quick-actions\"", razor, StringComparison.Ordinal);
         Assert.Contains(".today-quick-add { padding: 18px; }", css, StringComparison.Ordinal);
         Assert.Contains("resize: vertical;", css, StringComparison.Ordinal);
+        Assert.True(
+            razor.IndexOf("class=\"today-workspace\"", StringComparison.Ordinal) <
+            razor.IndexOf("aria-label=\"當日概況\"", StringComparison.Ordinal));
     }
 
     [Fact]
