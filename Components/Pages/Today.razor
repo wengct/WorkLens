@@ -177,6 +177,10 @@
                             {
                                 <ClaudeCodeSessionDetails Evidence="item" />
                             }
+                            else if (item.Kind == EvidenceKind.AntigravityCliSession)
+                            {
+                                <AntigravityCliSessionDetails Evidence="item" />
+                            }
                             else if (item.Kind == EvidenceKind.CopilotSession)
                             {
                                 <CopilotSessionDetails Evidence="item" />
@@ -338,9 +342,10 @@
                 await InvokeAsync(async () =>
                 {
                     try { await ReloadSourceStateAsync(); StateHasChanged(); }
-                    catch (Exception) when (!lifetime.IsCancellationRequested)
+                    catch (Exception exception) when (!lifetime.IsCancellationRequested)
                     {
                         sourceRefreshError = "來源狀態更新失敗，目前顯示上次結果；稍後會自動重試。";
+                        Toasts.RecordError(sourceRefreshError, exception);
                         StateHasChanged();
                     }
                 });

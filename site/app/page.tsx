@@ -32,6 +32,7 @@ const supportedSources = [
   { name: 'Git', image: 'git.svg' },
   { name: 'Codex', image: 'codex-color.svg' },
   { name: 'Claude Code', image: 'claudecode-color.svg' },
+  { name: 'Google Antigravity CLI', image: null },
   { name: 'GitHub Copilot', image: 'githubcopilot.svg' },
 ];
 
@@ -138,7 +139,7 @@ export default function Home() {
           </figure>
 
           <div className="product-flow">
-            <article><span>01</span><Code2 size={22} /><h3>拾起</h3><p>從 Git 的程式碼變更、Azure DevOps 的 PR，到 Codex、Claude Code 與 GitHub Copilot 的對話；再由你補上會議與日常紀錄。</p></article>
+            <article><span>01</span><Code2 size={22} /><h3>拾起</h3><p>從 Git 的程式碼變更、Azure DevOps 的 PR，到 Codex、Claude Code、Google Antigravity CLI 與 GitHub Copilot 的對話；再由你補上會議與日常紀錄。</p></article>
             <article><span>02</span><CalendarDays size={22} /><h3>聚焦</h3><p>依日期與專案重組紀錄，透過專案與關鍵字，找回每一段工作的前因後果。</p></article>
             <article><span>03</span><Sparkles size={22} /><h3>成稿</h3><p>由 AI 將一天或一週的推進整理成完整摘要，再由你編修、匯出與回報。</p></article>
           </div>
@@ -149,7 +150,7 @@ export default function Home() {
             {supportedSources.map(({ name, image }) => (
               <li key={name}>
                 <span className="source-brand-icon">
-                  <img src={`${assetPrefix}/source-brands/${image}`} alt="" width="32" height="32" />
+                  {image ? <img src={`${assetPrefix}/source-brands/${image}`} alt="" width="32" height="32" /> : <Terminal size={32} aria-hidden="true" />}
                 </span>
                 <span>{name}</span>
               </li>
@@ -249,7 +250,7 @@ export default function Home() {
           <div className="section-label light-label"><span>06</span><p>Local-first</p></div>
           <div className="privacy-statement">
             <p className="overline">A PRINCIPLE, NOT A FEATURE</p>
-            <h2><span className="heading-line">工作紀錄，</span><span className="heading-line">首先應該屬於</span><span className="heading-line">工作的人。</span></h2>
+            <h2><span className="heading-line">工作紀錄，</span><span className="heading-line">應該屬於</span><span className="heading-line">工作的人。</span></h2>
             <p>WorkLens 完整運行在你的電腦上，不依賴遠端雲端伺服器；工作紀錄與應用服務都留在本機。當你主動使用 AI 時，也會先通過本機的機敏資訊檢查，再依照你的設定交由指定模型處理。</p>
           </div>
           <div className="privacy-rules">

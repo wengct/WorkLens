@@ -18,7 +18,10 @@ public enum ActivitySourceType
     WindowsVsCodeCopilot,
     WslVsCodeCopilot,
     MacOsVsCodeCopilot,
-    WindowsVisualStudioCopilot
+    WindowsVisualStudioCopilot,
+    WindowsAntigravityCli,
+    WslAntigravityCli,
+    MacOsAntigravityCli
 }
 
 public enum SourceHealthStatus
@@ -48,7 +51,8 @@ public enum EvidenceKind
     AzureDevOpsPullRequestClosed,
     AzureDevOpsWorkItemActivity,
     ClaudeCodeSession,
-    CopilotSession
+    CopilotSession,
+    AntigravityCliSession
 }
 
 public enum CommitReachabilityStatus
@@ -331,6 +335,48 @@ public sealed class PromptTemplate
     public bool IsArchived { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class AnnualReview
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public DateOnly StartDate { get; set; }
+    public DateOnly EndDate { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string DraftBody { get; set; } = string.Empty;
+    public int UpdateVersion { get; set; } = 1;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class AnnualAchievement
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid ReviewId { get; set; }
+    public string Title { get; set; } = string.Empty;
+    public string Period { get; set; } = string.Empty;
+    public string ProjectOrTheme { get; set; } = string.Empty;
+    public string Background { get; set; } = string.Empty;
+    public string Contribution { get; set; } = string.Empty;
+    public string Outcome { get; set; } = string.Empty;
+    public string DeliveryStatus { get; set; } = string.Empty;
+    public bool IsConfirmed { get; set; }
+    public bool IsExcluded { get; set; }
+    public bool IsGenerated { get; set; }
+    public int UpdateVersion { get; set; } = 1;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class AnnualAchievementEvidence
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid AchievementId { get; set; }
+    public string Origin { get; set; } = "本機";
+    public string EvidenceType { get; set; } = string.Empty;
+    public Guid EvidenceId { get; set; }
+    public string TitleSnapshot { get; set; } = string.Empty;
+    public DateOnly OccurredOn { get; set; }
 }
 
 public sealed class ScheduleDefinition

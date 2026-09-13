@@ -156,6 +156,8 @@ WorkLens 每次準備把工作資料交給 AI 前，都會在本機掃描最終�
 - Windows：`%LOCALAPPDATA%\WorkLens\logs\worklens-YYYY-MM-DD.log`
 - macOS：`~/Library/Application Support/WorkLens/logs/worklens-YYYY-MM-DD.log`
 
+畫面上的錯誤 Toast 會統一寫入 Error log，包含元件、操作名稱與錯誤訊息；頁面內的草稿、設定匯入及來源更新錯誤也會記錄。正常中斷使用資訊提示，不視為失敗。AI 回覆格式錯誤保留欄位與批次資訊，不額外記錄完整 AI 回覆或工作資料。
+
 ## 執行
 
 ```shell
@@ -175,6 +177,26 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
+### Google Antigravity CLI
+
+在「資料來源」選擇「Google Antigravity CLI 工作紀錄」，再選擇「此電腦」或 Windows 上的 WSL 環境。支援 Windows、macOS 與 WSL；WSL 必須指定 distro。資料目錄留空時使用 `~/.gemini/antigravity-cli`，也可填入自訂路徑（WSL 請使用 Linux 絕對路徑）。儲存後會驗證資料，並沿用既有的排程收集與歷史回補操作。
+
+WorkLens 唯讀掃描 `brain/<session-id>/.system_generated/logs/transcript_full.jsonl`，保存 `USER_INPUT` 使用者訊息與 `PLANNER_RESPONSE` AI 回覆，時間採用 `created_at` 或 `timestamp`。今日工作台與報告可展開可讀取的完整對話；日／週摘要與 AI 上下文只使用使用者請求，並持續遵循來源、Project 的 AI 分享限制與機敏資訊防護。不收集推理、工具輸出或附件，也不呼叫 Google API、不讀取憑證、不啟動 `agy`。
+
+若已有 `usage/usage-*.jsonl`，會按 Session ID 補充工作目錄與 CLI 版本；沒有這些檔案仍可收集對話，不需安裝 Token 收集腳本。不同來源設定各自保存會話，請避免重複新增相同資料目錄。檔案寫入中或格式損壞時會標記部分資料並重試，不以部分對話覆蓋既有完整紀錄。
+
+格式參考 [TokenUsageInsights 的來源讀取](https://github.com/doggy8088/TokenUsageInsights/blob/main/src/db.rs)與[對話解析](https://github.com/doggy8088/TokenUsageInsights/blob/main/src/timeline.rs)。支援範圍限於上述 JSONL 格式；摘要資料庫與二進位 conversations 不作為對話來源。目前已用人工 fixture 驗證解析與三平台路徑邏輯；實際 CLI 逐字稿及 WSL／macOS 收集仍待實機驗證。若只看見「尚無對話」，請確認使用中的 CLI 會產生該逐字稿，或改填正確資料目錄。
+
+### Google Antigravity CLI
+
+在「資料來源」選擇「Google Antigravity CLI 工作紀錄」，再選擇「此電腦」或 Windows 上的 WSL 環境。支援 Windows、macOS 與 WSL；WSL 必須指定 distro。資料目錄留空時使用 `~/.gemini/antigravity-cli`，也可填入自訂路徑（WSL 請使用 Linux 絕對路徑）。儲存後會驗證資料，並沿用既有的排程收集與歷史回補操作。
+
+WorkLens 唯讀掃描 `brain/<session-id>/.system_generated/logs/transcript_full.jsonl`，保存 `USER_INPUT` 使用者訊息與 `PLANNER_RESPONSE` AI 回覆，時間採用 `created_at` 或 `timestamp`。今日工作台與報告可展開可讀取的完整對話；日／週摘要與 AI 上下文只使用使用者請求，並持續遵循來源、Project 的 AI 分享限制與機敏資訊防護。不收集推理、工具輸出或附件，也不呼叫 Google API、不讀取憑證、不啟動 `agy`。
+
+若已有 `usage/usage-*.jsonl`，會按 Session ID 補充工作目錄與 CLI 版本；沒有這些檔案仍可收集對話，不需安裝 Token 收集腳本。不同來源設定各自保存會話，請避免重複新增相同資料目錄。檔案寫入中或格式損壞時會標記部分資料並重試，不以部分對話覆蓋既有完整紀錄。
+
+格式參考 [TokenUsageInsights 的來源讀取](https://github.com/doggy8088/TokenUsageInsights/blob/main/src/db.rs)與[對話解析](https://github.com/doggy8088/TokenUsageInsights/blob/main/src/timeline.rs)。支援範圍限於上述 JSONL 格式；摘要資料庫與二進位 conversations 不作為對話來源。目前已用人工 fixture 驗證解析與三平台路徑邏輯；實際 CLI 逐字稿及 WSL／macOS 收集仍待實機驗證。若只看見「尚無對話」，請確認使用中的 CLI 會產生該逐字稿，或改填正確資料目錄。
+
 ## 日常操作
 
 開啟首頁就是「今日工作台」：可選擇日期、選填專案、輸入時數與 Markdown 工作內容，適合連續補登。Git 來源活動會依日期與專案自動顯示並納入報告，不需要人工關聯。
@@ -188,6 +210,8 @@ git push origin v1.0.0
 來源收集狀態與當日已匯入活動分開顯示，每 10 秒自動更新，不會重設填寫內容。來源最近成功不代表所選日期已完整收集；當天尚無資料時，可從「查看此日期並重新收集」前往工作摘要執行回補。
 
 「工作摘要」將工作歷程與摘要放在同一頁：可用月曆選擇每日或每週期間、依專案與關鍵字篩選左側歷程，並在右側產生、編輯、AI 整理與匯出完整期間摘要。篩選不會改變摘要涵蓋的資料範圍；回補來源可針對單日或整週執行，且不會改變正常收集的 checkpoint。
+
+「年度回顧」可自訂最多一年的期間，先顯示每月的工作紀錄、來源活動與已填工時，再直接從符合 AI 納入設定的既有資料產生可編輯的績效考核草稿。使用者可選填未被工具記錄的貢獻；同步資料只會在明確勾選後納入。草稿不會自行推算效益或把待確認活動當成交付。
 
 資料來源支援 Windows、macOS 與 WSL 的 Git、Codex、Claude Code、GitHub Copilot CLI／App，以及 VS Code Copilot Chat，也支援以 Azure DevOps CLI 讀取 Azure DevOps Services 的 PR 與 Work Item。Azure DevOps 來源可分別收集目前登入使用者建立的 PR，以及該使用者實際修改的 Work Item 欄位與自己撰寫／修改的 Discussion；Work Item 同一天的活動會合併為一筆。Work Item 的完整活動優先於 PR 中的關聯內容，避免 AI 報告重複整理；兩者都沿用同一組報告 AI 設定與機敏資訊防護。Codex 會從 `sessions` 與 `archived_sessions` 讀取本機會話；Claude Code 會從 `projects/<project>/<session-id>.jsonl` 讀取主會話；GitHub Copilot CLI／App 會從 `~/.copilot/session-state/<session-id>/events.jsonl` 讀取會話；三者都排除子代理 transcript、工具內容、思考區塊與附件。VS Code Copilot Chat 會自動探索 Stable／Insiders 的 `workspaceStorage/*/chatSessions`，重建 JSON 快照或 JSONL 操作紀錄；自訂、可攜版與 VS Code Server 位置可在來源設定中填入多個根目錄。這些來源以來源格式、正規化資料根目錄、session id 去重；VS Code 另外區分 workspace，保存 User／AI 可見文字對話；每日、每週及 AI 報告上下文只使用 User 訊息。GitHub Copilot 整合不收集 Token、費用或用量統計。Codex 資料目錄可自動偵測 `CODEX_HOME`／`~/.codex`；Claude Code 可自動偵測 `CLAUDE_CONFIG_DIR`／`~/.claude`；Copilot CLI／App 可自動偵測 `COPILOT_HOME`／`~/.copilot`；這些路徑都可在來源設定中覆寫。
 
@@ -211,3 +235,5 @@ VS Code Copilot Chat 的自動探索位置如下；只會檢查這些 `workspace
 第一次使用時，工作台會自動開啟「建立第一份工作摘要」視窗：記一筆工作，或設定資料來源並自行完成首次收集，最後產生第一份摘要。AI 設定是選用步驟；之後可從「記工作與工時」右上角的同名按鈕重新開啟。
 
 「排程設定」可分別管理日報、週報、每日備份與每週備份的啟用狀態、星期及時間。報告排程會先保留制式摘要，再使用指定或預設 Prompt 執行 AI 整理；AI 失敗時不會丟失制式內容。備份位置可從網頁選擇並驗證，變更後立即生效。
+
+AI 日／週摘要、年度回顧 AI 草稿與來源回補會自動在分頁標題顯示處理中狀態；若完成時正在其他分頁或軟體，會保留完成或失敗標記，回到頁面後恢復標題。「通知設定」可開啟、關閉及測試桌面通知，設定只保存在目前瀏覽器；首次等待時也會提供開啟入口，選擇「暫時不要」後不重複詢問。桌面通知只包含一般處理結果，不含工作內容，並受瀏覽器權限、系統通知及勿擾設定影響。請保持原功能頁開啟，通知不會讓任務在關閉頁面或停止程式後繼續執行。

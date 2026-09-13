@@ -234,7 +234,7 @@
             Toasts.Success(isNew ? "AI 設定已新增。" : "AI 設定已儲存。");
             await ReloadAsync(saved.Id);
         }
-        catch (ArgumentException exception) { Toasts.Error(exception.Message); }
+        catch (ArgumentException exception) { Toasts.Error(exception.Message, exception); }
         finally { activeOperation = null; }
     }
 
@@ -247,7 +247,7 @@
             Toasts.Success($"已將「{configuration.Name}」設為預設 AI 設定。");
             await ReloadAsync(configuration.Id);
         }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { Toasts.Error(exception.Message); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { Toasts.Error(exception.Message, exception); }
         finally { activeOperation = null; }
     }
 
@@ -264,7 +264,7 @@
             Toasts.Success("AI 設定已刪除。");
             await ReloadAsync();
         }
-        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { Toasts.Error(exception.Message); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException) { Toasts.Error(exception.Message, exception); }
         finally { activeOperation = null; }
     }
 
@@ -287,7 +287,7 @@
             configurations = await AiConfig.GetAllAsync();
             if (detection.Validation.IsValid) Toasts.Success(detection.Validation.Summary); else Toasts.Error(detection.Validation.Summary);
         }
-        catch (ArgumentException exception) { Toasts.Error(exception.Message); }
+        catch (ArgumentException exception) { Toasts.Error(exception.Message, exception); }
         finally { activeOperation = null; }
     }
 
@@ -316,7 +316,7 @@
             configurations = await AiConfig.GetAllAsync();
             if (result.Succeeded) Toasts.Success("連線測試成功。"); else Toasts.Error(result.Error ?? "連線測試失敗。");
         }
-        catch (ArgumentException exception) { Toasts.Error(exception.Message); }
+        catch (ArgumentException exception) { Toasts.Error(exception.Message, exception); }
         finally { activeOperation = null; }
     }
 

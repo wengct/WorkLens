@@ -110,7 +110,7 @@
             Toasts.Success($"{KindName(schedule.Kind)}排程已儲存。");
             await ReloadAsync();
         }
-        catch (ArgumentException exception) { Toasts.Error(exception.Message); }
+        catch (ArgumentException exception) { Toasts.Error(exception.Message, exception); }
         finally { busySchedule = null; }
     }
 

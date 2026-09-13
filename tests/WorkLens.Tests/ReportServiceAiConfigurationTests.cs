@@ -133,6 +133,54 @@ public sealed class ReportServiceAiConfigurationTests
         Assert.Contains("專案=WorkLens 專案", selected.CapturedRequest.InputMarkdown, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task Antigravity_context_respects_sharing_without_sending_transcript(bool sourceShares, bool projectShares)
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
+        var report = new ReportDocument
+        {
+            Kind = ReportKind.Daily, PeriodKey = "2026-09-04",
+            PeriodStart = new DateTimeOffset(2026, 9, 4, 0, 0, 0, TimeSpan.Zero),
+            PeriodEnd = new DateTimeOffset(2026, 9, 5, 0, 0, 0, TimeSpan.Zero)
+        };
+        var project = new Project { Name = "分享測試", IncludeInAi = projectShares };
+        var source = new ActivitySource { SourceType = ActivitySourceType.WindowsAntigravityCli, ProjectId = project.Id, Enabled = true, IncludeInAi = sourceShares };
+        await using (var setup = new WorkLensDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            setup.AiFeatureSettings.Add(new AiFeatureSettings { Enabled = true });
+            setup.AiProviders.Add(new AiProviderConfiguration { Name = "測試", ProviderType = "selected", IsDefault = true });
+            setup.Projects.Add(project);
+            setup.ActivitySources.Add(source);
+            setup.Reports.Add(report);
+            setup.SourceEvidence.Add(new SourceEvidence
+            {
+                SourceId = source.Id, ProjectId = project.Id, Kind = EvidenceKind.AntigravityCliSession,
+                RepositoryKey = "antigravity-cli-session", ExternalKey = "sample", Title = "來源標題",
+                CommitMessage = "USER_REQUEST_ONLY", OccurredAt = report.PeriodStart.AddHours(1),
+                MetadataJson = SourceSettingsSerializer.SerializeAntigravityCliMetadata(new AntigravityCliSessionMetadata
+                {
+                    Messages = [new AntigravityCliSessionMessage { Role = "assistant", Text = "PRIVATE_ASSISTANT_TRANSCRIPT" }]
+                })
+            });
+            await setup.SaveChangesAsync();
+        }
+        var selected = new RecordingAdapter("selected");
+        var factory = new Factory(options);
+        var service = new ReportService(factory,
+            new AiProviderOrchestrator(new AiProviderRegistry([selected]), new TestSanitizer()),
+            new PromptTemplateService(factory), NullLogger<ReportService>.Instance);
+        Assert.True((await service.GenerateWithAiAsync(report.Id)).Succeeded);
+        var input = selected.CapturedRequest!.InputMarkdown;
+        Assert.Equal(sourceShares && projectShares, input.Contains("USER_REQUEST_ONLY", StringComparison.Ordinal));
+        Assert.DoesNotContain("PRIVATE_ASSISTANT_TRANSCRIPT", input);
+    }
+
     private sealed class RecordingAdapter(string providerType) : IAiProviderAdapter
     {
         public string ProviderType => providerType;

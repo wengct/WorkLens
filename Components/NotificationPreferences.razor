@@ -1,0 +1,43 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div @ref="element" class="notification-preferences" data-notification-compact="@Compact.ToString().ToLowerInvariant()" hidden="@Compact">
+    @if (Compact)
+    {
+        <strong>處理完成後通知你？</strong>
+        <p>開啟桌面通知，切到其他分頁或軟體也能收到完成提醒。</p>
+    }
+    <p data-notification-status role="status">正在讀取通知設定…</p>
+    <div class="button-row">
+        <button class="button button-secondary" type="button" data-notification-action="enable">開啟通知</button>
+        <button class="button button-secondary" type="button" data-notification-action="disable" hidden>關閉通知</button>
+        @if (Compact)
+        {
+            <button class="button button-secondary" type="button" data-notification-action="dismiss">暫時不要</button>
+        }
+        <button class="button button-secondary" type="button" data-notification-action="test" hidden="@Compact" disabled>測試通知</button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public bool Compact { get; set; }
+    private ElementReference element;
+    private bool attached;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            attached = true;
+            try { await JS.InvokeVoidAsync("workLensNotifications.attach", element); }
+            catch (Exception exception) when (exception is JSException or JSDisconnectedException or TaskCanceledException) { }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!attached) return;
+        try { await JS.InvokeVoidAsync("workLensNotifications.detach", element); }
+        catch (Exception exception) when (exception is JSException or JSDisconnectedException or TaskCanceledException) { }
+    }
+}

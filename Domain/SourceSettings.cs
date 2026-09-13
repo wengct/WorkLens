@@ -22,6 +22,12 @@ public sealed class ClaudeCodeSourceSettings
     public string? Distro { get; set; }
 }
 
+public sealed class AntigravityCliSourceSettings
+{
+    public string? AntigravityCliHome { get; set; }
+    public string? Distro { get; set; }
+}
+
 public sealed class CopilotSourceSettings
 {
     public string? CopilotHome { get; set; }
@@ -174,6 +180,25 @@ public sealed class ClaudeCodeSessionMessage
     public string Text { get; set; } = string.Empty;
 }
 
+public sealed class AntigravityCliSessionMetadata
+{
+    public string SessionId { get; set; } = string.Empty;
+    public DateTimeOffset UpdatedAt { get; set; }
+    public string? Cwd { get; set; }
+    public string Platform { get; set; } = string.Empty;
+    public string? CliVersion { get; set; }
+    public bool IsComplete { get; set; } = true;
+    public List<AntigravityCliSessionMessage> Messages { get; set; } = [];
+}
+
+public sealed class AntigravityCliSessionMessage
+{
+    public string Id { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public DateTimeOffset Timestamp { get; set; }
+    public string Text { get; set; } = string.Empty;
+}
+
 public sealed class CopilotSessionMetadata
 {
     public string SessionId { get; set; } = string.Empty;
@@ -267,6 +292,27 @@ public static class SourceSettingsSerializer
     }
 
     public static string Serialize(ClaudeCodeSourceSettings settings) =>
+        JsonSerializer.Serialize(settings, Options);
+
+    public static AntigravityCliSourceSettings DeserializeAntigravityCli(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new AntigravityCliSourceSettings();
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<AntigravityCliSourceSettings>(json, Options)
+                ?? new AntigravityCliSourceSettings();
+        }
+        catch (JsonException)
+        {
+            return new AntigravityCliSourceSettings();
+        }
+    }
+
+    public static string Serialize(AntigravityCliSourceSettings settings) =>
         JsonSerializer.Serialize(settings, Options);
 
     public static CopilotSourceSettings DeserializeCopilot(string? json)
@@ -504,6 +550,33 @@ public static class SourceSettingsSerializer
         try
         {
             var metadata = JsonSerializer.Deserialize<ClaudeCodeSessionMetadata>(json, Options);
+            if (metadata is null)
+            {
+                return null;
+            }
+
+            metadata.Messages ??= [];
+            return metadata;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    public static string SerializeAntigravityCliMetadata(AntigravityCliSessionMetadata metadata) =>
+        JsonSerializer.Serialize(metadata, Options);
+
+    public static AntigravityCliSessionMetadata? DeserializeAntigravityCliMetadata(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            var metadata = JsonSerializer.Deserialize<AntigravityCliSessionMetadata>(json, Options);
             if (metadata is null)
             {
                 return null;

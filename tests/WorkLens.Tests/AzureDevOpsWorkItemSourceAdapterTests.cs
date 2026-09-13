@@ -5,6 +5,27 @@ namespace WorkLens.Tests;
 
 public sealed class AzureDevOpsWorkItemSourceAdapterTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Backfill_reports_progress_for_history_and_filtered_content(bool matchesIdentity)
+    {
+        var updates = new List<SourceCollectionProgress>();
+        var history = matchesIdentity
+            ? """{"value":[{"revisedDate":"2026-09-08T02:00:00Z","revisedBy":{"uniqueName":"me@example.com"},"fields":{"System.State":{"oldValue":"New","newValue":"Active"},"System.ChangedDate":{"newValue":"2026-09-08T02:00:00Z"}}}]}"""
+            : "[]";
+        var adapter = new AzureDevOpsPullRequestSourceAdapter(new AzureDevOpsCliService(CreateSingleWorkItemRunner(history)));
+        var source = CreateWorkItemOnlySource();
+        await adapter.CollectAsync(new CollectionRequest(source, DateTimeOffset.Parse("2026-01-01T00:00:00Z"),
+            UpdateCheckpoint: false, Progress: updates.Add), CancellationToken.None);
+        Assert.Contains(updates, item => item.Stage.Contains("查詢工作項目清單"));
+        Assert.Contains(updates, item => item.Stage.Contains("異動紀錄 0/1"));
+        Assert.Contains(updates, item => item.Stage.Contains("異動紀錄 1/1"));
+        Assert.Contains(updates, item => item.Stage.Contains(matchesIdentity ? "內容與留言 0/1" : "內容與留言 0/0"));
+        if (matchesIdentity) Assert.Contains(updates, item => item.Stage.Contains("內容與留言 1/1"));
+        Assert.All(updates, item => Assert.Equal(source.Id, item.SourceId));
+    }
+
     [Fact]
     public async Task ListChangedWorkItemsAsync_uses_date_only_WIQL_with_an_exact_boundary_filter_afterward()
     {
@@ -31,6 +52,86 @@ public sealed class AzureDevOpsWorkItemSourceAdapterTests
             "SELECT [System.Id] FROM WorkItems WHERE [System.ChangedDate] >= '2026-09-08' AND [System.ChangedDate] < '2026-09-10' ORDER BY [System.ChangedDate] ASC",
             wiql);
         Assert.DoesNotMatch(@"'\d{4}-\d{2}-\d{2}T", wiql);
+    }
+
+    [Fact]
+    public async Task ListChangedWorkItemsAsync_accepts_JSON_preceded_by_a_CLI_diagnostic_line()
+    {
+        var runner = new FakeProcessRunner((_, _) => new ProcessResult(
+            0,
+            "WARNING: The Azure DevOps extension is installed in preview.\n{\"workItems\":[{\"id\":42,\"url\":\"https://dev.azure.com/example/project/_apis/wit/workItems/42\"}]}",
+            string.Empty));
+        var service = new AzureDevOpsCliService(runner);
+
+        var workItems = await service.ListChangedWorkItemsAsync(
+            "https://dev.azure.com/example",
+            new AzureDevOpsWorkItemScope { ProjectId = "project", ProjectName = "Project" },
+            DateTimeOffset.Parse("2026-09-08T00:00:00Z"),
+            DateTimeOffset.Parse("2026-09-09T00:00:00Z"));
+
+        Assert.Equal(42, Assert.Single(workItems).Id);
+    }
+
+    [Fact]
+    public async Task ListChangedWorkItemsAsync_includes_the_unparseable_CLI_output_in_the_error()
+    {
+        var runner = new FakeProcessRunner((_, _) => new ProcessResult(0, string.Empty, "CLI diagnostic"));
+        var service = new AzureDevOpsCliService(runner);
+
+        var exception = await Assert.ThrowsAsync<AzureDevOpsCliException>(() => service.ListChangedWorkItemsAsync(
+            "https://dev.azure.com/example",
+            new AzureDevOpsWorkItemScope { ProjectId = "project", ProjectName = "Project" },
+            DateTimeOffset.Parse("2026-09-08T00:00:00Z"),
+            DateTimeOffset.Parse("2026-09-09T00:00:00Z")));
+
+        Assert.Contains("原始 Azure CLI 輸出", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("命令階段：boards query", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("結束碼：0", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("stdout：0 個字元", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("stderr：14 個字元", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("CLI diagnostic", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Empty_successful_query_allows_validation_and_collection_without_warnings()
+    {
+        var runner = new FakeProcessRunner((request, _) => request.Arguments[0] switch
+        {
+            "version" => Json("""{"azure-cli":"2.0"}"""),
+            "extension" => Json("""{"version":"1.0"}"""),
+            "account" => Json("""{"user":{"name":"me@example.com","type":"user"}}"""),
+            "ad" => Json("""{"id":"entra-id","displayName":"Me","userPrincipalName":"me@example.com"}"""),
+            "boards" when request.Arguments[1] == "query" => new ProcessResult(0, "", ""),
+            _ => throw new Xunit.Sdk.XunitException("Unexpected command")
+        });
+        var adapter = new AzureDevOpsPullRequestSourceAdapter(new AzureDevOpsCliService(runner));
+        var source = CreateWorkItemOnlySource();
+
+        var validation = await adapter.ValidateAsync(source, CancellationToken.None);
+        Assert.True(validation.IsValid, validation.Summary);
+        Assert.Equal(SourceHealthStatus.Ready, validation.Status);
+
+        var batch = await adapter.CollectAsync(
+            new CollectionRequest(source, DateTimeOffset.Parse("2026-09-08T00:00:00Z")),
+            CancellationToken.None);
+        Assert.Empty(batch.Evidence);
+        Assert.Empty(batch.Warnings);
+        Assert.Equal(1, batch.SuccessfulRepositories);
+    }
+
+    [Theory]
+    [InlineData(1, "", "", false)]
+    [InlineData(0, "", "", true)]
+    [InlineData(0, "{broken", "", false)]
+    public async Task Query_failures_are_not_treated_as_empty_results(
+        int exitCode, string stdout, string stderr, bool timedOut)
+    {
+        var service = new AzureDevOpsCliService(new FakeProcessRunner(
+            (_, _) => new ProcessResult(exitCode, stdout, stderr, timedOut)));
+        await Assert.ThrowsAsync<AzureDevOpsCliException>(() => service.ListChangedWorkItemsAsync(
+            "https://dev.azure.com/example",
+            new AzureDevOpsWorkItemScope { ProjectId = "project", ProjectName = "Project" },
+            DateTimeOffset.Parse("2026-09-08T00:00:00Z"), null));
     }
 
     [Fact]

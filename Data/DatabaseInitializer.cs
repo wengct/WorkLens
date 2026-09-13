@@ -83,6 +83,7 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
             """, cancellationToken);
         await EnsureSchedulingSchemaAsync(db, cancellationToken);
         await EnsureSyncSchemaAsync(db, cancellationToken);
+        await EnsureAnnualReviewSchemaAsync(db, cancellationToken);
         var legacyAiEnabled = await ReadLegacyAiEnabledAsync(db, cancellationToken);
         await EnsureColumnAsync(db, "AiProviders", "ProviderType", "TEXT NOT NULL DEFAULT 'ask-bridge'", cancellationToken);
         await EnsureColumnAsync(db, "AiProviders", "ProtectedApiKey", "TEXT NULL", cancellationToken);
@@ -781,5 +782,31 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
                 "LastObservedAt" TEXT NOT NULL
             );
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_RemoteSourceEvidence_OriginDeviceId_OriginEntityId" ON "RemoteSourceEvidence" ("OriginDeviceId", "OriginEntityId");
+            """, cancellationToken);
+
+    private static Task EnsureAnnualReviewSchemaAsync(WorkLensDbContext db, CancellationToken cancellationToken) =>
+        db.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "AnnualReviews" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_AnnualReviews" PRIMARY KEY,
+                "StartDate" TEXT NOT NULL, "EndDate" TEXT NOT NULL, "Name" TEXT NOT NULL,
+                "DraftBody" TEXT NOT NULL, "UpdateVersion" INTEGER NOT NULL,
+                "CreatedAt" TEXT NOT NULL, "UpdatedAt" TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS "IX_AnnualReviews_StartDate_EndDate" ON "AnnualReviews" ("StartDate", "EndDate");
+            CREATE TABLE IF NOT EXISTS "AnnualAchievements" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_AnnualAchievements" PRIMARY KEY,
+                "ReviewId" TEXT NOT NULL, "Title" TEXT NOT NULL, "Period" TEXT NOT NULL,
+                "ProjectOrTheme" TEXT NOT NULL, "Background" TEXT NOT NULL, "Contribution" TEXT NOT NULL,
+                "Outcome" TEXT NOT NULL, "DeliveryStatus" TEXT NOT NULL, "IsConfirmed" INTEGER NOT NULL,
+                "IsExcluded" INTEGER NOT NULL, "IsGenerated" INTEGER NOT NULL, "UpdateVersion" INTEGER NOT NULL,
+                "CreatedAt" TEXT NOT NULL, "UpdatedAt" TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS "IX_AnnualAchievements_ReviewId_IsConfirmed" ON "AnnualAchievements" ("ReviewId", "IsConfirmed");
+            CREATE TABLE IF NOT EXISTS "AnnualAchievementEvidence" (
+                "Id" TEXT NOT NULL CONSTRAINT "PK_AnnualAchievementEvidence" PRIMARY KEY,
+                "AchievementId" TEXT NOT NULL, "Origin" TEXT NOT NULL, "EvidenceType" TEXT NOT NULL,
+                "EvidenceId" TEXT NOT NULL, "TitleSnapshot" TEXT NOT NULL, "OccurredOn" TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS "IX_AnnualAchievementEvidence_AchievementId" ON "AnnualAchievementEvidence" ("AchievementId");
             """, cancellationToken);
 }

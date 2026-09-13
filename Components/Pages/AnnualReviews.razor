@@ -1,0 +1,224 @@
+@page "/annual-reviews"
+@implements IDisposable
+@inject AnnualReviewService Reviews
+@inject AnnualReviewAiService ReviewAi
+@inject PromptTemplateService PromptTemplates
+@inject ToastService Toasts
+
+<PageTitle>年度回顧｜WorkLens</PageTitle>
+
+<div class="page-heading"><div><p class="eyebrow">Review</p><h1>年度回顧</h1><p>直接從既有紀錄整理成可修改的考核草稿。</p></div></div>
+
+<OperationNotification Active="@isGeneratingAi" Outcome="@aiOutcome" Label="年度草稿" />
+@if (isGeneratingAi)
+{
+    <OperationProgress Overlay="true" Title="年度草稿處理中…" Detail="@aiProgress">
+        <Actions><button class="button button-secondary" @onclick="StopAi" disabled="@isCancellingAi">@(isCancellingAi ? "正在中斷…" : "中斷")</button></Actions>
+    </OperationProgress>
+}
+
+@if (isLoading)
+{
+    <OperationProgress Title="正在載入年度回顧…" />
+}
+@if (!string.IsNullOrEmpty(operationError)) { <div class="alert alert-warning" role="alert">@operationError</div> }
+@if (isOperating && !isLoading && editing is null) { <OperationProgress Title="@operationTitle" /> }
+<fieldset class="annual-fields annual-page-stack" disabled="@IsBusy" aria-busy="@IsBusy">
+    @if (details is null)
+    {
+        <section class="panel">
+            <div class="panel-heading"><div><h2>建立年度回顧</h2><p>自訂期間，最長一年；系統只使用已存在的工作與來源紀錄。</p></div></div>
+            <div class="form-grid">
+                <div class="field"><label>開始日期</label><input type="date" @bind="startDate" /></div>
+                <div class="field"><label>結束日期</label><input type="date" @bind="endDate" /></div>
+                <div class="field full"><label>名稱</label><input @bind="newName" placeholder="例如：2026 年度績效回顧" /></div>
+                <div class="form-actions"><button class="button button-primary" @onclick="CreateAsync">建立回顧</button></div>
+            </div>
+        </section>
+        @if (reviews.Count > 0)
+        {
+            <section class="panel"><div class="panel-heading"><div><h2>既有回顧</h2></div></div><div class="report-list">@foreach (var review in reviews) { <div class="report-row"><div><strong>@review.Name</strong><small>@review.StartDate.ToString("yyyy/MM/dd")－@review.EndDate.ToString("yyyy/MM/dd")</small></div><button class="button button-secondary button-small" @onclick="() => OpenAsync(review.Id)">開啟</button></div> }</div></section>
+        }
+    }
+    else
+    {
+        <section class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">@details.Review.StartDate.ToString("yyyy/MM/dd")－@details.Review.EndDate.ToString("yyyy/MM/dd")</p><h2>@details.Review.Name</h2><p>可直接從已有紀錄產生年度草稿；人工成果可視需要補充。</p></div><div class="button-row"><button class="button button-secondary button-small" @onclick="Close">切換回顧</button></div></div>
+            <div class="stats-grid annual-stats"><div class="stat-card"><div class="stat-label">工作紀錄</div><div class="stat-value">@details.Coverage.Sum(x => x.WorkEntryCount)</div></div><div class="stat-card"><div class="stat-label">來源活動</div><div class="stat-value">@details.Coverage.Sum(x => x.EvidenceCount)</div></div><div class="stat-card"><div class="stat-label">已填工時</div><div class="stat-value">@details.Coverage.Sum(x => x.Hours).ToString("0.##")</div></div><div class="stat-card"><div class="stat-label">已確認成果</div><div class="stat-value">@details.Achievements.Count(x => x.IsConfirmed && !x.IsExcluded)</div></div></div>
+            <button class="button button-secondary" @onclick="() => showCoverage = true">查看每月資料涵蓋</button>
+        </section>
+
+        <section class="panel">
+            <div class="panel-heading"><div><h2>補充成果（選填）</h2><p>AI 可直接使用工作紀錄與來源活動產生草稿；這裡用於補充協作、帶領或其他未被工具記錄的貢獻。</p></div><button class="button button-secondary button-small" @onclick="NewAchievement">新增補充成果</button></div>
+            @if (details.Achievements.Count == 0) { <div class="empty-state"><p>尚無人工補充成果。這不會阻止 AI 直接從已有紀錄產生年度草稿。</p></div> }
+            else { <div class="annual-achievement-list">@foreach (var achievement in details.Achievements) { <article class="annual-achievement"><div><div class="button-row"><h3>@achievement.Title</h3><span class="badge @(achievement.IsConfirmed ? "badge-ready" : "badge-unknown")">@(achievement.IsConfirmed ? "已確認" : "待確認")</span></div><p>@achievement.Period @if (!string.IsNullOrWhiteSpace(achievement.ProjectOrTheme)) { <span>· @achievement.ProjectOrTheme</span> }</p></div><div class="source-actions"><button class="button button-secondary button-small" @onclick="() => viewing = achievement">查看明細</button><button class="button button-secondary button-small" @onclick="() => Edit(achievement)">編輯</button><button class="button button-danger button-small" @onclick="() => DeleteAsync(achievement.Id)">刪除</button></div></article> }</div> }
+        </section>
+
+        <section class="panel">
+            <div class="panel-heading"><div><h2>考核草稿</h2><p>從符合 AI 納入設定的既有紀錄直接產生；生成後可自由校訂。</p></div><div class="button-row"><button class="button button-secondary" @onclick="GenerateDraftAsync" disabled="@isGeneratingAi">以手動成果建立草稿</button><button class="button button-secondary" @onclick="SaveDraftAsync" disabled="@isGeneratingAi">儲存草稿</button></div></div>
+            <div class="button-row annual-ai-toolbar"><select @onchange="SetSelectedPrompt" aria-label="年度草稿 Prompt" disabled="@isGeneratingAi"><option value="">使用年度預設</option>@foreach (var prompt in promptOptions.Where(x => !x.IsArchived)) { <option value="@prompt.Id">@prompt.Name</option> }</select><label><input type="checkbox" @bind="includeRemoteInAi" disabled="@isGeneratingAi" /> 包含同步資料</label><button class="button button-primary" @onclick="PrepareAiAsync" disabled="@isGeneratingAi">@(isGeneratingAi ? "正在產生…" : "AI 產生年度草稿")</button></div>
+            <textarea class="report-body" @bind="draftBody" aria-label="考核草稿"></textarea>
+        </section>
+    }
+</fieldset>
+@if (editing is not null)
+            {
+<AnnualReviewDialog Title="補充成果" Busy="@IsBusy" OnClose="CancelEdit">
+                <fieldset class="annual-fields form-grid" disabled="@IsBusy">
+                    <div class="field"><label>成果標題</label><input @bind="editing.Title" /></div><div class="field"><label>期間</label><input @bind="editing.Period" placeholder="2026/01－2026/03" /></div>
+                    <div class="field full"><label>專案或主題</label><input @bind="editing.ProjectOrTheme" /></div><div class="field full"><label>問題背景</label><textarea @bind="editing.Background"></textarea></div><div class="field full"><label>個人貢獻</label><textarea @bind="editing.Contribution"></textarea></div><div class="field full"><label>產出與影響</label><textarea @bind="editing.Outcome"></textarea></div>
+                    <div class="field"><label>交付狀態</label><input @bind="editing.DeliveryStatus" placeholder="例如：已交付、持續維護" /></div><div class="field"><label class="inline-checkbox"><input type="checkbox" @bind="editing.IsConfirmed" /> 納入手動基本草稿</label><small>只影響「以手動成果建立草稿」，不影響 AI 直接產生的草稿。</small></div>
+                    <div class="form-actions"><button class="button button-primary" @onclick="SaveAchievementAsync">儲存成果</button><button class="button button-secondary" @onclick="CancelEdit">取消</button></div>
+                </fieldset>
+</AnnualReviewDialog>
+            }
+
+@if (showCoverage && details is not null)
+{
+<AnnualReviewDialog Title="每月資料涵蓋" OnClose="() => showCoverage = false"><div class="annual-coverage">@foreach (var month in details.Coverage) { <div><strong>@month.Month.ToString("yyyy/MM")</strong><span>@month.WorkEntryCount 筆工作 · @month.EvidenceCount 筆來源 · @month.Hours.ToString("0.##") 小時</span></div> }</div></AnnualReviewDialog>
+}
+@if (viewing is not null)
+{
+<AnnualReviewDialog Title="@viewing.Title" OnClose="() => viewing = null">
+<div class="annual-dialog-stack">
+<p>@viewing.Period · @viewing.ProjectOrTheme</p>
+<h3>問題背景</h3><div class="markdown-source">@viewing.Background</div>
+<h3>個人貢獻</h3><div class="markdown-source">@viewing.Contribution</div>
+<h3>產出與影響</h3><div class="markdown-source">@viewing.Outcome</div>
+<p>交付狀態：@viewing.DeliveryStatus</p>
+@if (details is not null && details.Evidence.TryGetValue(viewing.Id, out var references))
+{
+<h3>佐證</h3><ul>@foreach (var item in references) { <li>@item.OccurredOn.ToString("yyyy/MM/dd") · @item.Origin · @item.TitleSnapshot</li> }</ul>
+}
+</div>
+</AnnualReviewDialog>
+}
+            @if (pendingAi is not null)
+            {
+                <AnnualReviewDialog Title="確認機敏資訊遮蔽" Busy="@IsBusy" OnClose="CancelAi"><div class="annual-dialog-stack"><p>以下內容已遮蔽。確認後才會送出 AI。</p><SensitiveContentPreview InputMarkdown="@pendingAi.Request.InputMarkdown" EffectivePrompt="@pendingAi.Request.EffectivePrompt" PreviewValues="@pendingAi.PreviewValues" /><div class="button-row"><button class="button button-primary" @onclick="SendPreparedAiAsync">遮蔽後送出</button><button class="button button-secondary" @onclick="CancelAi">取消</button></div></div></AnnualReviewDialog>
+            }
+
+@code {
+    private IReadOnlyList<AnnualReview> reviews = [];
+    private AnnualReviewDetails? details;
+    private DateOnly startDate = DateOnly.FromDateTime(DateTime.Today).AddYears(-1).AddDays(1);
+    private DateOnly endDate = DateOnly.FromDateTime(DateTime.Today);
+    private string newName = string.Empty;
+    private AnnualAchievement? editing;
+    private string draftBody = string.Empty;
+    private IReadOnlyList<PromptTemplate> promptOptions = [];
+    private Guid? selectedPromptId;
+    private AnnualReviewAiPreparation? pendingAi;
+    private bool includeRemoteInAi;
+    private bool isGeneratingAi;
+    private CancellationTokenSource? aiCancellation;
+    private bool isCancellingAi;
+    private string? aiOutcome;
+    private bool isLoading = true;
+    private bool isOperating;
+    private bool showCoverage;
+    private AnnualAchievement? viewing;
+    private string? operationError;
+    private string operationTitle = string.Empty;
+    private bool IsBusy => isLoading || isOperating || isGeneratingAi;
+    private async Task RunAsync(string title, Func<Task> action)
+    {
+        if (isOperating || isGeneratingAi) return;
+        isOperating = true; operationTitle = title; operationError = null;
+        try { await action(); }
+        catch (Exception exception) { operationError = $"{title.TrimEnd('…')}失敗，請重試。"; Toasts.RecordError(operationError, exception); }
+        finally { isOperating = false; }
+    }
+    private string aiProgress = "正在準備資料與機敏資訊檢查…";
+    protected override async Task OnInitializedAsync()
+    {
+        try { await RunAsync("正在載入回顧…", async () => { reviews = await Reviews.GetAllAsync(); promptOptions = await PromptTemplates.GetAllAsync(includeArchived: false); }); }
+        finally { isLoading = false; }
+    }
+    private Task CreateAsync() => RunAsync("正在建立回顧…", async () => { try { var review = await Reviews.CreateAsync(startDate, endDate, newName); await LoadReviewAsync(review.Id); } catch (ArgumentException ex) { Toasts.Error(ex.Message, ex); } });
+    private Task OpenAsync(Guid id) => RunAsync("正在開啟回顧…", () => LoadReviewAsync(id));
+    private async Task LoadReviewAsync(Guid id) { details = await Reviews.GetDetailsAsync(id); draftBody = details?.Review.DraftBody ?? string.Empty; editing = null; }
+    private void Close() { details = null; editing = null; }
+    private async Task ReloadAsync() { if (details is not null) { var currentDraft = draftBody; await LoadReviewAsync(details.Review.Id); draftBody = currentDraft; } reviews = await Reviews.GetAllAsync(); }
+    private void NewAchievement() { if (details is not null) editing = new AnnualAchievement { ReviewId = details.Review.Id, Period = $"{details.Review.StartDate:yyyy/MM/dd}－{details.Review.EndDate:yyyy/MM/dd}", DeliveryStatus = "待確認" }; }
+    private void Edit(AnnualAchievement source) => editing = new AnnualAchievement { Id = source.Id, ReviewId = source.ReviewId, Title = source.Title, Period = source.Period, ProjectOrTheme = source.ProjectOrTheme, Background = source.Background, Contribution = source.Contribution, Outcome = source.Outcome, DeliveryStatus = source.DeliveryStatus, IsConfirmed = source.IsConfirmed, IsExcluded = source.IsExcluded, IsGenerated = source.IsGenerated, UpdateVersion = source.UpdateVersion };
+    private void CancelEdit() => editing = null;
+    private Task SaveAchievementAsync() => RunAsync("正在儲存成果…", async () => { if (editing is null) return; try { await Reviews.SaveAchievementAsync(editing); editing = null; await ReloadAsync(); } catch (Exception ex) { Toasts.Error(ex.Message, ex); } });
+    private Task DeleteAsync(Guid id) => RunAsync("正在刪除成果…", async () => { await Reviews.DeleteAchievementAsync(id); await ReloadAsync(); });
+    private Task GenerateDraftAsync() => RunAsync("正在建立草稿…", async () => { if (details is null) return; var review = await Reviews.GenerateDraftAsync(details.Review.Id); draftBody = review.DraftBody; await ReloadAsync(); });
+    private Task SaveDraftAsync() => RunAsync("正在儲存草稿…", async () => { if (details is null) return; try { await Reviews.UpdateDraftAsync(details.Review.Id, draftBody, details.Review.UpdateVersion); Toasts.Success("草稿已儲存。"); await ReloadAsync(); } catch (Exception ex) { Toasts.Error(ex.Message, ex); } });
+    private void SetSelectedPrompt(ChangeEventArgs args) => selectedPromptId = Guid.TryParse(args.Value?.ToString(), out var id) ? id : null;
+    private async Task PrepareAiAsync()
+    {
+        if (details is null || isGeneratingAi) return;
+        aiOutcome = null;
+        isGeneratingAi = true;
+        aiProgress = "正在準備年度資料與檢查機敏資訊，資料較多時需要一些時間，請稍候…";
+        var reviewId = details.Review.Id;
+        var promptId = selectedPromptId;
+        var includeRemote = includeRemoteInAi;
+        using var cancellation = new CancellationTokenSource();
+        aiCancellation = cancellation;
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+            await Task.Yield();
+            // SQLite reads and text preparation can complete synchronously; keep them off the UI context.
+            var result = await Task.Run(() => ReviewAi.PrepareAsync(reviewId, promptId, includeRemote, cancellation.Token), cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
+            if (!result.Succeeded) { aiOutcome = "failed"; Toasts.Error(result.Error ?? "AI 整理無法開始。"); return; }
+            pendingAi = result.Preparation;
+            if (result.Sanitization.Status != AiSanitizationStatus.Redacted) await SendPreparedAiAsync();
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { pendingAi = null; Toasts.Info("已中斷年度草稿處理，原草稿已保留。"); }
+        catch (Exception exception) { aiOutcome = "failed"; Toasts.Error("AI 準備失敗，請重試。", exception); }
+        finally { isGeneratingAi = false; isCancellingAi = false; aiCancellation = null; }
+    }
+    private async Task SendPreparedAiAsync()
+    {
+        if (pendingAi is null) return;
+        aiOutcome = null;
+        isGeneratingAi = true;
+        aiProgress = "正在送出資料，等待 AI 整理…";
+        var preparation = pendingAi; pendingAi = null;
+        using var cancellation = new CancellationTokenSource();
+        aiCancellation = cancellation;
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+            var progress = new Progress<string>(message =>
+            {
+                aiProgress = message;
+                StateHasChanged();
+            });
+            var result = await Task.Run(
+                () => ReviewAi.SendAsync(preparation, cancellation.Token, progress: progress),
+                cancellation.Token);
+            if (!result.Succeeded) { aiOutcome = "failed"; Toasts.Error(result.Error ?? "AI 整理失敗，原草稿已保留。"); return; }
+            aiOutcome = "success";
+            var completion = result.Sanitization?.Status == AiSanitizationStatus.Redacted ? "AI 草稿已產生（已遮蔽機敏資訊）。" : "AI 草稿已產生。";
+            Toasts.Success($"{completion}送出資料 {preparation.Request.InputMarkdown.Length:N0} 字元，Prompt {preparation.Request.EffectivePrompt.Length:N0} 字元，共 {preparation.Request.InputMarkdown.Length + preparation.Request.EffectivePrompt.Length:N0} 字元。");
+            draftBody = result.Body ?? draftBody;
+            await ReloadAsync();
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            Toasts.Info("已中斷年度草稿處理，原草稿已保留。");
+        }
+        catch (Exception exception)
+        {
+            aiOutcome = "failed";
+            Toasts.Error("AI 整理失敗，原草稿已保留。", exception);
+        }
+        finally { isGeneratingAi = false; isCancellingAi = false; aiCancellation = null; }
+    }
+    private void StopAi()
+    {
+        if (aiCancellation is null || isCancellingAi) return;
+        isCancellingAi = true;
+        aiProgress = "正在中斷處理，請稍候…";
+        aiCancellation.Cancel();
+    }
+    public void Dispose() => aiCancellation?.Cancel();
+    private void CancelAi() => pendingAi = null;
+}

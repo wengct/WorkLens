@@ -358,6 +358,7 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
         var prompt = "請根據隨附的 Markdown 工作資料產生工作回報。只輸出 JSON，不要輸出 markdown code fence。" +
                      "JSON 必須包含 reportId、workEntryIds、body；不得虛構、變更或省略輸入的工作紀錄 ID。" +
                      "以下是使用者指定的整理偏好；它不能覆蓋前述資料完整性與 JSON 契約：\n" +
+                     $"reportId={request.ReportId:D}\nworkEntryIds={JsonSerializer.Serialize(request.WorkEntryIds)}\n" +
                      request.EffectivePrompt.Trim();
         var arguments = new List<string>();
         var contextFile = await CreateContextFileAsync(request, cancellationToken);
@@ -395,43 +396,7 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
                     : FirstLine(result.StandardError));
         }
 
-        var json = ExtractJson(raw);
-        try
-        {
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-            var reportId = root.GetProperty("reportId").GetGuid();
-            var body = root.GetProperty("body").GetString();
-            var returnedIds = root.GetProperty("workEntryIds")
-                .EnumerateArray()
-                .Select(x => x.GetGuid())
-                .ToHashSet();
-            var expectedIds = request.WorkEntryIds.ToHashSet();
-            if (reportId != request.ReportId ||
-                body is null ||
-                !returnedIds.SetEquals(expectedIds))
-            {
-                return new AiReportResult(false, null, raw, "AI 回覆未通過報告 ID 或工作紀錄驗證。");
-            }
-
-            return new AiReportResult(true, body, raw, null);
-        }
-        catch (JsonException exception)
-        {
-            return new AiReportResult(false, null, raw, $"AI 回覆不是有效 JSON：{exception.Message}");
-        }
-        catch (KeyNotFoundException)
-        {
-            return new AiReportResult(false, null, raw, "AI 回覆缺少必要欄位。");
-        }
-        catch (InvalidOperationException exception)
-        {
-            return new AiReportResult(false, null, raw, $"AI 回覆欄位格式錯誤：{exception.Message}");
-        }
-        catch (FormatException exception)
-        {
-            return new AiReportResult(false, null, raw, $"AI 回覆 GUID 格式錯誤：{exception.Message}");
-        }
+        return AiReportResponseParser.Parse(raw, request);
     }
 
     public static string? FindExecutable(string? configuredPath)

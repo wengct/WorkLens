@@ -10,6 +10,27 @@ namespace WorkLens.Tests;
 public sealed class SourceCollectionCancellationTests
 {
     [Fact]
+    public async Task Collect_range_allows_up_to_365_days_and_rejects_a_longer_range()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
+        var factory = new Factory(options);
+        var orchestrator = new SourceOrchestrator(
+            factory,
+            new SourceRegistry([]),
+            new ReportInvalidationService(factory),
+            NullLogger<SourceOrchestrator>.Instance);
+        var start = new DateOnly(2025, 1, 1);
+
+        var results = await orchestrator.CollectRangeAsync([], start, start.AddDays(364));
+
+        Assert.Empty(results);
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            orchestrator.CollectRangeAsync([], start, start.AddDays(365)));
+    }
+
+    [Fact]
     public async Task StopCollection_stops_active_adapter_and_restores_ready_status()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");

@@ -207,7 +207,7 @@ public sealed class VisualStudioCopilotSourceAdapter : IActivitySourceAdapter
             var nextRetryPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var sessions = new Dictionary<string, ParsedSession>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var (file, solutionPath) in candidates)
+            foreach (var (file, solutionPath) in CollectionFileProgress.Track(candidates, request))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var parsed = ParseSession(file, solutionPath, batch.Warnings);

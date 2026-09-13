@@ -87,6 +87,27 @@ public sealed class SourceConfigurationService(
 
             source.SettingsJson = SourceSettingsSerializer.Serialize(claudeSettings);
         }
+        else if (source.SourceType is ActivitySourceType.WindowsAntigravityCli or ActivitySourceType.WslAntigravityCli or ActivitySourceType.MacOsAntigravityCli)
+        {
+            var antigravitySettings = SourceSettingsSerializer.DeserializeAntigravityCli(source.SettingsJson);
+            antigravitySettings.AntigravityCliHome = string.IsNullOrWhiteSpace(antigravitySettings.AntigravityCliHome)
+                ? null
+                : antigravitySettings.AntigravityCliHome.Trim();
+            antigravitySettings.Distro = string.IsNullOrWhiteSpace(antigravitySettings.Distro)
+                ? null
+                : antigravitySettings.Distro.Trim();
+            if (source.SourceType == ActivitySourceType.WslAntigravityCli && antigravitySettings.Distro is null)
+            {
+                throw new ArgumentException("WSL Antigravity CLI 來源必須指定 Linux 環境名稱，例如 Ubuntu。", nameof(source));
+            }
+
+            if (source.SourceType is ActivitySourceType.WindowsAntigravityCli or ActivitySourceType.MacOsAntigravityCli)
+            {
+                antigravitySettings.Distro = null;
+            }
+
+            source.SettingsJson = SourceSettingsSerializer.Serialize(antigravitySettings);
+        }
         else if (source.SourceType is ActivitySourceType.WindowsCopilot or ActivitySourceType.WslCopilot or ActivitySourceType.MacOsCopilot)
         {
             var copilotSettings = SourceSettingsSerializer.DeserializeCopilot(source.SettingsJson);

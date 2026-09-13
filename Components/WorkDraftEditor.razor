@@ -57,7 +57,12 @@
     private WorkDraft? draft;
     private string? baseVersion;
     private string status = "";
-    private string error = "";
+    private string errorMessage = "";
+    private string error
+    {
+        get => errorMessage;
+        set { errorMessage = value; Toasts.RecordError(value); }
+    }
     private bool ready;
     private bool busy;
     private bool publishing;

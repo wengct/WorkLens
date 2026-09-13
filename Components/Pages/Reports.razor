@@ -97,6 +97,7 @@
                 </div>
             </div>
             @if (isBackfilling) { <OperationProgress Title="正在重新收集來源…" Detail="完成後會重新整理歷程與摘要狀態。" /> }
+            <OperationNotification Active="@isBackfilling" Outcome="@backfillOutcome" Label="來源回補" />
             @if (DetailEntries.Count == 0 && DetailEvidence.Count == 0)
             {
                 <div class="empty-state"><p>這個期間沒有符合目前篩選條件的紀錄。</p></div>
@@ -110,7 +111,7 @@
                     }
                     @foreach (var item in DetailEvidence)
                     {
-                        <div class="timeline-item"><div class="timeline-time">@(kind == ReportKind.Weekly ? $"{DateOnly.FromDateTime(item.OccurredAt.LocalDateTime):MM/dd} · " : string.Empty)來源 · @item.OccurredAt.ToLocalTime().ToString("HH:mm") · @ProjectName(item.ProjectId)</div><div class="timeline-title">@item.Title</div><div class="timeline-detail">@if (item.Kind == EvidenceKind.CodexSession) { <CodexSessionDetails Evidence="item" /> } else if (item.Kind == EvidenceKind.ClaudeCodeSession) { <ClaudeCodeSessionDetails Evidence="item" /> } else if (item.Kind == EvidenceKind.CopilotSession) { <CopilotSessionDetails Evidence="item" /> } else if (item.Kind is EvidenceKind.AzureDevOpsPullRequestCreated or EvidenceKind.AzureDevOpsPullRequestClosed) { <AzureDevOpsPullRequestDetails Evidence="item" /> } else if (item.Kind == EvidenceKind.AzureDevOpsWorkItemActivity) { <AzureDevOpsWorkItemActivityDetails Evidence="item" /> } else { @item.RepositoryKey @if (!string.IsNullOrWhiteSpace(item.CommitMessage) && item.CommitMessage != item.Title) { <div class="markdown-source">@item.CommitMessage</div> } }</div></div>
+                        <div class="timeline-item"><div class="timeline-time">@(kind == ReportKind.Weekly ? $"{DateOnly.FromDateTime(item.OccurredAt.LocalDateTime):MM/dd} · " : string.Empty)來源 · @item.OccurredAt.ToLocalTime().ToString("HH:mm") · @ProjectName(item.ProjectId)</div><div class="timeline-title">@item.Title</div><div class="timeline-detail">@if (item.Kind == EvidenceKind.CodexSession) { <CodexSessionDetails Evidence="item" /> } else if (item.Kind == EvidenceKind.ClaudeCodeSession) { <ClaudeCodeSessionDetails Evidence="item" /> } else if (item.Kind == EvidenceKind.AntigravityCliSession) { <AntigravityCliSessionDetails Evidence="item" /> } else if (item.Kind == EvidenceKind.CopilotSession) { <CopilotSessionDetails Evidence="item" /> } else if (item.Kind is EvidenceKind.AzureDevOpsPullRequestCreated or EvidenceKind.AzureDevOpsPullRequestClosed) { <AzureDevOpsPullRequestDetails Evidence="item" /> } else if (item.Kind == EvidenceKind.AzureDevOpsWorkItemActivity) { <AzureDevOpsWorkItemActivityDetails Evidence="item" /> } else { @item.RepositoryKey @if (!string.IsNullOrWhiteSpace(item.CommitMessage) && item.CommitMessage != item.Title) { <div class="markdown-source">@item.CommitMessage</div> } }</div></div>
                     }
                 </div></div>
             }
@@ -149,6 +150,7 @@
     private IReadOnlyList<SourceEvidence> evidence = [];
     private IReadOnlyList<ReportDocument> reports = [];
     private bool isBackfilling;
+    private string? backfillOutcome;
     private bool deleteAutomaticForDatePending;
     private bool isDeletingAutomaticForDate;
     private ReportWorkspace? reportWorkspace;
@@ -289,6 +291,8 @@
 
     private async Task BackfillPeriodAsync()
     {
+        if (isBackfilling) return;
+        backfillOutcome = null;
         isBackfilling = true;
         Toasts.Info($"正在重新收集 {SelectedPeriodTitle} 的來源資料…");
         await InvokeAsync(StateHasChanged);
@@ -298,11 +302,14 @@
             var sourceIds = (await SourceConfig.GetSourcesAsync()).Where(source => source.Enabled && source.HealthStatus == SourceHealthStatus.Ready).Select(source => source.Id).ToArray();
             var results = await Orchestrator.CollectRangeAsync(sourceIds, PeriodStart, PeriodEnd);
             var resultMessage = $"回補完成：新增 {results.Sum(result => result.AddedCount)}、更新 {results.Sum(result => result.UpdatedCount)}、未變更 {results.Sum(result => result.UnchangedCount)}。";
+            backfillOutcome = results.Any(result => result.Canceled) ? "canceled" : results.Any(result => !result.Succeeded)
+                ? results.Any(result => result.Succeeded) ? "partial" : "failed"
+                : "success";
             if (results.Any(result => !result.Succeeded)) Toasts.Error(resultMessage);
             else Toasts.Success(resultMessage);
             await ReloadAsync();
         }
-        catch (Exception exception) { Toasts.Error(exception.Message); }
+        catch (Exception exception) { backfillOutcome = "failed"; Toasts.Error(exception.Message, exception); }
         finally { isBackfilling = false; }
     }
 

@@ -91,7 +91,7 @@ public sealed class BackupService(
         }
         catch (Exception exception) when (exception is IOException or SqliteException)
         {
-            logger.LogWarning(exception, "建立 {Kind} 備份失敗", kind);
+            logger.LogError(exception, "建立 {Kind} 備份失敗", kind);
             return null;
         }
     }

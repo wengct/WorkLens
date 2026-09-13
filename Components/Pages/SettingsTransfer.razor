@@ -76,7 +76,24 @@
     private bool importConfirmationOpen;
     private async Task ExportAsync() { var json = await Transfer.ExportAsync(new ConfigurationTransferSelection(selection.AiSettings, selection.Prompts, selection.Sources, selection.GitAuthorEmails, selection.SensitiveWords, selection.ScanExclusions)); await JS.InvokeVoidAsync("workLensSettingsTransfer.download", $"worklens-settings-{DateTimeOffset.Now:yyyyMMdd-HHmmss}.json", json); }
     private void OnSourcesChanged() { if (!selection.Sources) selection.GitAuthorEmails = false; }
-    private async Task ReadImportAsync(InputFileChangeEventArgs args) { try { await using var stream = args.File.OpenReadStream(2 * 1024 * 1024); using var reader = new StreamReader(stream); preview = Transfer.Preview(await reader.ReadToEndAsync()); actions.Clear(); conflicts = preview.IsValid ? BuildConflicts(preview.Document!) : []; } catch (Exception exception) { preview = new ConfigurationTransferPreview(null, [$"讀取設定檔失敗：{exception.Message}"], []); } }
+    private async Task ReadImportAsync(InputFileChangeEventArgs args)
+    {
+        try
+        {
+            await using var stream = args.File.OpenReadStream(2 * 1024 * 1024);
+            using var reader = new StreamReader(stream);
+            preview = Transfer.Preview(await reader.ReadToEndAsync());
+            if (!preview.IsValid) Toasts.RecordError(string.Join("；", preview.Errors));
+            actions.Clear();
+            conflicts = preview.IsValid ? BuildConflicts(preview.Document!) : [];
+        }
+        catch (Exception exception)
+        {
+            var message = $"讀取設定檔失敗：{exception.Message}";
+            Toasts.RecordError(message, exception);
+            preview = new ConfigurationTransferPreview(null, [message], []);
+        }
+    }
     private List<ConflictItem> BuildConflicts(ConfigurationTransferDocument document) { var result = new List<ConflictItem>(); if (document.Includes.AiSettings) foreach (var item in document.AiProviders) Add($"ai:{item.Name}", $"AI 設定：{item.Name}", true); if (document.Includes.Prompts) foreach (var item in document.Prompts) Add($"prompt:{item.Name}", $"Prompt：{item.Name}", true); if (document.Includes.Sources) foreach (var item in document.Sources) Add($"source:{item.SourceType}:{item.DisplayName}", $"資料來源：{item.DisplayName}", true); if (document.Includes.SensitiveWords) foreach (var item in document.SensitiveWords) Add($"word:{item.Value}", "自訂敏感詞", false); if (document.Includes.ScanExclusions) foreach (var item in document.ScanExclusions) Add($"exclusion:{item}", "掃描排除關鍵字", false); return result; void Add(string key, string label, bool copy) { actions[key] = TransferConflictAction.Update; result.Add(new ConflictItem(key, label, copy)); } }
     private void SetAction(string key, TransferConflictAction action) => actions[key] = action;
     private string ActionClass(string key, TransferConflictAction action) => actions.GetValueOrDefault(key) == action ? "button button-primary" : "button button-secondary";

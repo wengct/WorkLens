@@ -1,5 +1,7 @@
 # 資料來源品牌圖示
 
+Google Antigravity CLI 使用既有 lucide-react 的 Terminal 通用圖示（ISC 授權），並非 Google 官方品牌標誌。
+
 圖示用於辨識 WorkLens 的資料來源；品牌與商標屬於各權利人，不表示合作或背書。
 
 | 檔案 | 來源與授權 |

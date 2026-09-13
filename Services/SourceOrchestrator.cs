@@ -126,11 +126,12 @@ public sealed class SourceOrchestrator(
 
         if (!result.IsValid)
         {
-            logger.LogWarning(
-                "資料來源 {Source} 驗證失敗，狀態：{Status}，原因：{Summary}",
+            logger.LogError(
+                "資料來源 {Source} 驗證失敗，狀態：{Status}，原因：{Summary} 詳細：{Details}",
                 SourceLogLabel(source),
                 result.Status,
-                result.Summary);
+                result.Summary,
+                string.Join(" ", result.Details));
         }
 
         return result;
@@ -145,11 +146,12 @@ public sealed class SourceOrchestrator(
         IEnumerable<Guid> sourceIds,
         DateOnly startDate,
         DateOnly endDate,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<SourceCollectionProgress>? progress = null)
     {
-        if (endDate < startDate || endDate.DayNumber - startDate.DayNumber > 89)
+        if (endDate < startDate || endDate.DayNumber - startDate.DayNumber > 364)
         {
-            throw new ArgumentException("回補日期範圍必須介於 1 到 90 天。", nameof(endDate));
+            throw new ArgumentException("回補日期範圍必須介於 1 到 365 天。", nameof(endDate));
         }
 
         var start = new DateTimeOffset(DateTime.SpecifyKind(startDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Local));
@@ -157,7 +159,9 @@ public sealed class SourceOrchestrator(
         var results = new List<CollectionRunResult>();
         foreach (var sourceId in sourceIds.Distinct())
         {
-            var result = await CollectCoreAsync(sourceId, start, end, false, cancellationToken);
+            progress?.Invoke(new(sourceId, "準備／驗證來源"));
+            var result = await CollectCoreAsync(sourceId, start, end, false, cancellationToken, progress);
+            progress?.Invoke(new(sourceId, result.Canceled ? "已停止" : result.Succeeded ? "已完成" : "失敗", Finished: true));
             results.Add(result);
             if (result.Canceled)
             {
@@ -172,7 +176,8 @@ public sealed class SourceOrchestrator(
         DateTimeOffset? requestedStart,
         DateTimeOffset? requestedEnd,
         bool updateCheckpoint,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<SourceCollectionProgress>? progress = null)
     {
         var gate = locks.GetOrAdd(sourceId, _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(cancellationToken);
@@ -194,6 +199,17 @@ public sealed class SourceOrchestrator(
 
             sourceLabel = SourceLogLabel(source);
 
+            if (!updateCheckpoint && source.HealthStatus is not SourceHealthStatus.Ready and not SourceHealthStatus.Running)
+            {
+                var validation = await ValidateAsync(sourceId, collectionToken);
+                if (!validation.IsValid)
+                {
+                    return new CollectionRunResult(false, 0, [],
+                        $"「{source.DisplayName}」驗證失敗：{validation.Summary} {string.Join(" ", validation.Details)}");
+                }
+                source.HealthStatus = SourceHealthStatus.Ready;
+            }
+
             if (source.HealthStatus != SourceHealthStatus.Ready)
             {
                 return new CollectionRunResult(false, 0, [], "來源尚未就緒，請按「重新驗證」確認來源可用。");
@@ -206,14 +222,16 @@ public sealed class SourceOrchestrator(
 
             await SetRunningAsync(sourceId, collectionToken);
             heartbeatTask = KeepCollectionHeartbeatAsync(sourceId, heartbeatCancellation.Token);
+            progress?.Invoke(new(sourceId, "掃描／收集資料"));
             var batch = await adapter.CollectAsync(
-                new CollectionRequest(source, since, requestedEnd, updateCheckpoint, collectionToken),
+                new CollectionRequest(source, since, requestedEnd, updateCheckpoint, collectionToken, progress),
                 collectionToken);
             collectionToken.ThrowIfCancellationRequested();
             heartbeatCancellation.Cancel();
             await WaitForHeartbeatAsync(heartbeatTask);
             heartbeatTask = null;
 
+            progress?.Invoke(new(sourceId, "儲存資料"));
             await using var db = await factory.CreateDbContextAsync(collectionToken);
             await using var transaction = await db.Database.BeginTransactionAsync(collectionToken);
             var trackedSource = await db.ActivitySources.SingleAsync(x => x.Id == sourceId, collectionToken);
@@ -279,7 +297,7 @@ public sealed class SourceOrchestrator(
         }
         catch (Exception exception) when (exception is InvalidOperationException or IOException or DbUpdateException)
         {
-            logger.LogWarning(exception, "資料來源 {Source} 收集失敗", sourceLabel);
+            logger.LogError(exception, "資料來源 {Source} 收集失敗", sourceLabel);
             await MarkErrorAsync(sourceId, sourceLabel, exception.Message, cancellationToken);
             return new CollectionRunResult(false, 0, [], exception.Message);
         }
@@ -496,7 +514,7 @@ public sealed class SourceOrchestrator(
     {
         if (!IsSessionEvidence(current.Kind) ||
             current.Kind != incoming.Kind ||
-            (current.SourceId == incoming.SourceId && incoming.Kind != EvidenceKind.CopilotSession))
+            (current.SourceId == incoming.SourceId && incoming.Kind is not (EvidenceKind.CopilotSession or EvidenceKind.AntigravityCliSession)))
         {
             return false;
         }
@@ -518,12 +536,13 @@ public sealed class SourceOrchestrator(
     }
 
     private static bool IsSessionEvidence(EvidenceKind kind) =>
-        kind is EvidenceKind.CodexSession or EvidenceKind.ClaudeCodeSession or EvidenceKind.CopilotSession;
+        kind is EvidenceKind.CodexSession or EvidenceKind.ClaudeCodeSession or EvidenceKind.CopilotSession or EvidenceKind.AntigravityCliSession;
 
     private static DateTimeOffset? SessionUpdatedAt(SourceEvidence evidence) => evidence.Kind switch
     {
         EvidenceKind.CodexSession => SourceSettingsSerializer.DeserializeCodexMetadata(evidence.MetadataJson)?.UpdatedAt,
         EvidenceKind.ClaudeCodeSession => SourceSettingsSerializer.DeserializeClaudeCodeMetadata(evidence.MetadataJson)?.UpdatedAt,
+        EvidenceKind.AntigravityCliSession => SourceSettingsSerializer.DeserializeAntigravityCliMetadata(evidence.MetadataJson)?.UpdatedAt,
         EvidenceKind.CopilotSession => SourceSettingsSerializer.DeserializeCopilotMetadata(evidence.MetadataJson)?.UpdatedAt,
         _ => null
     };
@@ -531,6 +550,7 @@ public sealed class SourceOrchestrator(
     private static bool IsComplete(SourceEvidence evidence) => evidence.Kind switch
     {
         EvidenceKind.CopilotSession => SourceSettingsSerializer.DeserializeCopilotMetadata(evidence.MetadataJson)?.IsComplete ?? true,
+        EvidenceKind.AntigravityCliSession => SourceSettingsSerializer.DeserializeAntigravityCliMetadata(evidence.MetadataJson)?.IsComplete ?? true,
         _ => true
     };
 

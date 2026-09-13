@@ -126,7 +126,7 @@ public sealed partial class CodexSourceAdapter : IActivitySourceAdapter
                     .ToList();
 
             var sessions = new Dictionary<string, ParsedSession>(StringComparer.OrdinalIgnoreCase);
-            foreach (var file in candidates)
+            foreach (var file in CollectionFileProgress.Track(candidates, request))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 try

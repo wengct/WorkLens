@@ -100,7 +100,7 @@
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
-            Toasts.Error(exception.Message);
+            Toasts.Error(exception.Message, exception);
         }
         finally { activeOperation = null; }
     }
@@ -113,7 +113,7 @@
             Toasts.Success("預設 Prompt 已更新。");
             await ReloadAsync(editing.Id);
         }
-        catch (InvalidOperationException exception) { Toasts.Error(exception.Message); }
+        catch (InvalidOperationException exception) { Toasts.Error(exception.Message, exception); }
     }
 
     private async Task ToggleArchiveAsync()
@@ -124,7 +124,7 @@
             Toasts.Success(editing.IsArchived ? "Prompt 已取消封存。" : "Prompt 已封存。");
             await ReloadAsync(editing.Id);
         }
-        catch (InvalidOperationException exception) { Toasts.Error(exception.Message); }
+        catch (InvalidOperationException exception) { Toasts.Error(exception.Message, exception); }
     }
 
     private async Task TestAsync()

@@ -222,6 +222,7 @@ public sealed class ScheduleRunner(
                         : result.Succeeded ? "Succeeded" : "Failed";
                     execution.Status = result.Succeeded ? "Succeeded" : "Failed";
                     execution.Error = result.Error;
+                    if (!result.Succeeded) logger.LogError("排程 {ScheduleKind} AI 整理失敗：{Error}", schedule.Kind, result.Error);
                 }
                 else
                 {
@@ -235,6 +236,7 @@ public sealed class ScheduleRunner(
                     execution.BackupStatus = backup is null ? "Failed" : "Succeeded";
                     execution.Status = backup is null ? "Failed" : "Succeeded";
                     execution.Error = backup is null ? "備份建立失敗；請檢查路徑、權限與系統記錄。" : null;
+                    if (backup is null) logger.LogError("排程 {ScheduleKind} 備份失敗：{Error}", schedule.Kind, execution.Error);
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

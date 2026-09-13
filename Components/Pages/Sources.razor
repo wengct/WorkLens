@@ -3,7 +3,10 @@
 @inject SourceOrchestrator Orchestrator
 @inject AzureDevOpsCliService AzureDevOpsCli
 @inject ToastService Toasts
+@inject IJSRuntime JS
 @implements IAsyncDisposable
+
+<NavigationLock OnBeforeInternalNavigation="BeforeNavigationAsync" ConfirmExternalNavigation="@isBackfilling" />
 
 <PageTitle>資料來源｜WorkLens</PageTitle>
 
@@ -39,6 +42,8 @@
     </button>
 </nav>
 
+<OperationNotification Active="@isBackfilling" Outcome="@backfillOutcome" Label="來源回補" />
+
 @if (activeWorkspace == SourceWorkspace.Setup)
 {
 <div class="panel">
@@ -55,6 +60,7 @@
                 <option value="Git">Git repository</option>
                 <option value="Codex">Codex 工作紀錄</option>
                 <option value="ClaudeCode">Claude Code 工作紀錄</option>
+                <option value="AntigravityCli">Google Antigravity CLI 工作紀錄</option>
                 <option value="Copilot">GitHub Copilot CLI／App 工作紀錄</option>
                 <option value="VsCodeCopilot">VS Code Copilot Chat 工作紀錄</option>
                 <option value="VisualStudioCopilot">Visual Studio Copilot Chat（Visual Studio 2026）</option>
@@ -75,7 +81,7 @@
         <div class="field">
             <label for="sourceName">來源名稱（選填）</label>
             <input id="sourceName" @bind="newName" placeholder="留空將使用「@SuggestedSourceName」" />
-            <span class="hint">可用來區分多組 repository 或不同的 Codex／Claude Code 資料目錄。</span>
+            <span class="hint">可用來區分多組 repository 或不同的 Codex／Claude Code／Antigravity CLI 資料目錄。</span>
         </div>
         @if (newKind != SourceKind.AzureDevOps && newLocation == SourceLocation.Wsl)
         {
@@ -144,7 +150,7 @@
             <span class="hint">只會納入作者 email 完全符合這些設定的 commit；按 Enter、逗號或分號加入一組 pill。</span>
         </div>
         }
-        @if (newKind is SourceKind.Codex or SourceKind.ClaudeCode or SourceKind.Copilot or SourceKind.VsCodeCopilot or SourceKind.VisualStudioCopilot)
+        @if (newKind is SourceKind.Codex or SourceKind.ClaudeCode or SourceKind.AntigravityCli or SourceKind.Copilot or SourceKind.VsCodeCopilot or SourceKind.VisualStudioCopilot)
         {
             <div class="field full">
                 <label for="aiCodeHome">@SourcePathLabel(newKind)</label>
@@ -155,6 +161,10 @@
                 else if (newKind == SourceKind.ClaudeCode)
                 {
                     <input id="aiCodeHome" @bind="newClaudeCodeHome" placeholder="留空即自動偵測 CLAUDE_CONFIG_DIR 或 ~/.claude" />
+                }
+                else if (newKind == SourceKind.AntigravityCli)
+                {
+                    <input id="aiCodeHome" @bind="newAntigravityCliHome" placeholder="留空使用 ~/.gemini/antigravity-cli" />
                 }
                 else if (newKind == SourceKind.Copilot)
                 {
@@ -380,30 +390,57 @@
 
 @if (activeWorkspace == SourceWorkspace.Backfill)
 {
-<div class="panel">
-    <div class="panel-heading"><div><h2>回補來源資料</h2><p>指定期間重新收集，不會改變正常排程 checkpoint。單次最多 90 天。</p></div></div>
-    <div class="form-grid">
-        <div class="field"><label>起始日期</label><InputDate @bind-Value="backfillStart" /></div>
-        <div class="field"><label>結束日期</label><InputDate @bind-Value="backfillEnd" /></div>
-        <div class="field full"><label>來源</label><select @bind="backfillSourceId"><option value="">全部可用來源</option>@foreach (var source in sources.Where(source => source.Enabled && source.HealthStatus == SourceHealthStatus.Ready)) { <option value="@source.Id">@source.DisplayName</option> }</select></div>
-        <div class="form-actions">
-            @if (isBackfilling)
-            {
-                <button class="button button-danger" @onclick="StopBackfillAsync" disabled="@IsStoppingBackfill">@(IsStoppingBackfill ? "正在停止…" : "停止回補")</button>
-            }
-            else
-            {
-                <button class="button button-secondary" @onclick="BackfillAsync">重新收集此範圍</button>
-            }
+<div class="panel source-backfill-panel">
+    <div class="panel-heading"><div><h2>回補來源資料</h2><p>指定期間重新收集，不會改變正常排程 checkpoint。單次最多 365 天。</p></div></div>
+    <div class="source-backfill-stack">
+        <div class="form-grid">
+            <div class="field"><label>起始日期</label><InputDate @bind-Value="backfillStart" disabled="@isBackfilling" /></div>
+            <div class="field"><label>結束日期</label><InputDate @bind-Value="backfillEnd" disabled="@isBackfilling" /></div>
+            <div class="field full"><label for="backfill-source">來源</label><select id="backfill-source" @bind="backfillSourceId"><option value="">全部已啟用來源</option>@foreach (var source in sources.Where(source => source.Enabled)) { <option value="@source.Id" disabled="@(source.HealthStatus == SourceHealthStatus.Running)">@source.DisplayName（@StatusText(source.HealthStatus)）</option> } </select><small>回補前會自動驗證尚未就緒的來源；收集中來源會略過。</small></div>
+            <div class="form-actions">
+                @if (isBackfilling)
+                {
+                    <button class="button button-danger" @onclick="StopBackfillAsync" disabled="@IsStoppingBackfill">@(IsStoppingBackfill ? "正在停止…" : "停止回補")</button>
+                }
+                else
+                {
+                    <button class="button button-secondary" @onclick="BackfillAsync">重新收集此範圍</button>
+                }
+            </div>
         </div>
+        @if (isBackfilling)
+        {
+            <div class="collection-progress" aria-live="polite">
+                <div><strong>正在回補來源資料…</strong><span>完成前請保持此頁開啟；離開頁面會停止回補，已儲存的資料會保留。</span></div>
+                <div class="collection-progress-track"><span></span></div>
+            </div>
+        }
+        @if (backfillProgress.Count > 0)
+        {
+            <div class="source-backfill-stack" aria-live="polite">
+                <p>已結束 @backfillProgress.Values.Count(item => item.Finished) / @backfillProgress.Count 個來源。檔案數為掃描量，不代表新增資料筆數。</p>
+                @foreach (var item in backfillProgress.Values)
+                {
+                    var source = sources.FirstOrDefault(source => source.Id == item.SourceId);
+                    <div class="collection-progress">
+                        <div><strong>@source?.DisplayName（@(source is null ? "" : SourceTypeText(source.SourceType))）</strong><span>@item.Stage</span></div>
+                        @if (item.TotalFiles is int total)
+                        {
+                            <div>已讀取 @item.ProcessedFiles / @total 個檔案</div>
+                            @if (total > 0)
+                            {
+                                <progress aria-label="檔案讀取進度" value="@item.ProcessedFiles" max="@total"></progress>
+                            }
+                        }
+                        else
+                        {
+                            <span>尚無檔案數量；非檔案來源以處理階段顯示。</span>
+                        }
+                    </div>
+                }
+            </div>
+        }
     </div>
-    @if (isBackfilling)
-    {
-        <div class="collection-progress" aria-live="polite">
-            <div><strong>正在回補來源資料…</strong><span>完成前請保持此頁開啟。</span></div>
-            <div class="collection-progress-track"><span></span></div>
-        </div>
-    }
 </div>
 }
 
@@ -421,7 +458,7 @@
     {
         <div class="empty-state">
             <h3>目前是純人工模式</h3>
-            <p>這是預設狀態。你可以稍後再新增目前平台的 Git、Codex、Claude Code、GitHub Copilot、VS Code Copilot 或 Azure DevOps 來源。</p>
+            <p>這是預設狀態。你可以稍後再新增目前平台的 Git、Codex、Claude Code、Antigravity CLI、GitHub Copilot、VS Code Copilot 或 Azure DevOps 來源。</p>
             <button type="button" class="button button-primary" @onclick="BeginAdd">新增第一個來源</button>
         </div>
     }
@@ -534,6 +571,7 @@
     private string newDistro = string.Empty;
     private string newCodexHome = string.Empty;
     private string newClaudeCodeHome = string.Empty;
+    private string newAntigravityCliHome = string.Empty;
     private string newCopilotHome = string.Empty;
     private List<string> vsCodeWorkspaceStoragePaths = [];
     private string vsCodeWorkspaceStoragePathInput = string.Empty;
@@ -564,6 +602,8 @@
     private DateTime backfillEnd = DateTime.Today;
     private string backfillSourceId = string.Empty;
     private bool isBackfilling;
+    private readonly Dictionary<Guid, SourceCollectionProgress> backfillProgress = new();
+    private string? backfillOutcome;
     private readonly HashSet<Guid> collectingSourceIds = [];
     private readonly HashSet<Guid> stoppingSourceIds = [];
     private readonly HashSet<Guid> validatingSourceIds = [];
@@ -634,7 +674,7 @@
             return;
         }
 
-        if ((newType is ActivitySourceType.WslCodex or ActivitySourceType.WslClaudeCode or ActivitySourceType.WslCopilot or ActivitySourceType.WslVsCodeCopilot) && string.IsNullOrWhiteSpace(newDistro))
+        if ((newType is ActivitySourceType.WslCodex or ActivitySourceType.WslClaudeCode or ActivitySourceType.WslAntigravityCli or ActivitySourceType.WslCopilot or ActivitySourceType.WslVsCodeCopilot) && string.IsNullOrWhiteSpace(newDistro))
         {
             SetError($"WSL {SourceKindText(newKind)} 來源必須指定 Linux 環境名稱，例如 Ubuntu。");
             return;
@@ -743,6 +783,12 @@
                                  ClaudeCodeHome = string.IsNullOrWhiteSpace(newClaudeCodeHome) ? null : newClaudeCodeHome.Trim(),
                                  Distro = newType == ActivitySourceType.WslClaudeCode ? newDistro.Trim() : null
                              })
+                              : IsAntigravityCliType(newType)
+                             ? SourceSettingsSerializer.Serialize(new AntigravityCliSourceSettings
+                             {
+                                 AntigravityCliHome = string.IsNullOrWhiteSpace(newAntigravityCliHome) ? null : newAntigravityCliHome.Trim(),
+                                 Distro = newType == ActivitySourceType.WslAntigravityCli ? newDistro.Trim() : null
+                             })
                               : IsCopilotType(newType)
                                  ? SourceSettingsSerializer.Serialize(new CopilotSourceSettings
                                  {
@@ -774,6 +820,7 @@
     {
         editingSourceId = source.Id;
         newName = source.DisplayName;
+        newAntigravityCliHome = string.Empty;
         (newKind, newLocation) = ToSourceSelection(source.SourceType);
         if (IsGitType(source.SourceType))
         {
@@ -830,6 +877,20 @@
             var settings = SourceSettingsSerializer.DeserializeClaudeCode(source.SettingsJson);
             newDistro = settings.Distro ?? string.Empty;
             newClaudeCodeHome = settings.ClaudeCodeHome ?? string.Empty;
+            newCodexHome = string.Empty;
+            newCopilotHome = string.Empty;
+            vsCodeWorkspaceStoragePaths.Clear();
+            vsCodeWorkspaceStoragePathInput = string.Empty;
+            visualStudioSolutionPaths.Clear();
+            visualStudioSolutionPathInput = string.Empty;
+            repositoryPaths.Clear();
+            authorEmails.Clear();
+        }
+        else if (IsAntigravityCliType(source.SourceType))
+        {
+            var settings = SourceSettingsSerializer.DeserializeAntigravityCli(source.SettingsJson);
+            newDistro = settings.Distro ?? string.Empty;
+            newAntigravityCliHome = settings.AntigravityCliHome ?? string.Empty;
             newCodexHome = string.Empty;
             newCopilotHome = string.Empty;
             vsCodeWorkspaceStoragePaths.Clear();
@@ -968,6 +1029,7 @@
         try
         {
             adoDiagnostics = await AzureDevOpsCli.DiagnoseAsync(newAdoOrganization);
+            if (!adoDiagnostics.IsValid) Toasts.RecordError("Azure DevOps 診斷未通過。");
             if (adoDiagnostics.IsValid && !string.IsNullOrWhiteSpace(newAdoOrganization))
             {
                 await LoadAdoProjectsAsync();
@@ -977,6 +1039,7 @@
         {
             adoDiagnostics = new AzureDevOpsCliDiagnostics(
                 true, null, true, null, false, null, false, false, exception.Message, []);
+            Toasts.RecordError("Azure DevOps 診斷失敗。", exception);
         }
         finally
         {
@@ -1009,7 +1072,7 @@
         {
             adoProjects = [];
             adoProjectLoadError = exception.Message;
-            Toasts.Error(exception.Message);
+            Toasts.Error(exception.Message, exception);
         }
     }
 
@@ -1058,7 +1121,7 @@
         }
         catch (AzureDevOpsCliException exception)
         {
-            Toasts.Error(exception.Message);
+            Toasts.Error(exception.Message, exception);
         }
     }
 
@@ -1083,7 +1146,7 @@
         }
         catch (AzureDevOpsCliException exception)
         {
-            Toasts.Error(exception.Message);
+            Toasts.Error(exception.Message, exception);
         }
     }
 
@@ -1134,6 +1197,22 @@
         Toasts.Info("已取消編輯。");
     }
 
+    private async Task BeforeNavigationAsync(LocationChangingContext context)
+    {
+        if (!isBackfilling) return;
+
+        try
+        {
+            var leave = await JS.InvokeAsync<bool>("confirm", context.CancellationToken,
+                "來源資料仍在回補中，離開頁面會停止尚未完成的回補，已儲存的資料會保留。\n\n確定要離開嗎？按「取消」可留在此頁繼續回補。");
+            if (!leave) context.PreventNavigation();
+        }
+        catch (Exception exception) when (exception is JSException or OperationCanceledException)
+        {
+            context.PreventNavigation();
+        }
+    }
+
     private async Task BackfillAsync()
     {
         if (isBackfilling)
@@ -1143,29 +1222,58 @@
 
         using var cancellation = new CancellationTokenSource();
         backfillCancellation = cancellation;
+        backfillOutcome = null;
+        backfillProgress.Clear();
         isBackfilling = true;
         Toasts.Info("正在回補來源資料…");
         await InvokeAsync(StateHasChanged);
         await Task.Yield();
         try
         {
-            var available = sources.Where(source => source.Enabled && source.HealthStatus == SourceHealthStatus.Ready).Select(source => source.Id);
-            var ids = Guid.TryParse(backfillSourceId, out var sourceId) ? [sourceId] : available.ToArray();
-            var results = await Orchestrator.CollectRangeAsync(ids, DateOnly.FromDateTime(backfillStart), DateOnly.FromDateTime(backfillEnd), cancellation.Token);
+            await ReloadAsync();
+            var available = sources.Where(source => source.Enabled && source.HealthStatus != SourceHealthStatus.Running).Select(source => source.Id).ToArray();
+            var ids = Guid.TryParse(backfillSourceId, out var sourceId) ? available.Where(id => id == sourceId).ToArray() : available;
+            if (ids.Length == 0)
+            {
+                backfillOutcome = "failed";
+                SetError("沒有可回補的已啟用來源，請確認來源未停用且未在收集中。");
+                return;
+            }
+            foreach (var id in ids) backfillProgress[id] = new(id, "等待處理");
+            var start = DateOnly.FromDateTime(backfillStart);
+            var end = DateOnly.FromDateTime(backfillEnd);
+            var results = await Task.Run(() => Orchestrator.CollectRangeAsync(ids, start, end, cancellation.Token,
+                update => InvokeAsync(() =>
+                {
+                    if (backfillCancellation != cancellation) return;
+                    var previous = backfillProgress[update.SourceId];
+                    backfillProgress[update.SourceId] = update with
+                    {
+                        ProcessedFiles = update.ProcessedFiles ?? previous.ProcessedFiles,
+                        TotalFiles = update.TotalFiles ?? previous.TotalFiles
+                    };
+                    StateHasChanged();
+                }).GetAwaiter().GetResult()));
             if (results.Any(result => result.Canceled))
             {
                 Toasts.Info("資料回補已停止，未完成的來源不會寫入變更。");
                 return;
             }
             var resultMessage = $"回補完成：新增 {results.Sum(result => result.AddedCount)}、更新 {results.Sum(result => result.UpdatedCount)}、未變更 {results.Sum(result => result.UnchangedCount)}。";
-            if (results.Any(result => !result.Succeeded)) Toasts.Error(resultMessage);
+            backfillOutcome = results.Any(result => !result.Succeeded)
+                ? results.Any(result => result.Succeeded) ? "partial" : "failed"
+                : "success";
+            if (results.Any(result => !result.Succeeded)) SetError($"{resultMessage} {string.Join(" ", results.Where(result => !result.Succeeded).Select(result => result.Error ?? string.Join(" ", result.Warnings)))}");
             else Toasts.Success(resultMessage);
             await ReloadAsync();
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { Toasts.Info("資料回補已停止。"); }
-        catch (ArgumentException exception) { SetError(exception.Message); }
+        catch (ArgumentException exception) { backfillOutcome = "failed"; SetError(exception.Message); }
+        catch (Exception) { backfillOutcome = "failed"; SetError("來源回補失敗，請查看來源狀態後重試。"); }
         finally
         {
+            foreach (var item in backfillProgress.Values.Where(item => !item.Finished).ToArray())
+                backfillProgress[item.SourceId] = item with { Stage = cancellation.IsCancellationRequested ? "已停止" : "未完成", Finished = true };
             backfillCancellation = null;
             isBackfilling = false;
         }
@@ -1279,8 +1387,14 @@
 
     private async Task ToggleAsync(ActivitySource source)
     {
-        await SourceConfig.SetEnabledAsync(source.Id, !source.Enabled);
-        Toasts.Success(source.Enabled ? "來源已停用，既有歷程仍保留。" : "來源已啟用。");
+        var enabled = !source.Enabled;
+        await SourceConfig.SetEnabledAsync(source.Id, enabled);
+        if (enabled)
+        {
+            await ValidateAsync(source.Id);
+            return;
+        }
+        Toasts.Success("來源已停用，既有歷程仍保留。");
         await ReloadAsync();
     }
 
@@ -1505,6 +1619,7 @@
         newDistro = string.Empty;
         newCodexHome = string.Empty;
         newClaudeCodeHome = string.Empty;
+        newAntigravityCliHome = string.Empty;
         newCopilotHome = string.Empty;
         vsCodeWorkspaceStoragePaths.Clear();
         vsCodeWorkspaceStoragePathInput = string.Empty;
@@ -1530,12 +1645,13 @@
         editingSourceId = null;
     }
 
-    private void SetError(string value) => Toasts.Error(value);
+    private void SetError(string value, [System.Runtime.CompilerServices.CallerMemberName] string operation = "") => Toasts.Error(value, operation: operation);
 
     private static string SourceKindText(SourceKind kind) => kind switch
     {
         SourceKind.Codex => "Codex",
         SourceKind.ClaudeCode => "Claude Code",
+        SourceKind.AntigravityCli => "Antigravity CLI",
         SourceKind.Copilot => "GitHub Copilot",
         SourceKind.VsCodeCopilot => "VS Code Copilot",
         SourceKind.VisualStudioCopilot => "Visual Studio Copilot",
@@ -1549,6 +1665,7 @@
         SourceKind.Copilot => "GitHub Copilot 資料目錄（選填）",
         SourceKind.Codex => "Codex 資料目錄（選填）",
         SourceKind.ClaudeCode => "Claude Code 資料目錄（選填）",
+        SourceKind.AntigravityCli => "Antigravity CLI 資料目錄（選填）",
         _ => "資料目錄（選填）"
     };
 
@@ -1574,6 +1691,9 @@
     private static bool IsClaudeCodeType(ActivitySourceType type) =>
         type is ActivitySourceType.WindowsClaudeCode or ActivitySourceType.WslClaudeCode or ActivitySourceType.MacOsClaudeCode;
 
+    private static bool IsAntigravityCliType(ActivitySourceType type) =>
+        type is ActivitySourceType.WindowsAntigravityCli or ActivitySourceType.WslAntigravityCli or ActivitySourceType.MacOsAntigravityCli;
+
     private static bool IsCopilotType(ActivitySourceType type) =>
         type is ActivitySourceType.WindowsCopilot or ActivitySourceType.WslCopilot or ActivitySourceType.MacOsCopilot;
 
@@ -1593,8 +1713,11 @@
         ActivitySourceType.MacOsCodex => "macOS Codex",
         ActivitySourceType.AzureDevOpsPullRequest => "Azure DevOps",
         ActivitySourceType.WindowsClaudeCode => "Windows Claude Code",
+        ActivitySourceType.WindowsAntigravityCli => "Windows Antigravity CLI",
         ActivitySourceType.WslClaudeCode => "WSL Claude Code",
+        ActivitySourceType.WslAntigravityCli => "WSL Antigravity CLI",
         ActivitySourceType.MacOsClaudeCode => "macOS Claude Code",
+        ActivitySourceType.MacOsAntigravityCli => "macOS Antigravity CLI",
         ActivitySourceType.WindowsCopilot => "Windows GitHub Copilot CLI／App",
         ActivitySourceType.WslCopilot => "WSL GitHub Copilot CLI／App",
         ActivitySourceType.MacOsCopilot => "macOS GitHub Copilot CLI／App",
@@ -1610,6 +1733,7 @@
         (SourceKind.Git, SourceLocation.Wsl) => ActivitySourceType.WslGit,
         (SourceKind.Codex, SourceLocation.Wsl) => ActivitySourceType.WslCodex,
         (SourceKind.ClaudeCode, SourceLocation.Wsl) => ActivitySourceType.WslClaudeCode,
+        (SourceKind.AntigravityCli, SourceLocation.Wsl) => ActivitySourceType.WslAntigravityCli,
         (SourceKind.Copilot, SourceLocation.Wsl) => ActivitySourceType.WslCopilot,
         (SourceKind.VsCodeCopilot, SourceLocation.Wsl) => ActivitySourceType.WslVsCodeCopilot,
         (SourceKind.VisualStudioCopilot, _) => ActivitySourceType.WindowsVisualStudioCopilot,
@@ -1617,11 +1741,13 @@
         (SourceKind.Git, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsGit,
         (SourceKind.Codex, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsCodex,
         (SourceKind.ClaudeCode, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsClaudeCode,
+        (SourceKind.AntigravityCli, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsAntigravityCli,
         (SourceKind.Copilot, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsCopilot,
         (SourceKind.VsCodeCopilot, _) when OperatingSystem.IsMacOS() => ActivitySourceType.MacOsVsCodeCopilot,
         (SourceKind.Git, _) => ActivitySourceType.WindowsGit,
         (SourceKind.Codex, _) => ActivitySourceType.WindowsCodex,
         (SourceKind.ClaudeCode, _) => ActivitySourceType.WindowsClaudeCode,
+        (SourceKind.AntigravityCli, _) => ActivitySourceType.WindowsAntigravityCli,
         (SourceKind.Copilot, _) => ActivitySourceType.WindowsCopilot,
         (SourceKind.VsCodeCopilot, _) => ActivitySourceType.WindowsVsCodeCopilot,
         _ => ActivitySourceType.WindowsVisualStudioCopilot
@@ -1632,12 +1758,14 @@
         (SourceKind.Git, SourceLocation.Wsl) => "Git－WSL",
         (SourceKind.Codex, SourceLocation.Wsl) => "Codex－WSL",
         (SourceKind.ClaudeCode, SourceLocation.Wsl) => "Claude Code－WSL",
+        (SourceKind.AntigravityCli, SourceLocation.Wsl) => "Antigravity CLI－WSL",
         (SourceKind.Copilot, SourceLocation.Wsl) => "GitHub Copilot－WSL",
         (SourceKind.VsCodeCopilot, SourceLocation.Wsl) => "VS Code Copilot－WSL",
         (SourceKind.AzureDevOps, _) => "Azure DevOps",
         (SourceKind.Git, _) => "Git－此電腦",
         (SourceKind.Codex, _) => "Codex－此電腦",
         (SourceKind.ClaudeCode, _) => "Claude Code－此電腦",
+        (SourceKind.AntigravityCli, _) => "Antigravity CLI－此電腦",
         (SourceKind.Copilot, _) => "GitHub Copilot－此電腦",
         (SourceKind.VsCodeCopilot, _) => "VS Code Copilot－此電腦",
         _ => "Visual Studio Copilot－此電腦"
@@ -1652,7 +1780,9 @@
         ActivitySourceType.WindowsCodex or ActivitySourceType.MacOsCodex => (SourceKind.Codex, SourceLocation.Native),
         ActivitySourceType.WslCodex => (SourceKind.Codex, SourceLocation.Wsl),
         ActivitySourceType.WindowsClaudeCode or ActivitySourceType.MacOsClaudeCode => (SourceKind.ClaudeCode, SourceLocation.Native),
+        ActivitySourceType.WindowsAntigravityCli or ActivitySourceType.MacOsAntigravityCli => (SourceKind.AntigravityCli, SourceLocation.Native),
         ActivitySourceType.WslClaudeCode => (SourceKind.ClaudeCode, SourceLocation.Wsl),
+        ActivitySourceType.WslAntigravityCli => (SourceKind.AntigravityCli, SourceLocation.Wsl),
         ActivitySourceType.WindowsCopilot or ActivitySourceType.MacOsCopilot => (SourceKind.Copilot, SourceLocation.Native),
         ActivitySourceType.WslCopilot => (SourceKind.Copilot, SourceLocation.Wsl),
         ActivitySourceType.WindowsVsCodeCopilot or ActivitySourceType.MacOsVsCodeCopilot => (SourceKind.VsCodeCopilot, SourceLocation.Native),
@@ -1667,6 +1797,7 @@
         Git,
         Codex,
         ClaudeCode,
+        AntigravityCli,
         Copilot,
         VsCodeCopilot,
         VisualStudioCopilot,

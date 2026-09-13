@@ -157,6 +157,18 @@ builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
         serviceProvider.GetRequiredService<ProcessRunner>(),
         ActivitySourceType.MacOsClaudeCode));
 builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new AntigravityCliSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.WindowsAntigravityCli));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new AntigravityCliSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.WslAntigravityCli));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
+    new AntigravityCliSourceAdapter(
+        serviceProvider.GetRequiredService<ProcessRunner>(),
+        ActivitySourceType.MacOsAntigravityCli));
+builder.Services.AddSingleton<IActivitySourceAdapter>(serviceProvider =>
     new CopilotSourceAdapter(
         serviceProvider.GetRequiredService<ProcessRunner>(),
         ActivitySourceType.WindowsCopilot));
@@ -201,6 +213,8 @@ builder.Services.AddScoped<SensitiveWordService>();
 builder.Services.AddScoped<SensitiveScanExclusionService>();
 builder.Services.AddScoped<BackupService>();
 builder.Services.AddScoped<PromptTemplateService>();
+builder.Services.AddScoped<AnnualReviewService>();
+builder.Services.AddScoped<AnnualReviewAiService>();
 builder.Services.AddScoped<ConfigurationTransferService>();
 builder.Services.AddScoped<ScheduleRunner>();
 builder.Services.AddScoped<ScheduleService>();

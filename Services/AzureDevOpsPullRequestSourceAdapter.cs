@@ -161,6 +161,7 @@ public sealed class AzureDevOpsPullRequestSourceAdapter(AzureDevOpsCliService cl
     {
         var settings = SourceSettingsSerializer.DeserializeAzureDevOps(request.Source.SettingsJson);
         var batch = new CollectionBatch { CheckpointJson = request.Source.CheckpointJson };
+        void Report(string stage) => request.Progress?.Invoke(new(request.Source.Id, stage));
         if (!settings.CollectPullRequests && !settings.CollectWorkItems)
         {
             batch.Warnings.Add("Azure DevOps 來源尚未啟用任何收集項目。");
@@ -170,6 +171,7 @@ public sealed class AzureDevOpsPullRequestSourceAdapter(AzureDevOpsCliService cl
         AzureDevOpsIdentity identity;
         try
         {
+            Report("確認 Azure DevOps 登入身分，等待回應…");
             identity = await cli.GetCurrentIdentityAsync(settings.OrganizationUrl, cancellationToken);
         }
         catch (AzureDevOpsCliException exception)
@@ -201,6 +203,7 @@ public sealed class AzureDevOpsPullRequestSourceAdapter(AzureDevOpsCliService cl
             var scopeHadWarning = false;
             try
             {
+                Report($"{ScopeLabel(scope)}：查詢 PR 清單，等待回應…");
                 var pullRequests = await cli.ListPullRequestsAsync(
                     settings.OrganizationUrl,
                     scope,
@@ -217,10 +220,13 @@ public sealed class AzureDevOpsPullRequestSourceAdapter(AzureDevOpsCliService cl
                     .ToList();
 
                 var metadataCache = new Dictionary<int, AzureDevOpsPullRequestMetadata>();
+                var processedPullRequests = 0;
+                Report($"{ScopeLabel(scope)}：PR 詳細資料 0/{relevant.Count}");
                 foreach (var pullRequest in relevant)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var warningCount = batch.Warnings.Count;
+                    Report($"{ScopeLabel(scope)}：PR 詳細資料 {processedPullRequests}/{relevant.Count}，讀取 PR #{pullRequest.Id} 與關聯工作項目…");
                     var metadata = await GetMetadataAsync(
                         settings.OrganizationUrl,
                         scope,
@@ -230,6 +236,7 @@ public sealed class AzureDevOpsPullRequestSourceAdapter(AzureDevOpsCliService cl
                         batch,
                         cancellationToken);
                     scopeHadWarning |= batch.Warnings.Count > warningCount;
+                    Report($"{ScopeLabel(scope)}：PR 詳細資料 {++processedPullRequests}/{relevant.Count}");
                     if (IsWithin(pullRequest.CreationDate, since, request.Until))
                     {
                         batch.Evidence.Add(CreateEvidence(
@@ -286,6 +293,7 @@ public sealed class AzureDevOpsPullRequestSourceAdapter(AzureDevOpsCliService cl
                 : request.Since;
             try
             {
+                Report($"{WorkItemScopeLabel(scope)}：查詢工作項目清單，等待回應…");
                 var references = await cli.ListChangedWorkItemsAsync(
                     settings.OrganizationUrl,
                     scope,
@@ -296,7 +304,8 @@ public sealed class AzureDevOpsPullRequestSourceAdapter(AzureDevOpsCliService cl
                     references,
                     WorkItemRequestConcurrency,
                     reference => cli.GetWorkItemUpdatesAsync(settings.OrganizationUrl, scope, reference.Id, cancellationToken),
-                    cancellationToken);
+                    cancellationToken,
+                    (completed, total) => Report($"{WorkItemScopeLabel(scope)}：異動紀錄 {completed}/{total} 個工作項目"));
                 var activityCandidates = references
                     .Zip(updates)
                     .Where(pair => MayContainCurrentUserWorkItemActivity(pair.Second, identity, since, request.Until))
@@ -315,7 +324,8 @@ public sealed class AzureDevOpsPullRequestSourceAdapter(AzureDevOpsCliService cl
                             candidate.Updates,
                             await commentsTask);
                     },
-                    cancellationToken);
+                    cancellationToken,
+                    (completed, total) => Report($"{WorkItemScopeLabel(scope)}：內容與留言 {completed}/{total} 個工作項目"));
                 foreach (var collected in collectedItems)
                 {
                     foreach (var evidence in CreateWorkItemEvidence(
@@ -570,15 +580,24 @@ public sealed class AzureDevOpsPullRequestSourceAdapter(AzureDevOpsCliService cl
         IReadOnlyList<TSource> sources,
         int maxConcurrency,
         Func<TSource, Task<TResult>> action,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<int, int>? progress = null)
     {
         using var gate = new SemaphoreSlim(maxConcurrency);
+        var progressGate = new object();
+        var completed = 0;
+        progress?.Invoke(0, sources.Count);
         var tasks = sources.Select(async source =>
         {
             await gate.WaitAsync(cancellationToken);
             try
             {
-                return await action(source);
+                var result = await action(source);
+                lock (progressGate)
+                {
+                    progress?.Invoke(++completed, sources.Count);
+                }
+                return result;
             }
             finally
             {

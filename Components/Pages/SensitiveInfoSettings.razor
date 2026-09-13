@@ -136,7 +136,7 @@
         }
         catch (ArgumentException exception)
         {
-            Toasts.Error(exception.Message);
+            Toasts.Error(exception.Message, exception);
         }
         finally
         {
@@ -173,7 +173,7 @@
         }
         catch (ArgumentException exception)
         {
-            Toasts.Error(exception.Message);
+            Toasts.Error(exception.Message, exception);
         }
         finally
         {

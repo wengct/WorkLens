@@ -167,7 +167,7 @@ public sealed class CopilotSourceAdapter : IActivitySourceAdapter
             var nextRetryPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var sessions = new Dictionary<string, ParsedSession>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var file in candidates)
+            foreach (var file in CollectionFileProgress.Track(candidates, request))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 try

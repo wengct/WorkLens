@@ -69,6 +69,7 @@ public sealed class AzureDevOpsCliService(IProcessRunner processRunner)
 {
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(45);
     private static readonly TimeSpan VersionTimeout = TimeSpan.FromSeconds(15);
+    private const int MaxUnparseableOutputLength = 16 * 1024;
 
     public async Task<AzureDevOpsCliDiagnostics> DiagnoseAsync(
         string? organizationUrl = null,
@@ -393,7 +394,25 @@ public sealed class AzureDevOpsCliService(IProcessRunner processRunner)
             CommandTimeout,
             cancellationToken);
         EnsureSucceeded(result, $"讀取 Project「{scope.ProjectName}」的 Work Item 失敗。");
-        return ParseWorkItemReferences(result.StandardOutput);
+        // az boards query returns None when WIQL matches no work items, so the CLI
+        // exits successfully without emitting JSON. Keep this exception to the
+        // output contract local to this command, after checking process success.
+        if (string.IsNullOrWhiteSpace(result.StandardOutput) &&
+            string.IsNullOrWhiteSpace(result.StandardError))
+        {
+            return [];
+        }
+
+        try
+        {
+            return ParseWorkItemReferences(result.StandardOutput, result.StandardError);
+        }
+        catch (AzureDevOpsCliException exception)
+        {
+            throw new AzureDevOpsCliException(
+                $"{exception.Message} 命令階段：boards query；結束碼：{result.ExitCode}；" +
+                $"stdout：{result.StandardOutput.Length} 個字元；stderr：{result.StandardError.Length} 個字元。");
+        }
     }
 
     public async Task<IReadOnlyList<AzureDevOpsWorkItemUpdate>> GetWorkItemUpdatesAsync(
@@ -768,9 +787,11 @@ public sealed class AzureDevOpsCliService(IProcessRunner processRunner)
         return false;
     }
 
-    private static IReadOnlyList<AzureDevOpsWorkItemReference> ParseWorkItemReferences(string json)
+    private static IReadOnlyList<AzureDevOpsWorkItemReference> ParseWorkItemReferences(
+        string json,
+        string? standardError = null)
     {
-        using var document = ParseDocument(json);
+        using var document = ParseDocument(json, standardError);
         return GetArrayResult(document.RootElement)
             .Select(item => new AzureDevOpsWorkItemReference(
                 GetInt(item, "id"),
@@ -924,7 +945,7 @@ public sealed class AzureDevOpsCliService(IProcessRunner processRunner)
         return document.RootElement.Clone();
     }
 
-    private static JsonDocument ParseDocument(string json)
+    private static JsonDocument ParseDocument(string json, string? standardError = null)
     {
         try
         {
@@ -932,8 +953,40 @@ public sealed class AzureDevOpsCliService(IProcessRunner processRunner)
         }
         catch (JsonException)
         {
-            throw new AzureDevOpsCliException("Azure CLI 回傳無法解析的 JSON。");
+            // Some Azure CLI extension versions emit a diagnostic line to stdout even when
+            // --output json is requested. Find the JSON document rather than treating that
+            // non-data prefix as part of the response.
+            for (var index = 0; index < json.Length; index++)
+            {
+                if (json[index] is not ('{' or '['))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    return JsonDocument.Parse(json[index..]);
+                }
+                catch (JsonException)
+                {
+                    // Continue looking: a diagnostic message may itself contain brackets.
+                }
+            }
+
+            throw new AzureDevOpsCliException(
+                $"Azure CLI 回傳無法解析的 JSON。原始 Azure CLI 輸出：{FormatUnparseableOutput(
+                    string.IsNullOrWhiteSpace(json) ? standardError ?? string.Empty : json)}");
         }
+    }
+
+    private static string FormatUnparseableOutput(string output)
+    {
+        if (output.Length <= MaxUnparseableOutputLength)
+        {
+            return output.Length == 0 ? "（空白）" : output;
+        }
+
+        return $"{output[..MaxUnparseableOutputLength]}（輸出過長，僅保留前 {MaxUnparseableOutputLength} 個字元）";
     }
 
     private static JsonElement GetObject(JsonElement element, params string[] names)

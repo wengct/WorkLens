@@ -1,0 +1,41 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@if (Active)
+{
+    <div class="operation-notification">
+        <p class="hint">請保持此功能頁開啟，可切到其他瀏覽器分頁或軟體等待。分頁標題會提示處理結果。</p>
+        <NotificationPreferences Compact="true" />
+    </div>
+}
+
+@code {
+    [Parameter] public bool Active { get; set; }
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter] public string? Outcome { get; set; }
+    private readonly string id = Guid.NewGuid().ToString("N");
+    private bool wasActive;
+    private bool disposed;
+    private bool started;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (disposed || Active == wasActive) return;
+        wasActive = Active;
+        started = true;
+        try
+        {
+            if (Active) await JS.InvokeVoidAsync("workLensNotifications.start", id, Label);
+            else await JS.InvokeVoidAsync("workLensNotifications.finish", id, Outcome);
+        }
+        catch (Exception exception) when (exception is JSException or JSDisconnectedException or TaskCanceledException) { }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true;
+        if (!started) return;
+        try { await JS.InvokeVoidAsync("workLensNotifications.remove", id); }
+        catch (Exception exception) when (exception is JSException or JSDisconnectedException or TaskCanceledException) { }
+    }
+}

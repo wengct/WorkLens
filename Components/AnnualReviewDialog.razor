@@ -1,0 +1,47 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<dialog @ref="element" class="modal-dialog modal-dialog-wide annual-dialog" aria-labelledby="@titleId">
+    <div class="modal-heading">
+        <h2 id="@titleId">@Title</h2>
+        <button class="modal-close" type="button" aria-label="關閉視窗" disabled="@Busy" @onclick="OnClose">×</button>
+    </div>
+    @if (Busy) { <OperationProgress Title="正在處理，請稍候…" /> }
+    @ChildContent
+</dialog>
+
+@code {
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    private readonly string titleId = $"annual-dialog-{Guid.NewGuid():N}";
+    private ElementReference element;
+    private IJSObjectReference? module;
+    private DotNetObjectReference<AnnualReviewDialog>? reference;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/annual-review-dialog.js");
+            reference = DotNetObjectReference.Create(this);
+            await module.InvokeVoidAsync("open", element, reference);
+        }
+    }
+
+    [JSInvokable] public async Task CloseAsync()
+    {
+        if (!Busy) await OnClose.InvokeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (module is not null)
+        {
+            try { await module.InvokeVoidAsync("close", element); await module.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+        }
+        reference?.Dispose();
+    }
+}

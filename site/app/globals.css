@@ -255,6 +255,7 @@ img { display: block; max-width: 100%; }
 .source-brand-list li { display: flex; align-items: center; gap: 12px; color: #f4f7fb; font-size: .95rem; font-weight: 650; }
 .source-brand-icon { display: grid; place-items: center; flex: 0 0 44px; width: 44px; height: 44px; border-radius: 10px; background: #fff; }
 .source-brand-icon img { width: 32px; height: 32px; object-fit: contain; }
+.source-brand-icon svg { color: #24324a; }
 .source-brands > p { display: flex; align-items: center; gap: 10px; margin: 22px 0 0; color: #e1e8f0; font-size: .8rem; line-height: 1.8; }
 .source-brands > p svg { flex-shrink: 0; color: var(--focus); }
 

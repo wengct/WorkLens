@@ -48,10 +48,11 @@ public sealed class SourceCollectionLoggingTests
             Assert.False(result.IsValid);
             var logFile = Assert.Single(Directory.GetFiles(logDirectory, "worklens-*.log"));
             var content = await File.ReadAllTextAsync(logFile);
-            Assert.Contains("[Warning]", content, StringComparison.Ordinal);
+            Assert.Contains("[Error]", content, StringComparison.Ordinal);
             Assert.Contains("資料來源 Invalid source", content, StringComparison.Ordinal);
             Assert.Contains("驗證失敗", content, StringComparison.Ordinal);
             Assert.Contains("測試驗證失敗", content, StringComparison.Ordinal);
+            Assert.Contains("Winbond-Nuvoton-OW／Work Item：讀取權限不足。", content, StringComparison.Ordinal);
         }
         finally
         {
@@ -342,7 +343,10 @@ public sealed class SourceCollectionLoggingTests
         public SourceCapabilities Capabilities { get; } = new(SupportsHistory: true);
 
         public Task<SourceValidationResult> ValidateAsync(ActivitySource source, CancellationToken cancellationToken) =>
-            Task.FromResult(SourceValidationResult.Invalid(SourceHealthStatus.Error, "測試驗證失敗"));
+            Task.FromResult(SourceValidationResult.Invalid(
+                SourceHealthStatus.Error,
+                "測試驗證失敗",
+                "Winbond-Nuvoton-OW／Work Item：讀取權限不足。"));
 
         public Task<CollectionBatch> CollectAsync(CollectionRequest request, CancellationToken cancellationToken) =>
             Task.FromResult(new CollectionBatch());

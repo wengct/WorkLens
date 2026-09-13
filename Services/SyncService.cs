@@ -83,7 +83,7 @@ public sealed class SyncService(IDbContextFactory<WorkLensDbContext> factory, IL
             {
                 config.LastError = exception.Message;
                 await db.SaveChangesAsync(CancellationToken.None);
-                logger.LogWarning(exception, "跨電腦同步失敗");
+                logger.LogError(exception, "跨電腦同步失敗");
             }
             return Status(config, await db.SyncOutboxEvents.CountAsync(x => x.PublishedAt == null, ct));
         }

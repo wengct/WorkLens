@@ -1,5 +1,9 @@
 # Repository Guidelines
 
+## 網站風格設計規範
+
+新增頁面、調整 UI 或審查介面變更前，先閱讀 [design.md](design.md)，遵循網站的配色、字體、版面間距、共用元件、互動狀態、響應式及無障礙規範。優先重用 `wwwroot/app.css` 的 CSS 變數、既有 class 與 Razor 共用元件。修改共用視覺風格或響應式規則時，須在同一變更中更新設計文件，並檢查桌面、窄螢幕與條件面板顯示／隱藏的呈現。此文件用於網站風格設計，不是後端系統架構文件；獨立的 `site/` 介紹網站依其既有樣式維護。
+
 ## Project Structure & Module Organization
 
 WorkLens is a .NET 10 Blazor Server application. UI pages and shared Razor components live in `Components/`; layout and navigation are under `Components/Layout/`. Keep business behavior in `Services/`, domain entities and enums in `Domain/`, and SQLite setup and compatibility upgrades in `Data/`. Static CSS, JavaScript, and vendored browser assets belong in `wwwroot/`. Cross-platform install, run, and smoke-test scripts are in `scripts/`. The xUnit project is located at `tests/WorkLens.Tests/`.

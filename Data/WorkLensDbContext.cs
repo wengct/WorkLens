@@ -30,6 +30,9 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
     public DbSet<SyncProcessedBatch> SyncProcessedBatches => Set<SyncProcessedBatch>();
     public DbSet<RemoteWorkEntry> RemoteWorkEntries => Set<RemoteWorkEntry>();
     public DbSet<RemoteSourceEvidence> RemoteSourceEvidence => Set<RemoteSourceEvidence>();
+    public DbSet<AnnualReview> AnnualReviews => Set<AnnualReview>();
+    public DbSet<AnnualAchievement> AnnualAchievements => Set<AnnualAchievement>();
+    public DbSet<AnnualAchievementEvidence> AnnualAchievementEvidence => Set<AnnualAchievementEvidence>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -136,5 +139,10 @@ public sealed class WorkLensDbContext(DbContextOptions<WorkLensDbContext> option
         modelBuilder.Entity<RemoteSourceEvidence>().Property(x => x.Kind).HasConversion<string>();
         modelBuilder.Entity<RemoteSourceEvidence>().Property(x => x.ReachabilityStatus).HasConversion<string>();
         modelBuilder.Entity<RemoteSourceEvidence>().HasIndex(x => new { x.OriginDeviceId, x.OriginEntityId }).IsUnique();
+        modelBuilder.Entity<AnnualReview>().Property(x => x.UpdateVersion).IsConcurrencyToken();
+        modelBuilder.Entity<AnnualAchievement>().Property(x => x.UpdateVersion).IsConcurrencyToken();
+        modelBuilder.Entity<AnnualReview>().HasIndex(x => new { x.StartDate, x.EndDate });
+        modelBuilder.Entity<AnnualAchievement>().HasIndex(x => new { x.ReviewId, x.IsConfirmed });
+        modelBuilder.Entity<AnnualAchievementEvidence>().HasIndex(x => x.AchievementId);
     }
 }

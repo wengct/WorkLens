@@ -81,7 +81,7 @@
     private bool busy;
     protected override async Task OnInitializedAsync() { status = await SyncService.GetStatusAsync(); folderPath = status.FolderPath ?? string.Empty; deviceName = status.DeviceName; }
     private async Task PickFolderAsync() { var result = await Folders.PickAsync(folderPath); if (result.Selected) folderPath = result.Path!; else if (!string.IsNullOrWhiteSpace(result.Error)) Toasts.Error(result.Error); }
-    private async Task SaveAsync() { busy = true; try { status = await SyncService.ConfigureAsync(folderPath, deviceName, createSpace); Toasts.Success("跨電腦同步已啟用。"); } catch (Exception exception) { Toasts.Error(exception.Message); } finally { busy = false; } }
+    private async Task SaveAsync() { busy = true; try { status = await SyncService.ConfigureAsync(folderPath, deviceName, createSpace); Toasts.Success("跨電腦同步已啟用。"); } catch (Exception exception) { Toasts.Error(exception.Message, exception); } finally { busy = false; } }
     private async Task RunSyncAsync() { busy = true; try { status = await SyncService.SyncAsync(); Toasts.Success("同步作業已完成。"); } finally { busy = false; } }
     private async Task PauseAsync() { await SyncService.PauseAsync(); status = await SyncService.GetStatusAsync(); Toasts.Info("已暫停同步；本機資料不受影響。"); }
     private static string Format(DateTimeOffset? value) => value?.ToLocalTime().ToString("yyyy/MM/dd HH:mm") ?? "尚無";

@@ -10,12 +10,16 @@ public static class AiReportResponseParser
         {
             using var document = JsonDocument.Parse(ExtractJson(raw));
             var root = document.RootElement;
-            var reportId = root.GetProperty("reportId").GetGuid();
+            if (!root.GetProperty("reportId").TryGetGuid(out var reportId))
+                return new AiReportResult(false, null, raw, "AI 回覆的 reportId 不是有效 GUID，請重新產生。原草稿已保留。");
             var body = root.GetProperty("body").GetString();
-            var returnedIds = root.GetProperty("workEntryIds")
-                .EnumerateArray()
-                .Select(item => item.GetGuid())
-                .ToHashSet();
+            var returnedIds = new HashSet<Guid>();
+            foreach (var item in root.GetProperty("workEntryIds").EnumerateArray())
+            {
+                if (!item.TryGetGuid(out var id))
+                    return new AiReportResult(false, null, raw, "AI 回覆的 workEntryIds 含有無效 GUID，請重新產生。原草稿已保留。");
+                returnedIds.Add(id);
+            }
             if (reportId != request.ReportId ||
                 body is null ||
                 !returnedIds.SetEquals(request.WorkEntryIds))

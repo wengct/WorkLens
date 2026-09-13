@@ -30,7 +30,37 @@ public sealed record CollectionRequest(
     DateTimeOffset Since,
     DateTimeOffset? Until = null,
     bool UpdateCheckpoint = true,
-    CancellationToken CancellationToken = default);
+    CancellationToken CancellationToken = default,
+    Action<SourceCollectionProgress>? Progress = null);
+
+public sealed record SourceCollectionProgress(
+    Guid SourceId,
+    string Stage,
+    int? ProcessedFiles = null,
+    int? TotalFiles = null,
+    bool Finished = false);
+
+public static class CollectionFileProgress
+{
+    public static IEnumerable<T> Track<T>(IReadOnlyCollection<T> files, CollectionRequest request)
+    {
+        var processed = 0;
+        var lastReport = System.Diagnostics.Stopwatch.StartNew();
+        request.Progress?.Invoke(new(request.Source.Id, "讀取檔案", 0, files.Count));
+        foreach (var file in files)
+        {
+            request.CancellationToken.ThrowIfCancellationRequested();
+            yield return file;
+            processed++;
+            if (processed == files.Count || lastReport.ElapsedMilliseconds >= 150)
+            {
+                request.Progress?.Invoke(new(request.Source.Id, "讀取檔案", processed, files.Count));
+                lastReport.Restart();
+            }
+        }
+        request.Progress?.Invoke(new(request.Source.Id, "整理資料", processed, files.Count));
+    }
+}
 
 public sealed class CollectionBatch
 {

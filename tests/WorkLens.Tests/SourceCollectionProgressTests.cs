@@ -19,6 +19,14 @@ public sealed class SourceCollectionProgressTests
         Assert.Contains("StopCollectionAsync(source.Id)", razor, StringComparison.Ordinal);
         Assert.Contains("停止回補", razor, StringComparison.Ordinal);
         Assert.Contains("@onclick=\"StopBackfillAsync\"", razor, StringComparison.Ordinal);
+        Assert.Contains("source-backfill-stack", razor, StringComparison.Ordinal);
         Assert.Contains("cancellation.Token", razor, StringComparison.Ordinal);
+
+        var cssPath = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..",
+            "wwwroot", "app.css"));
+        var css = await File.ReadAllTextAsync(cssPath);
+        Assert.Contains(".source-backfill-stack { display: grid; gap: 18px;", css, StringComparison.Ordinal);
     }
 }
