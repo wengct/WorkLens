@@ -19,4 +19,31 @@ public sealed class ReportCalendarViewTests
         Assert.Contains("calendarAnchor.AddDays(offset * 7)", page, StringComparison.Ordinal);
         Assert.Contains("calendarAnchor.AddMonths(offset)", page, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task Reports_week_calendar_shows_month_day_and_weekday()
+    {
+        var page = await File.ReadAllTextAsync(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..",
+            "Components", "Pages", "Reports.razor"));
+
+        Assert.Contains("@CalendarDayLabel(day)", page, StringComparison.Ordinal);
+        Assert.Contains("$\"{day.Month}/{day.Day}({WeekWeekdays", page, StringComparison.Ordinal);
+        Assert.Contains("calendarView == \"week\"", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Week_calendar_reserves_space_for_the_today_label()
+    {
+        var css = await File.ReadAllTextAsync(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..",
+            "wwwroot", "app.css"));
+
+        Assert.Contains(
+            ".history-browser .history-calendar-grid-week .calendar-day { display: grid; grid-template-columns: 92px 54px minmax(0, 1fr) auto;",
+            css,
+            StringComparison.Ordinal);
+    }
 }

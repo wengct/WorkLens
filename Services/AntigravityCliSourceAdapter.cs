@@ -128,6 +128,7 @@ public sealed class AntigravityCliSourceAdapter : IActivitySourceAdapter
                         retryPaths.Contains(file.FullName))
                     .ToList();
             var nextRetryPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var nextUnchangedFailures = new Dictionary<string, FailedFileState>(StringComparer.OrdinalIgnoreCase);
             var sessions = new Dictionary<string, ParsedSession>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var file in CollectionFileProgress.Track(candidates, request))
@@ -135,12 +136,26 @@ public sealed class AntigravityCliSourceAdapter : IActivitySourceAdapter
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
+                    var state = new FailedFileState(file.Length, file.LastWriteTimeUtc);
+                    if (!isBackfill && !isInitialImport &&
+                        checkpoint.UnchangedFailures.TryGetValue(file.FullName, out var previousState) &&
+                        state == previousState)
+                    {
+                        nextRetryPaths.Add(file.FullName);
+                        nextUnchangedFailures[file.FullName] = state;
+                        continue;
+                    }
                     var warnings = new List<string>();
                     var parsed = ParseSession(file, warnings, cancellationToken);
                     batch.Warnings.AddRange(warnings);
                     if (warnings.Count > 0)
                     {
                         nextRetryPaths.Add(file.FullName);
+                        // Only remember stable reads; concurrent writes must be retried.
+                        if (file.Length == state.Length && file.LastWriteTimeUtc == state.LastWriteTimeUtc)
+                        {
+                            nextUnchangedFailures[file.FullName] = state;
+                        }
                     }
 
                     if (parsed is null)
@@ -225,7 +240,8 @@ public sealed class AntigravityCliSourceAdapter : IActivitySourceAdapter
                 batch.CheckpointJson = JsonSerializer.Serialize(new AntigravityCliCheckpoint
                 {
                     LastScanAt = scanStartedAt,
-                    RetryPaths = nextRetryPaths.ToList()
+                    RetryPaths = nextRetryPaths.ToList(),
+                    UnchangedFailures = nextUnchangedFailures
                 });
             }
         }
@@ -280,7 +296,7 @@ public sealed class AntigravityCliSourceAdapter : IActivitySourceAdapter
                     !TryGetTimestamp(row, "timestamp", out timestamp))
                 {
                     complete = false;
-                    warnings.Add($"會話 {sessionId}：第 {ordinal} 行缺少有效時間，已保留重試。");
+                    warnings.Add($"會話 {sessionId}：第 {ordinal} 行缺少有效時間，檔案變動後會重試。");
                     continue;
                 }
                 messages.Add(new AntigravityCliSessionMessage
@@ -294,7 +310,7 @@ public sealed class AntigravityCliSourceAdapter : IActivitySourceAdapter
             catch (JsonException)
             {
                 complete = false;
-                warnings.Add($"會話 {sessionId}：第 {ordinal} 行不是完整 JSON，已保留重試。");
+                warnings.Add($"會話 {sessionId}：第 {ordinal} 行 JSON 格式無效或不完整，檔案變動後會重試。");
             }
         }
         file.Refresh();
@@ -389,6 +405,8 @@ public sealed class AntigravityCliSourceAdapter : IActivitySourceAdapter
                 ? new AntigravityCliCheckpoint()
                 : JsonSerializer.Deserialize<AntigravityCliCheckpoint>(json) ?? new AntigravityCliCheckpoint();
             checkpoint.RetryPaths ??= [];
+            checkpoint.UnchangedFailures = new Dictionary<string, FailedFileState>(
+                checkpoint.UnchangedFailures ?? [], StringComparer.OrdinalIgnoreCase);
             return checkpoint;
         }
         catch (JsonException)
@@ -401,7 +419,10 @@ public sealed class AntigravityCliSourceAdapter : IActivitySourceAdapter
     {
         public DateTimeOffset? LastScanAt { get; set; }
         public List<string> RetryPaths { get; set; } = [];
+        public Dictionary<string, FailedFileState> UnchangedFailures { get; set; } = [];
     }
+
+    private sealed record FailedFileState(long Length, DateTime LastWriteTimeUtc);
 
     private sealed record ParsedSession(
         string SessionId,

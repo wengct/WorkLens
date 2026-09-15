@@ -58,7 +58,7 @@
                         var calendarEvidence = EvidenceFor(day);
                         var calendarReport = ReportFor(day);
                         <button type="button" class="@CalendarDayClass(day)" @onclick="() => RequestPeriodChangeAsync(kind, day)" aria-pressed="@IsSelected(day)">
-                            <span class="calendar-day-heading"><strong>@day.Day</strong>@if (day == DateOnly.FromDateTime(DateTime.Today)) { <span>今天</span> }</span>
+                            <span class="calendar-day-heading"><strong>@CalendarDayLabel(day)</strong>@if (day == DateOnly.FromDateTime(DateTime.Today)) { <span>今天</span> }</span>
                             <span class="calendar-hours">@WorkLogService.CalculateHours(calendarEntries).ToString("0.##") 小時</span>
                             <span class="calendar-counts">人工 @calendarEntries.Count · 來源 @calendarEvidence.Count</span>
                             <span class="@CalendarReportClass(calendarReport)">@ReportStateShort(calendarReport)</span>
@@ -240,6 +240,9 @@
         var (start, end) = CalendarRange();
         return $"{start:yyyy/MM/dd}－{end:MM/dd}";
     }
+    private string CalendarDayLabel(DateOnly day) => calendarView == "week"
+        ? $"{day.Month}/{day.Day}({WeekWeekdays[((int)day.DayOfWeek + 6) % 7]})"
+        : day.Day.ToString();
     private string FilterSummary()
     {
         var project = string.IsNullOrWhiteSpace(filterProject) ? "全部專案" : ProjectName(ParseProject(filterProject));

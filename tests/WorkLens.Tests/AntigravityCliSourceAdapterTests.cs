@@ -63,6 +63,29 @@ public sealed class AntigravityCliSourceAdapterTests : IDisposable
     }
 
     [Fact]
+    public async Task Unchanged_invalid_transcript_warns_once_and_is_read_again_after_change()
+    {
+        var path = await WriteSessionAsync("invalid", Row("USER_INPUT", "有效內容"),
+            "broken}", Row("PLANNER_RESPONSE", "有效回答"));
+        File.SetLastWriteTimeUtc(path, Since.AddDays(-10).UtcDateTime);
+        var source = Source();
+        var first = await CollectAsync(source);
+        Assert.NotEmpty(first.Warnings);
+        Assert.False(SourceSettingsSerializer.DeserializeAntigravityCliMetadata(Assert.Single(first.Evidence).MetadataJson)!.IsComplete);
+        source.CheckpointJson = first.CheckpointJson;
+        source.LastSuccessAt = DateTimeOffset.UtcNow;
+        var second = await CollectAsync(source);
+        Assert.Empty(second.Warnings);
+        source.CheckpointJson = second.CheckpointJson;
+        Assert.Empty((await CollectAsync(source)).Warnings);
+        await File.WriteAllLinesAsync(path, [Row("USER_INPUT", "有效內容"), Row("PLANNER_RESPONSE", "修復後的回答")]);
+        File.SetLastWriteTimeUtc(path, Since.AddDays(-9).UtcDateTime);
+        var repaired = await CollectAsync(source);
+        Assert.Empty(repaired.Warnings);
+        Assert.True(SourceSettingsSerializer.DeserializeAntigravityCliMetadata(Assert.Single(repaired.Evidence).MetadataJson)!.IsComplete);
+    }
+
+    [Fact]
     public async Task Initial_import_and_backfill_use_session_time_and_do_not_change_backfill_checkpoint()
     {
         var path = await WriteSessionAsync("old-mtime", Row("USER_INPUT", "歷史會話"));
