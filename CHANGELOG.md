@@ -4,6 +4,10 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [Unreleased]
 
+### 修正
+
+- 形象網站的 Google Antigravity CLI 來源改用 Antigravity 彩色品牌圖示。
+
 ## [1.11.0] - 2026-09-15
 
 ### 新增

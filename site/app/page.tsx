@@ -32,7 +32,7 @@ const supportedSources = [
   { name: 'Git', image: 'git.svg' },
   { name: 'Codex', image: 'codex-color.svg' },
   { name: 'Claude Code', image: 'claudecode-color.svg' },
-  { name: 'Google Antigravity CLI', image: null },
+  { name: 'Google Antigravity CLI', image: 'antigravity-color.svg' },
   { name: 'GitHub Copilot', image: 'githubcopilot.svg' },
 ];
 

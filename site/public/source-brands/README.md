@@ -1,7 +1,5 @@
 # 資料來源品牌圖示
 
-Google Antigravity CLI 使用既有 lucide-react 的 Terminal 通用圖示（ISC 授權），並非 Google 官方品牌標誌。
-
 圖示用於辨識 WorkLens 的資料來源；品牌與商標屬於各權利人，不表示合作或背書。
 
 | 檔案 | 來源與授權 |
@@ -11,5 +9,6 @@ Google Antigravity CLI 使用既有 lucide-react 的 Terminal 通用圖示（ISC
 | `codex-color.svg` | [Lobe Icons 原始檔](https://github.com/lobehub/lobe-icons/blob/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-svg/icons/codex-color.svg)，MIT 授權全文見 `LOBE-ICONS-LICENSE`。 |
 | `claudecode-color.svg` | [Lobe Icons 原始檔](https://github.com/lobehub/lobe-icons/blob/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-svg/icons/claudecode-color.svg)，MIT 授權全文見 `LOBE-ICONS-LICENSE`。 |
 | `githubcopilot.svg` | [Lobe Icons 原始檔](https://github.com/lobehub/lobe-icons/blob/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-svg/icons/githubcopilot.svg)，MIT 授權全文見 `LOBE-ICONS-LICENSE`。 |
+| `antigravity-color.svg` | [Lobe Icons 原始檔](https://github.com/lobehub/lobe-icons/blob/a94750e3f5f8fc33757b839d85030e742284e43a/packages/static-svg/icons/antigravity-color.svg)，MIT 授權全文見 `LOBE-ICONS-LICENSE`。 |
 
 所有 SVG 保留原始圖形、比例及配色，以本機靜態資產提供，不載入遠端圖示服務。
