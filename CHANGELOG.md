@@ -4,6 +4,8 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-09-15
+
 ### 新增
 
 - 新增 Google Antigravity CLI 本機對話來源，支援 Windows、WSL、macOS、自訂資料目錄、增量收集與歷史回補。今日工作台與工作摘要可展開使用者和 AI 對話；形象網站也新增此來源與工作流程介紹。
@@ -271,7 +273,8 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.10.2...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/wengct/WorkLens/compare/v1.10.2...v1.11.0
 [1.10.1]: https://github.com/wengct/WorkLens/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/wengct/WorkLens/compare/v1.9.0...v1.10.0
 [1.4.1]: https://github.com/wengct/WorkLens/compare/v1.4.0...v1.4.1
