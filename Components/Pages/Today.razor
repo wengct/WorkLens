@@ -359,7 +359,7 @@
         var date = selectedDate;
         var start = new DateTimeOffset(DateTime.SpecifyKind(date.ToDateTime(TimeOnly.MinValue), DateTimeKind.Local));
         var newSources = await SourceConfig.GetSourcesAsync(lifetime.Token);
-        var newEvidence = await Activities.GetForRangeAsync(start, start.AddDays(1));
+        var newEvidence = await Activities.GetForRangeAsync(start, start.AddDays(1), lifetime.Token);
         if (date != selectedDate || lifetime.IsCancellationRequested) return;
         sources = newSources;
         evidence = newEvidence;

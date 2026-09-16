@@ -4,11 +4,15 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-09-17
+
 ### 新增
 
 - 全站新增捉迷藏小貓，從安全的畫面邊緣探頭並自動換位；點擊可閱讀或更換 100 句內建工作鼓勵語句，涵蓋進度、休息、合作、成長與自我鼓勵，也可讓牠本次先休息。支援鍵盤、手機與減少動態效果，閱讀、背景分頁與對話框期間暫停換位。
 
 ### 改善
+
+- 降低跨電腦同步與今日工作台更新的記憶體用量：同步逐筆比對內容且只追蹤變更，日期查詢只載入範圍內的完整佐證，保留既有時間精度與同步格式。
 
 - 小貓新增偷看後縮回再探頭的出場動作，等待時隨機張望、歪頭或眨眼；被找到時會笑眼揮爪。靠近立即停止躲藏動作，閱讀時保持安靜，支援減少動態效果。
 
@@ -294,7 +298,8 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.11.0...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.12.0...HEAD
+[1.12.0]: https://github.com/wengct/WorkLens/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/wengct/WorkLens/compare/v1.10.2...v1.11.0
 [1.10.1]: https://github.com/wengct/WorkLens/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/wengct/WorkLens/compare/v1.9.0...v1.10.0

@@ -104,39 +104,51 @@ public sealed class SyncService(IDbContextFactory<WorkLensDbContext> factory, IL
     private static async Task QueueAsync(WorkLensDbContext db, CancellationToken ct)
     {
         var projects = await db.Projects.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, ct);
-        var current = new Dictionary<(SyncEntityKind Kind, Guid Id), string>();
-        foreach (var entry in await db.WorkEntries.AsNoTracking().ToListAsync(ct))
-            current[(SyncEntityKind.WorkEntry, entry.Id)] = JsonSerializer.Serialize(new WorkPayload(entry.Id, entry.WorkDate, entry.Hours, entry.Title, entry.WorkContent, entry.CreatedAt, entry.UpdatedAt), Json);
-        foreach (var evidence in await db.SourceEvidence.AsNoTracking().ToListAsync(ct))
+        var remaining = await db.SyncEntityStates.AsNoTracking()
+            .ToDictionaryAsync(x => (x.EntityKind, x.EntityId), ct);
+        await foreach (var entry in db.WorkEntries.AsNoTracking().AsAsyncEnumerable().WithCancellation(ct))
+        {
+            QueueEntity(SyncEntityKind.WorkEntry, entry.Id,
+                new WorkPayload(entry.Id, entry.WorkDate, entry.Hours, entry.Title, entry.WorkContent, entry.CreatedAt, entry.UpdatedAt));
+        }
+        await foreach (var evidence in db.SourceEvidence.AsNoTracking().AsAsyncEnumerable().WithCancellation(ct))
         {
             var projectName = evidence.ProjectId is { } projectId && projects.TryGetValue(projectId, out var name) ? name : null;
-            current[(SyncEntityKind.SourceEvidence, evidence.Id)] = JsonSerializer.Serialize(new SourcePayload(evidence.Id, evidence.SourceId, evidence.RepositoryKey, evidence.RepositoryPath, evidence.Environment, evidence.Kind, evidence.ExternalKey, evidence.Title, evidence.CommitMessage, evidence.OccurredAt, evidence.CommitHash, evidence.ParentHashes, evidence.PatchId, evidence.Branch, evidence.MetadataJson, evidence.ReachabilityStatus, evidence.FirstObservedAt, evidence.LastObservedAt, projectName), Json);
+            QueueEntity(SyncEntityKind.SourceEvidence, evidence.Id,
+                new SourcePayload(evidence.Id, evidence.SourceId, evidence.RepositoryKey, evidence.RepositoryPath, evidence.Environment, evidence.Kind, evidence.ExternalKey, evidence.Title, evidence.CommitMessage, evidence.OccurredAt, evidence.CommitHash, evidence.ParentHashes, evidence.PatchId, evidence.Branch, evidence.MetadataJson, evidence.ReachabilityStatus, evidence.FirstObservedAt, evidence.LastObservedAt, projectName));
         }
-
-        var states = await db.SyncEntityStates.ToListAsync(ct);
-        foreach (var pair in current)
-        {
-            var state = states.SingleOrDefault(x => x.EntityKind == pair.Key.Kind.ToString() && x.EntityId == pair.Key.Id);
-            var contentHash = Hash(pair.Value);
-            if (state?.IsDeleted == false && state.ContentHash == contentHash) continue;
-            if (state is null)
-            {
-                state = new SyncEntityState { EntityKind = pair.Key.Kind.ToString(), EntityId = pair.Key.Id };
-                db.SyncEntityStates.Add(state);
-                states.Add(state);
-            }
-            state.Version++;
-            state.ContentHash = contentHash;
-            state.IsDeleted = false;
-            db.SyncOutboxEvents.Add(new SyncOutboxEvent { EntityKind = pair.Key.Kind, EntityId = pair.Key.Id, Version = state.Version, Operation = SyncOperation.Upsert, PayloadJson = pair.Value });
-        }
-        foreach (var state in states.Where(x => !x.IsDeleted && !current.ContainsKey((Enum.Parse<SyncEntityKind>(x.EntityKind), x.EntityId))))
+        foreach (var state in remaining.Values.Where(x => !x.IsDeleted))
         {
             var kind = Enum.Parse<SyncEntityKind>(state.EntityKind);
+            db.SyncEntityStates.Attach(state);
             state.Version++;
             state.IsDeleted = true;
             state.ContentHash = string.Empty;
             db.SyncOutboxEvents.Add(new SyncOutboxEvent { EntityKind = kind, EntityId = state.EntityId, Version = state.Version, Operation = SyncOperation.Delete });
+        }
+
+        void QueueEntity<T>(SyncEntityKind kind, Guid id, T payload)
+        {
+            var kindName = kind.ToString();
+            remaining.Remove((kindName, id), out var state);
+            // Keep only one serialized payload alive when nothing has changed.
+            // UTF-8 serialization preserves the hashes used by existing installations.
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, Json);
+            var contentHash = Hash(bytes);
+            if (state?.IsDeleted == false && state.ContentHash == contentHash) return;
+            if (state is null)
+            {
+                state = new SyncEntityState { EntityKind = kindName, EntityId = id };
+                db.SyncEntityStates.Add(state);
+            }
+            else
+            {
+                db.SyncEntityStates.Attach(state);
+            }
+            state.Version++;
+            state.ContentHash = contentHash;
+            state.IsDeleted = false;
+            db.SyncOutboxEvents.Add(new SyncOutboxEvent { EntityKind = kind, EntityId = id, Version = state.Version, Operation = SyncOperation.Upsert, PayloadJson = Encoding.UTF8.GetString(bytes) });
         }
     }
 

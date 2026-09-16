@@ -10,6 +10,57 @@ namespace WorkLens.Tests;
 public sealed class SyncServiceTests
 {
     [Fact]
+    public async Task Unchanged_sync_emits_nothing_and_changes_deletions_and_restorations_keep_versions()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "worklens-sync-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await using var fixture = await Fixture.CreateAsync();
+            var service = new SyncService(fixture.Factory, NullLogger<SyncService>.Instance);
+            await service.ConfigureAsync(root, "測試電腦", true);
+            var id = Guid.NewGuid();
+            await using (var db = fixture.Factory.CreateDbContext())
+            {
+                // The identity includes the kind; the same GUID may occur in both tables.
+                db.WorkEntries.Add(new WorkEntry { Id = id, Title = "工作內容：中文與 emoji 🐈", WorkDate = new DateOnly(2026, 9, 17) });
+                db.SourceEvidence.Add(new SourceEvidence { Id = id, ExternalKey = "evidence", Title = "佐證", OccurredAt = DateTimeOffset.UtcNow });
+                await db.SaveChangesAsync();
+            }
+            await service.SyncAsync();
+            await service.SyncAsync();
+            await using (var db = fixture.Factory.CreateDbContext())
+            {
+                Assert.Equal(2, await db.SyncOutboxEvents.CountAsync());
+                Assert.All(await db.SyncEntityStates.ToListAsync(), x => Assert.Equal(1, x.Version));
+                (await db.WorkEntries.SingleAsync()).Title = "已更新";
+                db.SourceEvidence.Remove(await db.SourceEvidence.SingleAsync());
+                await db.SaveChangesAsync();
+            }
+            await service.SyncAsync();
+            await service.SyncAsync();
+            await using (var db = fixture.Factory.CreateDbContext())
+            {
+                Assert.Equal(4, await db.SyncOutboxEvents.CountAsync());
+                Assert.All(await db.SyncEntityStates.ToListAsync(), x => Assert.Equal(2, x.Version));
+                Assert.True((await db.SyncEntityStates.SingleAsync(x => x.EntityKind == "SourceEvidence")).IsDeleted);
+                db.SourceEvidence.Add(new SourceEvidence { Id = id, ExternalKey = "evidence", Title = "復原", OccurredAt = DateTimeOffset.UtcNow });
+                await db.SaveChangesAsync();
+            }
+            await service.SyncAsync();
+            await service.SyncAsync();
+            await using (var db = fixture.Factory.CreateDbContext())
+            {
+                Assert.Equal(5, await db.SyncOutboxEvents.CountAsync());
+                var restored = await db.SyncEntityStates.SingleAsync(x => x.EntityKind == "SourceEvidence");
+                Assert.Equal(3, restored.Version);
+                Assert.False(restored.IsDeleted);
+            }
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [Fact]
     public async Task Joining_a_folder_without_a_marker_explains_how_to_create_or_join_a_space()
     {
         var root = Path.Combine(Path.GetTempPath(), "worklens-sync-" + Guid.NewGuid().ToString("N"));
