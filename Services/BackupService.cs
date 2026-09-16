@@ -13,10 +13,28 @@ public sealed class BackupService(
     RuntimeSettingsService runtimeSettings,
     ILogger<BackupService> logger)
 {
+    private static readonly SemaphoreSlim backupGate = new(1, 1);
+
     public async Task<BackupRecord?> CreateAsync(
         string kind,
         string periodKey,
         CancellationToken cancellationToken = default)
+    {
+        await backupGate.WaitAsync(cancellationToken);
+        try
+        {
+            return await CreateCoreAsync(kind, periodKey, cancellationToken);
+        }
+        finally
+        {
+            backupGate.Release();
+        }
+    }
+
+    private async Task<BackupRecord?> CreateCoreAsync(
+        string kind,
+        string periodKey,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(kind) || string.IsNullOrWhiteSpace(periodKey))
         {
@@ -86,7 +104,7 @@ public sealed class BackupService(
             };
             db.BackupRecords.Add(record);
             await db.SaveChangesAsync(cancellationToken);
-            await PruneAsync(kind, cancellationToken);
+            await PruneAsync(record.Id, cancellationToken);
             return record;
         }
         catch (Exception exception) when (exception is IOException or SqliteException)
@@ -112,22 +130,18 @@ public sealed class BackupService(
         return valid;
     }
 
-    private async Task PruneAsync(string kind, CancellationToken cancellationToken)
+    private async Task PruneAsync(Guid latestBackupId, CancellationToken cancellationToken)
     {
-        var keep = kind.Equals("Weekly", StringComparison.OrdinalIgnoreCase) ? 12 : 30;
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         var records = await db.BackupRecords
-            .Where(x => x.Kind == kind)
+            .Where(x => x.Id != latestBackupId)
             .ToListAsync(cancellationToken);
-        var oldRecords = records
-            .OrderByDescending(x => x.CreatedAt)
-            .Skip(keep)
-            .ToList();
-        foreach (var record in oldRecords)
+        foreach (var record in records)
         {
-            TryDelete(record.FilePath);
-            TryDelete(record.FilePath + ".manifest.json");
-            db.BackupRecords.Remove(record);
+            if (TryDelete(record.FilePath) && TryDelete(record.FilePath + ".manifest.json"))
+            {
+                db.BackupRecords.Remove(record);
+            }
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -160,18 +174,17 @@ public sealed class BackupService(
         }
     }
 
-    private static void TryDelete(string path)
+    private bool TryDelete(string path)
     {
         try
         {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
+            File.Delete(path);
+            return true;
         }
-        catch (IOException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            // Pruning is best effort and must not break the next scheduled run.
+            logger.LogWarning(exception, "清理舊備份失敗，將於下次備份重試");
+            return false;
         }
     }
 }

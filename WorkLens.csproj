@@ -21,6 +21,10 @@
     <EmbeddedResource Remove="site\**" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Update="Data\encouragement-quotes.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- The Windows development build uses the same verified scanner layout as the release package. -->
   <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
     <None Include="tools\leak-hunter\leak-hunter.exe"

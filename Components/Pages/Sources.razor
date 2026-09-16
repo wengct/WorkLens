@@ -2,6 +2,7 @@
 @inject SourceConfigurationService SourceConfig
 @inject SourceOrchestrator Orchestrator
 @inject AzureDevOpsCliService AzureDevOpsCli
+@inject WslDistributionService WslDistributions
 @inject ToastService Toasts
 @inject IJSRuntime JS
 @implements IAsyncDisposable
@@ -71,7 +72,7 @@
         {
             <div class="field">
                 <label for="sourceLocation">資料位於哪裡？</label>
-                <select id="sourceLocation" @bind="newLocation">
+                <select id="sourceLocation" @bind="newLocation" @bind:after="DiscoverWslAsync">
                     <option value="Native">此電腦（Windows）</option>
                     <option value="Wsl">WSL Linux</option>
                 </select>
@@ -87,8 +88,15 @@
         {
             <div class="field">
                 <label for="distro">WSL Linux 環境</label>
-                <input id="distro" @bind="newDistro" placeholder="例如：Ubuntu" />
-                <span class="hint">儲存後會自動驗證並偵測 WSL。</span>
+                <input id="distro" @bind="newDistro" @bind:event="oninput" list="wsl-distributions" aria-describedby="distro-hint" placeholder="選擇或輸入環境名稱" />
+                <datalist id="wsl-distributions">
+                    @foreach (var distro in wslDistributionNames)
+                    {
+                        <option value="@distro"></option>
+                    }
+                </datalist>
+                <span id="distro-hint" class="hint" role="status">@(isDetectingWsl ? "正在偵測 WSL 環境…" : wslDetectionError ?? "可從清單選擇，或手動輸入環境名稱。")</span>
+                <button type="button" class="button button-secondary button-small" disabled="@isDetectingWsl" @onclick="DiscoverWslAsync">重新偵測</button>
             </div>
         }
         @if (newKind != SourceKind.AzureDevOps)
@@ -569,6 +577,29 @@
     private SourceKind newKind = SourceKind.Git;
     private SourceLocation newLocation = SourceLocation.Native;
     private string newDistro = string.Empty;
+    private IReadOnlyList<string> wslDistributionNames = [];
+    private string? wslDetectionError;
+    private bool isDetectingWsl;
+
+    private async Task DiscoverWslAsync()
+    {
+        if (newLocation != SourceLocation.Wsl || isDetectingWsl) return;
+        isDetectingWsl = true;
+        try
+        {
+            var result = await WslDistributions.DiscoverAsync();
+            wslDistributionNames = result.Names;
+            wslDetectionError = result.Error;
+            if (newLocation == SourceLocation.Wsl && string.IsNullOrWhiteSpace(newDistro) && result.Names.Count == 1)
+            {
+                newDistro = result.Names[0];
+            }
+        }
+        finally
+        {
+            isDetectingWsl = false;
+        }
+    }
     private string newCodexHome = string.Empty;
     private string newClaudeCodeHome = string.Empty;
     private string newAntigravityCliHome = string.Empty;
@@ -965,6 +996,7 @@
         newIncludeInAi = source.IncludeInAi;
         activeWorkspace = SourceWorkspace.Setup;
         Toasts.Info($"正在編輯「{source.DisplayName}」。儲存後不會清除既有 checkpoint 或歷程。");
+        await DiscoverWslAsync();
         if (IsAdoType(source.SourceType))
         {
             await DiagnoseAzureDevOpsAsync();

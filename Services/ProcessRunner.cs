@@ -6,7 +6,8 @@ namespace WorkLens.Services;
 public sealed record ProcessRequest(
     string FileName,
     IReadOnlyList<string> Arguments,
-    string? WorkingDirectory = null);
+    string? WorkingDirectory = null,
+    Encoding? OutputEncoding = null);
 
 public sealed record ProcessResult(
     int ExitCode,
@@ -52,8 +53,8 @@ public sealed class ProcessRunner : IProcessRunner
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 StandardInputEncoding = standardInput is not null ? new UTF8Encoding(false) : null,
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardErrorEncoding = Encoding.UTF8
+                StandardOutputEncoding = request.OutputEncoding ?? Encoding.UTF8,
+                StandardErrorEncoding = request.OutputEncoding ?? Encoding.UTF8
             }
         };
 

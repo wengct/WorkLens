@@ -1,4 +1,4 @@
-<nav class="nav-menu" aria-label="主要導覽">
+<nav class="nav-menu" aria-label="主要導覽" @onclick="OnNavigate">
     <div class="nav-group-label">工作</div>
     <NavLink href="/" Match="NavLinkMatch.All">
         <span class="nav-icon">◷</span>工作填寫
@@ -40,3 +40,7 @@
         <span class="nav-icon">⇄</span>設定移轉
     </NavLink>
 </nav>
+
+@code {
+    [Parameter] public EventCallback OnNavigate { get; set; }
+}

@@ -9,8 +9,10 @@ namespace WorkLens.Tests;
 
 public sealed class ReportServiceRemoteEvidenceTests
 {
-    [Fact]
-    public async Task Generating_daily_summary_includes_remote_evidence_within_the_period()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Generating_summary_includes_remote_evidence_within_the_period(bool weekly)
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -37,7 +39,10 @@ public sealed class ReportServiceRemoteEvidenceTests
             await db.SaveChangesAsync();
         }
 
-        var report = await CreateService(options).GenerateDeterministicAsync(date);
+        var service = CreateService(options);
+        var report = weekly
+            ? await service.GenerateWeeklyAsync(date)
+            : await service.GenerateDeterministicAsync(date);
 
         Assert.Contains("同步佐證", report.Body);
     }

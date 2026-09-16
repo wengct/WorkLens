@@ -40,12 +40,24 @@ public sealed class BackupServiceTests
             Assert.NotNull(backup);
             Assert.True(File.Exists(backup.FilePath));
             Assert.True(File.Exists(backup.FilePath + ".manifest.json"));
-            await using var exclusiveRead = File.Open(
+            await using (var exclusiveRead = File.Open(
                 backup.FilePath,
                 FileMode.Open,
                 FileAccess.Read,
-                FileShare.None);
-            Assert.True(exclusiveRead.Length > 0);
+                FileShare.None))
+            {
+                Assert.True(exclusiveRead.Length > 0);
+            }
+
+            // A different kind must share the same retention limit.
+            var latest = await service.CreateAsync("Weekly", "2026-W37");
+            Assert.NotNull(latest);
+            Assert.True(await service.VerifyAsync(latest.Id));
+            Assert.False(File.Exists(backup.FilePath));
+            Assert.False(File.Exists(backup.FilePath + ".manifest.json"));
+            Assert.True(File.Exists(latest.FilePath + ".manifest.json"));
+            await using var verify = await factory.CreateDbContextAsync();
+            Assert.Equal(latest.Id, (await verify.BackupRecords.SingleAsync()).Id);
         }
         finally
         {

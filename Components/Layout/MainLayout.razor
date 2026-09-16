@@ -8,7 +8,8 @@
 <ToastContainer />
 
 <div class="app-shell">
-    <aside class="sidebar">
+    <aside class="sidebar @(mobileMenuOpen ? "mobile-menu-open" : null)" @onkeydown="HandleMenuKeyAsync">
+        <div class="sidebar-header">
         <div class="brand">
             <img class="brand-mark" src="brand-mark.png" alt="" width="35" height="35" />
             <div>
@@ -16,7 +17,15 @@
                 <small>工作摘要與回報</small>
             </div>
         </div>
-        <NavMenu />
+        <button @ref="menuToggle" class="mobile-menu-toggle" type="button" aria-controls="main-navigation"
+                aria-expanded="@(mobileMenuOpen ? "true" : "false")" @onclick="ToggleMenu">
+            <span aria-hidden="true">@(mobileMenuOpen ? "×" : "☰")</span>
+            @(mobileMenuOpen ? "收合選單" : "選單")
+        </button>
+        </div>
+        <div id="main-navigation" class="sidebar-navigation">
+            <NavMenu OnNavigate="CloseMenu" />
+        </div>
         <div class="sidebar-footer">
             <div class="sidebar-meta-row">
                 <a class="sidebar-github-link"
@@ -44,6 +53,7 @@
     <main class="main-content">
         <div class="content-container">
             @Body
+            <EncouragementCat />
         </div>
     </main>
 </div>
@@ -83,6 +93,20 @@
     private readonly CancellationTokenSource disposal = new();
     private ReleaseUpdateStatus? updateStatus;
     private bool showUpdateDialog;
+    private bool mobileMenuOpen;
+    private ElementReference menuToggle;
+
+    private void ToggleMenu() => mobileMenuOpen = !mobileMenuOpen;
+    private void CloseMenu() => mobileMenuOpen = false;
+
+    private async Task HandleMenuKeyAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape" && mobileMenuOpen)
+        {
+            CloseMenu();
+            await menuToggle.FocusAsync();
+        }
+    }
 
     private string InstallCommand => OperatingSystem.IsWindows() ? WindowsInstallCommand : MacOsInstallCommand;
 

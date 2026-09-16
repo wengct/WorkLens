@@ -80,6 +80,8 @@ if (OperatingSystem.IsWindows())
 }
 
 builder.Services.AddSingleton(paths);
+builder.Services.AddSingleton(new EncouragementQuoteService(
+    Path.Combine(AppContext.BaseDirectory, "Data", "encouragement-quotes.json")));
 builder.Services.AddSingleton<RuntimeSettingsService>();
 builder.Services.AddSingleton<FolderPickerService>();
 builder.Services.AddSingleton(startupHealth);
@@ -88,6 +90,7 @@ builder.Services.AddDbContextFactory<WorkLensDbContext>(options =>
 builder.Services.AddSingleton<DatabaseInitializer>();
 
 builder.Services.AddSingleton<ProcessRunner>();
+builder.Services.AddSingleton<WslDistributionService>();
 builder.Services.AddSingleton<IProcessRunner>(serviceProvider =>
     serviceProvider.GetRequiredService<ProcessRunner>());
 builder.Services.AddSingleton<IAiContentSanitizer>(serviceProvider =>
