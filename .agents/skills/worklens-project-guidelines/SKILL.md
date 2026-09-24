@@ -1,6 +1,6 @@
 ---
 name: worklens-project-guidelines
-description: 在 WorkLens repository 中實作功能、修正問題、審查程式碼或更新文件時，套用本專案的架構、程式風格、測試、資料安全與發行規範。
+description: 在 WorkLens repository 中實作功能、修正問題、審查程式碼、更新文件或發布版本時，套用本專案的架構、程式風格、測試、資料安全與發行規範。
 ---
 
 # WorkLens 專案基本規範
@@ -65,3 +65,14 @@ dotnet test tests/WorkLens.Tests/WorkLens.Tests.csproj --configuration Release
 ```
 
 交付時說明已執行及無法執行的檢查。除非使用者明確要發布，否則不要推送語意化版本 tag；符合 `vX.Y.Z` 的 tag 會觸發發行工作流程並發布支援平台的安裝套件。
+
+## 發行頁同步變更紀錄
+
+使用者要求發布 WorkLens 新版本時，將發行頁說明同步到該版本的 `CHANGELOG.md`，作為發行完成條件之一。
+
+- 發布前，把本次待發布內容整理為確定版本與日期的章節，更新版本比較連結，並隨程式變更簽入。發行說明以該 tag 對應的 `CHANGELOG.md` 為準。
+- 只擷取目標版本章節，保留「新增／改善／修正」等分類與繁體中文內容；不包含 `Unreleased`、其他版本或沒有紀錄依據的宣稱。若章節缺失或為空，先修正變更紀錄。
+- 推送版本 tag 後，等待 `.github/workflows/release.yml` 成功建立 GitHub Release，再更新該版本的發行說明；不要另建重複 Release。自動產生的 commit 清單不能取代整理好的變更紀錄。
+- 將說明寫入 UTF-8 暫存 Markdown 檔，以 `gh release edit <tag> --notes-file <暫存檔>` 更新，避免多行內容經 shell 插值而破壞格式。暫存檔放在 repository 外。
+- 更新後讀回 Release，確認版本、說明內容、正式發布狀態，以及 Windows、Intel Mac、Apple Silicon 套件與 `SHA256SUMS` 均正確，再提供發行頁連結。
+- 若建置或說明同步失敗，回報已完成的階段與失敗原因，不宣稱整個發行已完成；重試前先確認遠端狀態，避免重複發布或覆蓋其他版本。

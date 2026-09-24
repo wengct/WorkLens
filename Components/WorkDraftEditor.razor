@@ -7,31 +7,33 @@
 @implements IAsyncDisposable
 
 <div id="@editorId" class="draft-editor">
-    <fieldset disabled="@(busy || !ready)">
-        <div class="form-grid quick-add-grid">
-            <div class="field"><label for="@(editorId + "-date")">日期</label><input id="@(editorId + "-date")" type="date" data-draft-field="date" value="@initial.Date" disabled="@(Kind == WorkDraftKind.ManualEdit)" /></div>
-            @if (IsWork)
-            {
-                <div class="field"><label for="@(editorId + "-hours")">時數</label><input id="@(editorId + "-hours")" type="number" data-draft-field="hours" value="@initial.Hours" min="0.5" max="24" step="0.5" inputmode="decimal" autocomplete="off" /></div>
-            }
-            <div class="field"><label for="@(editorId + "-project")">專案（選填）</label><select id="@(editorId + "-project")" data-draft-field="projectId">
-                <option value="" selected="@(initial.ProjectId == "")">未分類</option>
-                @if (initial.ProjectId.Length > 0 && !Projects.Any(x => x.Id.ToString() == initial.ProjectId))
+    <div class="draft-editor-scroll">
+        <fieldset disabled="@(busy || !ready)">
+            <div class="form-grid quick-add-grid">
+                <div class="field"><label for="@(editorId + "-date")">日期</label><input id="@(editorId + "-date")" type="date" data-draft-field="date" value="@initial.Date" disabled="@(Kind == WorkDraftKind.ManualEdit)" /></div>
+                @if (IsWork)
                 {
-                    <option value="@initial.ProjectId" selected>已停用專案</option>
+                    <div class="field"><label for="@(editorId + "-hours")">時數</label><input id="@(editorId + "-hours")" type="number" data-draft-field="hours" value="@initial.Hours" min="0.5" max="24" step="0.5" inputmode="decimal" autocomplete="off" /></div>
                 }
-                @foreach (var project in Projects) { <option value="@project.Id" selected="@(initial.ProjectId == project.Id.ToString())">@project.Name</option> }
-            </select></div>
-            <div class="field full"><label for="@(editorId + "-title")">標題（選填）</label><input id="@(editorId + "-title")" data-draft-field="title" value="@initial.Title" /></div>
-            <div class="field full"><label for="@(editorId + "-content")">@(IsWork ? "工作內容" : "參考資料（不計入工時）")</label><textarea id="@(editorId + "-content")" data-draft-field="content" class="markdown-input" placeholder="@(IsWork ? "記下完成事項、問題或下一步…" : "貼上會議紀錄、需求討論、Email 摘要或其他工作脈絡…")">@initial.Content</textarea></div>
-        </div>
-    </fieldset>
-    <div class="draft-status" role="status" aria-live="polite"><span data-draft-status></span></div>
-    @if (!string.IsNullOrEmpty(error))
-    {
-        <div class="alert alert-warning" role="alert">@error</div>
-        <div class="button-row"><button type="button" class="button button-secondary" @onclick="CopyInputAsync">複製目前輸入</button><button type="button" class="button button-secondary" @onclick="ReloadAsync" disabled="@busy">重新載入草稿／原紀錄</button></div>
-    }
+                <div class="field"><label for="@(editorId + "-project")">專案（選填）</label><select id="@(editorId + "-project")" data-draft-field="projectId">
+                    <option value="" selected="@(initial.ProjectId == "")">未分類</option>
+                    @if (initial.ProjectId.Length > 0 && !Projects.Any(x => x.Id.ToString() == initial.ProjectId))
+                    {
+                        <option value="@initial.ProjectId" selected>已停用專案</option>
+                    }
+                    @foreach (var project in Projects) { <option value="@project.Id" selected="@(initial.ProjectId == project.Id.ToString())">@project.Name</option> }
+                </select></div>
+                <div class="field full"><label for="@(editorId + "-title")">標題（選填）</label><input id="@(editorId + "-title")" data-draft-field="title" value="@initial.Title" /></div>
+                <div class="field full"><label for="@(editorId + "-content")">@(IsWork ? "工作內容" : "參考資料（不計入工時）")</label><textarea id="@(editorId + "-content")" data-draft-field="content" class="markdown-input" placeholder="@(IsWork ? "記下完成事項、問題或下一步…" : "貼上會議紀錄、需求討論、Email 摘要或其他工作脈絡…")">@initial.Content</textarea></div>
+            </div>
+        </fieldset>
+        <div class="draft-status" role="status" aria-live="polite"><span data-draft-status></span></div>
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <div class="alert alert-warning" role="alert">@error</div>
+            <div class="button-row"><button type="button" class="button button-secondary" @onclick="CopyInputAsync">複製目前輸入</button><button type="button" class="button button-secondary" @onclick="ReloadAsync" disabled="@busy">重新載入草稿／原紀錄</button></div>
+        }
+    </div>
     <div class="form-actions draft-actions">
         <button class="button button-primary" type="button" @onclick="PublishAsync" disabled="@(busy || !ready)">@(busy ? "儲存中…" : IsWork ? "儲存工作紀錄" : "儲存參考資料")</button>
         <button class="button button-secondary" type="button" @onclick="DiscardAsync" disabled="@(busy || !ready)">捨棄草稿</button>

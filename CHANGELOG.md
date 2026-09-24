@@ -4,6 +4,13 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [Unreleased]
 
+## [1.12.1] - 2026-09-25
+
+### 修正
+
+- 修正貼上長篇參考資料時，必須捲到編輯視窗底部才能儲存的問題。
+- 修正系統啟用減少動態效果時，捉迷藏小貓會完全露出而非從內容邊緣探頭的問題。
+
 ## [1.12.0] - 2026-09-17
 
 ### 新增
@@ -298,7 +305,9 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.12.0...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.12.1...HEAD
+
+[1.12.1]: https://github.com/wengct/WorkLens/compare/v1.12.0...v1.12.1
 [1.12.0]: https://github.com/wengct/WorkLens/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/wengct/WorkLens/compare/v1.10.2...v1.11.0
 [1.10.1]: https://github.com/wengct/WorkLens/compare/v1.10.0...v1.10.1

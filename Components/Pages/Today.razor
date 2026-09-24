@@ -215,7 +215,7 @@
 @if (activeKind is WorkDraftKind modalKind)
 {
     <div class="modal-backdrop" role="presentation" @onclick="CloseModalAsync">
-        <section class="modal-dialog modal-dialog-wide" role="dialog" aria-modal="true" aria-labelledby="draft-modal-title" @onclick:stopPropagation>
+        <section class="modal-dialog modal-dialog-wide draft-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="draft-modal-title" @onclick:stopPropagation>
             <div class="modal-heading"><h2 id="draft-modal-title">@DraftKindText(modalKind)</h2><button class="modal-close" type="button" aria-label="關閉並保留草稿" @onclick="CloseModalAsync">×</button></div>
             <WorkDraftEditor @key="ModalKey" @ref="modalEditor" Kind="modalKind" Date="selectedDate" TargetId="activeTargetId"
                              Initial="modalInitial" Projects="projects" OnSaved="ModalSavedAsync" OnClose="HideModalAsync"

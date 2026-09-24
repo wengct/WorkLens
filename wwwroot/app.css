@@ -102,7 +102,8 @@
 @keyframes cat-bubble-out { to { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
     .encouragement-cat *, .encouragement-cat *::before, .encouragement-cat *::after { animation: none !important; transition: none !important; }
-    .encouragement-cat .encouragement-cat-art { transform: rotate(var(--cat-rotation)) !important; }
+    .encouragement-cat .encouragement-cat-art { transform: translate(calc(var(--cat-x) * 40px), calc(var(--cat-y) * 40px)) rotate(var(--cat-rotation)) !important; }
+    .encouragement-cat[data-state="open"] .encouragement-cat-art { transform: rotate(var(--cat-rotation)) !important; }
 }
 
 body { margin: 0; min-width: 320px; background: #f4f6fb; }
@@ -1034,6 +1035,14 @@ button.calendar-day:hover { border-color: #aeb8dc; transform: translateY(-1px); 
 .draft-editor { min-width: 0; }
 .draft-editor fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .draft-editor fieldset:disabled { opacity: .7; }
+.draft-modal-dialog { display: flex; flex-direction: column; height: min(720px, calc(100dvh - 48px)); overflow: hidden; }
+.draft-modal-dialog .modal-heading { flex: 0 0 auto; }
+.draft-modal-dialog .draft-editor { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.draft-modal-dialog .draft-editor-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.draft-modal-dialog .draft-actions { flex: 0 0 auto; padding-top: 16px; border-top: 1px solid var(--line); background: var(--panel); }
+@media (max-width: 650px) {
+    .draft-modal-dialog { height: min(720px, 92dvh); }
+}
 .draft-status { min-height: 1.5em; margin-block: 6px; color: var(--muted, #667085); }
 .draft-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .source-health-list { padding-left: 20px; }
