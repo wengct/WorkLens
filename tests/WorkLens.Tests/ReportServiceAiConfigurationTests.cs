@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -130,7 +131,89 @@ public sealed class ReportServiceAiConfigurationTests
 
         Assert.True(result.Succeeded);
         Assert.NotNull(selected.CapturedRequest);
-        Assert.Contains("專案=WorkLens 專案", selected.CapturedRequest.InputMarkdown, StringComparison.Ordinal);
+        using var input = JsonDocument.Parse(selected.CapturedRequest.InputMarkdown);
+        var projectNames = input.RootElement.GetProperty("days").EnumerateArray()
+            .SelectMany(day => day.GetProperty("manualEntries").EnumerateArray())
+            .Select(entry => entry.GetProperty("project").GetString());
+        Assert.Contains("WorkLens 專案", projectNames);
+    }
+
+    [Fact]
+    public async Task Weekly_ai_context_keeps_weekend_only_activity_on_its_date_and_preserves_null_project()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
+        var monday = new DateOnly(2026, 9, 21);
+        var friday = monday.AddDays(4);
+        var sunday = monday.AddDays(6);
+        var sundayTime = new DateTimeOffset(
+            sunday.ToDateTime(new TimeOnly(14, 30)),
+            TimeZoneInfo.Local.GetUtcOffset(sunday.ToDateTime(new TimeOnly(14, 30))));
+        var markdown = "## 2026-09-23\n```json\n{\"project\": \"inside content\"}\n```";
+        var report = new ReportDocument
+        {
+            Kind = ReportKind.Weekly,
+            PeriodKey = "2026-W39",
+            PeriodStart = new DateTimeOffset(monday.ToDateTime(TimeOnly.MinValue), TimeZoneInfo.Local.GetUtcOffset(monday.ToDateTime(TimeOnly.MinValue))),
+            PeriodEnd = new DateTimeOffset(monday.AddDays(7).ToDateTime(TimeOnly.MinValue), TimeZoneInfo.Local.GetUtcOffset(monday.AddDays(7).ToDateTime(TimeOnly.MinValue)))
+        };
+        var source = new ActivitySource
+        {
+            DisplayName = "本機 Git",
+            SourceType = ActivitySourceType.WindowsGit,
+            Enabled = true,
+            IncludeInAi = true
+        };
+        await using (var setup = new WorkLensDbContext(options))
+        {
+            await setup.Database.EnsureCreatedAsync();
+            setup.AiFeatureSettings.Add(new AiFeatureSettings { Enabled = true });
+            setup.AiProviders.Add(new AiProviderConfiguration { Name = "測試", ProviderType = "selected", IsDefault = true });
+            setup.ActivitySources.Add(source);
+            setup.WorkEntries.Add(new WorkEntry
+            {
+                WorkDate = friday,
+                Title = "平日人工紀錄",
+                WorkContent = "完成平日工作"
+            });
+            setup.Reports.Add(report);
+            setup.SourceEvidence.Add(new SourceEvidence
+            {
+                SourceId = source.Id,
+                Kind = EvidenceKind.Commit,
+                Title = "## 假日自動活動",
+                CommitMessage = markdown,
+                OccurredAt = sundayTime
+            });
+            await setup.SaveChangesAsync();
+        }
+
+        var selected = new RecordingAdapter("selected");
+        var factory = new Factory(options);
+        var service = new ReportService(factory,
+            new AiProviderOrchestrator(new AiProviderRegistry([selected]), new TestSanitizer()),
+            new PromptTemplateService(factory), NullLogger<ReportService>.Instance);
+
+        Assert.True((await service.GenerateWithAiAsync(report.Id)).Succeeded);
+        using var input = JsonDocument.Parse(selected.CapturedRequest!.InputMarkdown);
+        var days = input.RootElement.GetProperty("days").EnumerateArray().ToArray();
+        Assert.Equal(7, days.Length);
+
+        var fridayInput = Assert.Single(days, day => DateOnly.Parse(day.GetProperty("date").GetString()!) == friday);
+        var manualEntry = Assert.Single(fridayInput.GetProperty("manualEntries").EnumerateArray());
+        Assert.Equal("人工紀錄", manualEntry.GetProperty("source").GetString());
+        Assert.Equal(JsonValueKind.Null, manualEntry.GetProperty("project").ValueKind);
+
+        var sundayInput = Assert.Single(days, day => DateOnly.Parse(day.GetProperty("date").GetString()!) == sunday);
+        Assert.Empty(sundayInput.GetProperty("manualEntries").EnumerateArray());
+        var activity = Assert.Single(sundayInput.GetProperty("sourceActivities").EnumerateArray());
+        Assert.Equal(source.DisplayName, activity.GetProperty("source").GetString());
+        Assert.Equal("2026-09-27", activity.GetProperty("date").GetString());
+        Assert.Equal(sundayTime.ToLocalTime(), activity.GetProperty("occurredAt").GetDateTimeOffset());
+        Assert.Equal(JsonValueKind.Null, activity.GetProperty("project").ValueKind);
+        Assert.Equal("## 假日自動活動", activity.GetProperty("content").GetProperty("title").GetString());
+        Assert.Equal(markdown, activity.GetProperty("content").GetProperty("message").GetString());
     }
 
     [Theory]
@@ -184,12 +267,20 @@ public sealed class ReportServiceAiConfigurationTests
 
         Assert.True((await service.GenerateWithAiAsync(report.Id)).Succeeded);
         var input = selected.CapturedRequest!.InputMarkdown;
-        Assert.Contains("WEEKEND_USER", input, StringComparison.Ordinal);
-        Assert.Contains($"{saturday.ToLocalTime():O}｜WEEKEND_USER", input, StringComparison.Ordinal);
-        Assert.DoesNotContain("OUTSIDE_PERIOD_USER", input, StringComparison.Ordinal);
-        Assert.DoesNotContain("NEXT_WEEK_USER", input, StringComparison.Ordinal);
+        using var context = JsonDocument.Parse(input);
+        var sourceActivities = context.RootElement.GetProperty("days").EnumerateArray()
+            .SelectMany(day => day.GetProperty("sourceActivities").EnumerateArray())
+            .ToArray();
+        var message = Assert.Single(sourceActivities, activity =>
+            activity.GetProperty("content").GetProperty("text").GetString() == "WEEKEND_USER");
+        Assert.Equal(saturday.ToLocalTime(), message.GetProperty("occurredAt").GetDateTimeOffset());
+        Assert.DoesNotContain(sourceActivities, activity =>
+        {
+            var content = activity.GetProperty("content");
+            return content.TryGetProperty("text", out var text) &&
+                   text.GetString() is "OUTSIDE_PERIOD_USER" or "NEXT_WEEK_USER" or "ASSISTANT_PRIVATE";
+        });
         Assert.DoesNotContain("OUTSIDE_PERIOD_TITLE", input, StringComparison.Ordinal);
-        Assert.DoesNotContain("ASSISTANT_PRIVATE", input, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -238,10 +329,13 @@ public sealed class ReportServiceAiConfigurationTests
 
         Assert.True((await service.GenerateWithAiAsync(report.Id)).Succeeded);
         var input = selected.CapturedRequest!.InputMarkdown;
-        Assert.Contains("WEEKEND_USER", input, StringComparison.Ordinal);
-        Assert.Contains($"{saturday.ToLocalTime():O}｜WEEKEND_USER", input, StringComparison.Ordinal);
-        Assert.DoesNotContain("OUTSIDE_PERIOD_USER", input, StringComparison.Ordinal);
-        Assert.DoesNotContain("NEXT_WEEK_USER", input, StringComparison.Ordinal);
+        using var context = JsonDocument.Parse(input);
+        var sourceActivities = context.RootElement.GetProperty("days").EnumerateArray()
+            .SelectMany(day => day.GetProperty("sourceActivities").EnumerateArray())
+            .ToArray();
+        var message = Assert.Single(sourceActivities);
+        Assert.Equal("WEEKEND_USER", message.GetProperty("content").GetProperty("text").GetString());
+        Assert.Equal(saturday.ToLocalTime(), message.GetProperty("occurredAt").GetDateTimeOffset());
     }
 
     [Fact]
@@ -432,7 +526,8 @@ public sealed class ReportServiceAiConfigurationTests
                     request.TotalHours,
                     request.ExecutablePath,
                     request.EffectivePrompt,
-                    summary),
+                    summary,
+                    request.InputFormat),
                 summary));
         }
 

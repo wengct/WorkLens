@@ -10,7 +10,8 @@ namespace WorkLens.Services;
 
 public sealed class SensitiveContentSanitizer : IAiContentSanitizer
 {
-    private const string WorkSegmentFile = "work-data.md";
+    private const string WorkMarkdownSegmentFile = "work-data.md";
+    private const string WorkJsonSegmentFile = "work-data.json";
     private const string PromptSegmentFile = "prompt.txt";
     private const string CredentialMarker = "[已遮蔽：機敏憑證]";
     private const string PersonalDataMarker = "[已遮蔽：個人資料]";
@@ -91,9 +92,17 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
         try
         {
             Directory.CreateDirectory(temporaryDirectory);
+            if (request.InputFormat == AiInputFormat.Json && !IsValidJson(request.InputMarkdown))
+            {
+                return Failed("AI 工作資料 JSON 格式錯誤，本次未傳送。", status.Version);
+            }
+
+            var workSegmentFile = request.InputFormat == AiInputFormat.Json
+                ? WorkJsonSegmentFile
+                : WorkMarkdownSegmentFile;
             var segments = new Dictionary<string, ScanSegment>(StringComparer.OrdinalIgnoreCase)
             {
-                [WorkSegmentFile] = new("工作資料", request.InputMarkdown),
+                [workSegmentFile] = new("工作資料", request.InputMarkdown),
                 [PromptSegmentFile] = new("Prompt", request.EffectivePrompt)
             };
             await WriteSegmentsAsync(temporaryDirectory, segments, cancellationToken);
@@ -168,7 +177,8 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
                         request.TotalHours,
                         request.ExecutablePath,
                         request.EffectivePrompt,
-                        cleanSummary),
+                        cleanSummary,
+                        request.InputFormat),
                     cleanSummary);
             }
 
@@ -177,6 +187,11 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
                 pair => pair.Key,
                 pair => pair.Value with { Text = ApplyRedactions(pair.Value.Text, rangesByFile.GetValueOrDefault(pair.Key) ?? [], pair.Value.Label, previewValues) },
                 StringComparer.OrdinalIgnoreCase);
+            if (request.InputFormat == AiInputFormat.Json && !IsValidJson(sanitizedSegments[workSegmentFile].Text))
+            {
+                return Failed("機敏資訊遮蔽後的 JSON 格式無效，本次未傳送 AI。", status.Version);
+            }
+
             await WriteSegmentsAsync(temporaryDirectory, sanitizedSegments, cancellationToken);
 
             var secondScan = await RunLeakHunterAsync(
@@ -231,12 +246,13 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
             var prepared = new AiPreparedRequest(
                 request.ReportId,
                 request.Target,
-                sanitizedSegments[WorkSegmentFile].Text,
+                sanitizedSegments[workSegmentFile].Text,
                 request.WorkEntryIds,
                 request.TotalHours,
                 request.ExecutablePath,
                 sanitizedSegments[PromptSegmentFile].Text,
-                summary);
+                summary,
+                request.InputFormat);
             return new AiSanitizationResult(prepared, summary) { PreviewValues = previewValues };
         }
         catch (OperationCanceledException)
@@ -364,6 +380,19 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
     {
         var maxBytes = segments.Max(segment => Encoding.UTF8.GetByteCount(segment.Text));
         return Math.Max(5, checked((int)Math.Ceiling(maxBytes / 1024d / 1024d)));
+    }
+
+    private static bool IsValidJson(string value)
+    {
+        try
+        {
+            using var _ = JsonDocument.Parse(value);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static RedactionRange? LocateFinding(string text, LeakHunterFinding finding)

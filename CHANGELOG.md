@@ -4,6 +4,12 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [Unreleased]
 
+## [1.13.0] - 2026-09-29
+
+### 改善
+
+- 日報與週報送給 AI 的工作資料改為按本機日期分組的 JSON；週報明列完整七天，人工紀錄與自動活動各自包含日期、來源與專案，未分類專案以 null 表示，並要求 AI 納入只有自動活動的日期。
+
 ## [1.12.2] - 2026-09-28
 
 ### 修正
@@ -312,7 +318,8 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.12.2...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.13.0...HEAD
+[1.13.0]: https://github.com/wengct/WorkLens/compare/v1.12.2...v1.13.0
 [1.12.2]: https://github.com/wengct/WorkLens/compare/v1.12.1...v1.12.2
 
 [1.12.1]: https://github.com/wengct/WorkLens/compare/v1.12.0...v1.12.1

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using WorkLens.Data;
@@ -13,6 +14,12 @@ public sealed class ReportService(
     PromptTemplateService promptTemplates,
     ILogger<ReportService> logger)
 {
+    private static readonly JsonSerializerOptions AiContextJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+        WriteIndented = true
+    };
+
     public async Task<IReadOnlyList<ReportDocument>> GetRecentAsync(int take = 20, CancellationToken cancellationToken = default)
     {
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
@@ -236,11 +243,12 @@ public sealed class ReportService(
             .OrderBy(x => x.WorkDate)
             .ThenBy(x => x.CreatedAt)
             .ToList();
-        var sourceIds = await db.ActivitySources.AsNoTracking()
+        var aiSources = await db.ActivitySources.AsNoTracking()
             .Where(x => x.IncludeInAi && x.Enabled && !x.IsArchived &&
                         (x.ProjectId == null || aiProjectIds.Contains(x.ProjectId.Value)))
-            .Select(x => x.Id)
             .ToListAsync(cancellationToken);
+        var sourceById = aiSources.ToDictionary(x => x.Id);
+        var sourceIds = sourceById.Keys.ToHashSet();
         var allEvidence = await db.SourceEvidence.AsNoTracking().ToListAsync(cancellationToken);
         var eligibleEvidence = allEvidence
             .Where(x => (sourceIds.Contains(x.SourceId) || x.Kind == EvidenceKind.Manual) &&
@@ -259,7 +267,8 @@ public sealed class ReportService(
                 : x.OccurredAt)
             .ToList();
 
-        var input = BuildAiInputWithMessages(report, entries, evidence, aiProjectNames, sessionMessages, periodStart, periodEnd);
+        var input = BuildAiInputWithMessages(
+            report, entries, evidence, aiProjectNames, sourceById, sessionMessages, periodStart, periodEnd);
         PromptTemplate? promptTemplate = null;
         try
         {
@@ -283,7 +292,8 @@ public sealed class ReportService(
                 entries.Select(x => x.Id).ToArray(),
                 report.TotalHours,
                 configuration.ExecutablePath,
-                effectivePrompt),
+                effectivePrompt,
+                AiInputFormat.Json),
             cancellationToken);
         if (!sanitization.Succeeded)
         {
@@ -656,6 +666,7 @@ public sealed class ReportService(
         IReadOnlyList<SourceEvidence> evidence,
         IReadOnlyDictionary<Guid, string> projectNames) =>
         BuildAiInputWithMessages(report, entries, evidence, projectNames,
+            new Dictionary<Guid, ActivitySource>(),
             new Dictionary<Guid, IReadOnlyList<AiSessionMessage>>(), report.PeriodStart, report.PeriodEnd);
 
     private static string BuildAiInputWithMessages(
@@ -663,46 +674,169 @@ public sealed class ReportService(
         IReadOnlyList<WorkEntry> entries,
         IReadOnlyList<SourceEvidence> evidence,
         IReadOnlyDictionary<Guid, string> projectNames,
+        IReadOnlyDictionary<Guid, ActivitySource> sources,
         IReadOnlyDictionary<Guid, IReadOnlyList<AiSessionMessage>> sessionMessages,
         DateTimeOffset periodStart,
         DateTimeOffset periodEnd)
     {
-        var builder = new StringBuilder();
-        builder.AppendLine($"報告 ID：{report.Id}");
-        builder.AppendLine($"確認工時：{report.TotalHours:0.##} 小時");
-        builder.AppendLine();
-        // DeterministicBody is intentionally not reused here. It is generated for the
-        // human-facing report from every collected source and may therefore contain
-        // evidence from a source or project that was later excluded from AI sharing.
-        // The AI context must be rebuilt exclusively from the already-filtered inputs.
-        builder.AppendLine("補充人工紀錄：");
+        // Rebuild this payload from AI-eligible records only. DeterministicBody may
+        // contain evidence from sources or projects that were excluded from sharing.
+        var startDate = DateOnly.FromDateTime(periodStart.ToLocalTime().DateTime);
+        var endDateExclusive = DateOnly.FromDateTime(periodEnd.ToLocalTime().DateTime);
+        var days = Enumerable.Range(0, Math.Max(1, endDateExclusive.DayNumber - startDate.DayNumber))
+            .Select(offset => startDate.AddDays(offset))
+            .ToDictionary(date => date, date => new AiReportContextDayBuilder(date));
+
         foreach (var entry in entries)
         {
-            builder.AppendLine($"- id={entry.Id}｜專案={ProjectName(entry.ProjectId, projectNames)}｜日期={entry.WorkDate:yyyy-MM-dd}｜確認時數={entry.Hours:0.##}｜標題={entry.Title}");
-            builder.AppendLine(entry.WorkContent);
+            if (days.TryGetValue(entry.WorkDate, out var day))
+            {
+                day.ManualEntries.Add(new AiManualEntryInput(
+                    "人工紀錄",
+                    entry.WorkDate,
+                    ProjectNameOrNull(entry.ProjectId, projectNames),
+                    entry.Title,
+                    entry.Hours,
+                    entry.WorkContent));
+            }
         }
 
-        builder.AppendLine("來源活動：");
         var standaloneWorkItemIds = GetStandaloneWorkItemIds(evidence);
         foreach (var item in evidence)
         {
             if (sessionMessages.TryGetValue(item.Id, out var messages) && messages.Count > 0)
             {
-                builder.AppendLine($"- {item.Kind}｜專案={ProjectName(item.ProjectId, projectNames)}｜使用者訊息：");
                 foreach (var message in messages.Where(message => message.Timestamp >= periodStart && message.Timestamp < periodEnd))
                 {
-                    builder.AppendLine($"  - {message.Timestamp.ToLocalTime():O}｜{message.Text}");
+                    var localTimestamp = message.Timestamp.ToLocalTime();
+                    var date = DateOnly.FromDateTime(localTimestamp.DateTime);
+                    if (days.TryGetValue(date, out var day))
+                    {
+                        day.SourceActivities.Add(CreateAiSourceActivity(
+                            item,
+                            sources,
+                            projectNames,
+                            localTimestamp,
+                            "message",
+                            new AiSourceContent(Text: message.Text)));
+                    }
                 }
                 continue;
             }
 
-            builder.AppendLine($"- {item.OccurredAt.ToLocalTime():O}｜{item.Kind}｜專案={ProjectName(item.ProjectId, projectNames)}｜title={item.Title}｜message={item.CommitMessage}｜branch={item.Branch}");
-            AppendAzureDevOpsAiSummary(builder, item, standaloneWorkItemIds);
-            AppendAzureDevOpsWorkItemActivityAiSummary(builder, item);
+            var localOccurredAt = item.OccurredAt.ToLocalTime();
+            var occurredDate = DateOnly.FromDateTime(localOccurredAt.DateTime);
+            if (!days.TryGetValue(occurredDate, out var occurredDay))
+            {
+                continue;
+            }
+
+            var details = new StringBuilder();
+            AppendAzureDevOpsAiSummary(details, item, standaloneWorkItemIds);
+            AppendAzureDevOpsWorkItemActivityAiSummary(details, item);
+            var detailText = details.ToString().Trim();
+            occurredDay.SourceActivities.Add(CreateAiSourceActivity(
+                item,
+                sources,
+                projectNames,
+                localOccurredAt,
+                "activity",
+                new AiSourceContent(
+                    Title: item.Title,
+                    Message: item.CommitMessage,
+                    Branch: item.Branch,
+                    Details: string.IsNullOrWhiteSpace(detailText) ? null : detailText)));
         }
 
-        return builder.ToString();
+        var context = new AiReportContext(
+            1,
+            report.Kind == ReportKind.Weekly ? "weekly" : "daily",
+            startDate,
+            endDateExclusive,
+            TimeZoneInfo.Local.Id,
+            report.TotalHours,
+            days.Values.Select(day => day.ToInput()).ToList());
+        return JsonSerializer.Serialize(context, AiContextJsonOptions);
     }
+
+    private static AiSourceActivityInput CreateAiSourceActivity(
+        SourceEvidence evidence,
+        IReadOnlyDictionary<Guid, ActivitySource> sources,
+        IReadOnlyDictionary<Guid, string> projectNames,
+        DateTimeOffset timestamp,
+        string timestampBasis,
+        AiSourceContent content)
+    {
+        var hasSource = sources.TryGetValue(evidence.SourceId, out var source);
+        return new AiSourceActivityInput(
+            hasSource && !string.IsNullOrWhiteSpace(source!.DisplayName)
+                ? source.DisplayName
+                : evidence.Kind == EvidenceKind.Manual ? "人工來源" : evidence.Kind.ToString(),
+            hasSource ? source!.SourceType.ToString() : null,
+            evidence.Kind.ToString(),
+            DateOnly.FromDateTime(timestamp.DateTime),
+            timestamp,
+            timestampBasis,
+            ProjectNameOrNull(evidence.ProjectId, projectNames),
+            content);
+    }
+
+    private sealed class AiReportContextDayBuilder(DateOnly date)
+    {
+        public List<AiManualEntryInput> ManualEntries { get; } = [];
+        public List<AiSourceActivityInput> SourceActivities { get; } = [];
+
+        public AiReportContextDay ToInput() => new(
+            date,
+            date.DayOfWeek.ToString(),
+            ManualEntries,
+            SourceActivities);
+    }
+
+    private sealed record AiReportContext(
+        int SchemaVersion,
+        string ReportType,
+        DateOnly PeriodStart,
+        DateOnly PeriodEndExclusive,
+        string TimeZone,
+        double ConfirmedHours,
+        IReadOnlyList<AiReportContextDay> Days);
+
+    private sealed record AiReportContextDay(
+        DateOnly Date,
+        string Weekday,
+        IReadOnlyList<AiManualEntryInput> ManualEntries,
+        IReadOnlyList<AiSourceActivityInput> SourceActivities);
+
+    private sealed record AiManualEntryInput(
+        string Source,
+        DateOnly Date,
+        string? Project,
+        string Title,
+        double ConfirmedHours,
+        string Content);
+
+    private sealed record AiSourceActivityInput(
+        string Source,
+        string? SourceType,
+        string EvidenceKind,
+        DateOnly Date,
+        DateTimeOffset OccurredAt,
+        string TimestampBasis,
+        string? Project,
+        AiSourceContent Content);
+
+    private sealed record AiSourceContent(
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        string? Title = null,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        string? Message = null,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        string? Branch = null,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        string? Details = null,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        string? Text = null);
 
     private static bool IsConversationEvidence(EvidenceKind kind) => kind is
         EvidenceKind.CodexSession or EvidenceKind.ClaudeCodeSession or
@@ -759,6 +893,9 @@ public sealed class ReportService(
 
     private static string ProjectName(Guid? projectId, IReadOnlyDictionary<Guid, string> projectNames) =>
         projectId is Guid id && projectNames.TryGetValue(id, out var name) ? name : "未分類";
+
+    private static string? ProjectNameOrNull(Guid? projectId, IReadOnlyDictionary<Guid, string> projectNames) =>
+        projectId is Guid id && projectNames.TryGetValue(id, out var name) ? name : null;
 
     private static async Task<IReadOnlyDictionary<Guid, string>> GetProjectNamesAsync(
         WorkLensDbContext db,

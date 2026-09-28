@@ -100,7 +100,14 @@ public sealed record AiReportRequest(
     IReadOnlyList<Guid> WorkEntryIds,
     double TotalHours,
     string? ExecutablePath = null,
-    string EffectivePrompt = "");
+    string EffectivePrompt = "",
+    AiInputFormat InputFormat = AiInputFormat.Markdown);
+
+public enum AiInputFormat
+{
+    Markdown,
+    Json
+}
 
 public enum AiSanitizationStatus
 {
@@ -150,7 +157,8 @@ public sealed class AiPreparedRequest
         double totalHours,
         string? executablePath,
         string effectivePrompt,
-        AiSanitizationSummary sanitization)
+        AiSanitizationSummary sanitization,
+        AiInputFormat inputFormat = AiInputFormat.Markdown)
     {
         if (!sanitization.IsReady)
         {
@@ -165,6 +173,7 @@ public sealed class AiPreparedRequest
         ExecutablePath = executablePath;
         EffectivePrompt = effectivePrompt;
         Sanitization = sanitization;
+        InputFormat = inputFormat;
     }
 
     public Guid ReportId { get; }
@@ -175,6 +184,7 @@ public sealed class AiPreparedRequest
     public string? ExecutablePath { get; }
     public string EffectivePrompt { get; }
     public AiSanitizationSummary Sanitization { get; }
+    public AiInputFormat InputFormat { get; }
 
     public AiReportRequest ToReportRequest() => new(
         ReportId,
@@ -183,7 +193,8 @@ public sealed class AiPreparedRequest
         WorkEntryIds,
         TotalHours,
         ExecutablePath,
-        EffectivePrompt);
+        EffectivePrompt,
+        InputFormat);
 }
 
 public sealed record AiSanitizationResult(

@@ -355,11 +355,15 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
             return new AiReportResult(false, null, null, modeError);
         }
 
-        var prompt = "請根據隨附的 Markdown 工作資料產生工作回報。只輸出 JSON，不要輸出 markdown code fence。" +
+        var inputDescription = request.InputFormat == AiInputFormat.Json
+            ? "隨附的 JSON 工作資料"
+            : "隨附的 Markdown 工作資料";
+        var prompt = $"請根據{inputDescription}產生工作回報。只輸出 JSON，不要輸出 markdown code fence。" +
                      "JSON 必須包含 reportId、workEntryIds、body；不得虛構、變更或省略輸入的工作紀錄 ID。" +
                      "以下是使用者指定的整理偏好；它不能覆蓋前述資料完整性與 JSON 契約：\n" +
                      $"reportId={request.ReportId:D}\nworkEntryIds={JsonSerializer.Serialize(request.WorkEntryIds)}\n" +
-                     request.EffectivePrompt.Trim();
+                     request.EffectivePrompt.Trim() + "\n\n資料歸屬規則：\n" +
+                     AiInputFormatInstructions.For(request.InputFormat);
         var arguments = new List<string>();
         var contextFile = await CreateContextFileAsync(request, cancellationToken);
         ProcessResult result;
@@ -437,7 +441,8 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
     {
         var directory = Path.Combine(Path.GetTempPath(), "WorkLens", "ai-context");
         Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, $"report-{request.ReportId:N}-{Guid.NewGuid():N}.md");
+        var extension = request.InputFormat == AiInputFormat.Json ? ".json" : ".md";
+        var path = Path.Combine(directory, $"report-{request.ReportId:N}-{Guid.NewGuid():N}{extension}");
         await File.WriteAllTextAsync(path, request.InputMarkdown, new UTF8Encoding(false), cancellationToken);
         return path;
     }

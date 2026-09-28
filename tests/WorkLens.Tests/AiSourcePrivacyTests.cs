@@ -12,6 +12,8 @@ public sealed class AiSourcePrivacyTests
         var report = new ReportDocument
         {
             TotalHours = 2,
+            PeriodStart = new DateTimeOffset(2026, 9, 3, 0, 0, 0, TimeZoneInfo.Local.GetUtcOffset(new DateTime(2026, 9, 3))),
+            PeriodEnd = new DateTimeOffset(2026, 9, 4, 0, 0, 0, TimeZoneInfo.Local.GetUtcOffset(new DateTime(2026, 9, 4))),
             DeterministicBody = "不允許提供給 AI 的來源內容"
         };
         IReadOnlyList<WorkEntry> entries =
