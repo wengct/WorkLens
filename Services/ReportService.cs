@@ -106,7 +106,7 @@ public sealed class ReportService(
     {
         var monday = anchorDate.AddDays(-(int)anchorDate.DayOfWeek + (anchorDate.DayOfWeek == DayOfWeek.Sunday ? -6 : 1));
         var (start, _) = GetLocalDayBounds(monday);
-        var (_, end) = GetLocalDayBounds(monday.AddDays(7));
+        var (end, _) = GetLocalDayBounds(monday.AddDays(7));
         var weekEnd = monday.AddDays(7);
         await using var db = await factory.CreateDbContextAsync(cancellationToken);
         var entries = await db.WorkEntries.AsNoTracking()
@@ -155,6 +155,8 @@ public sealed class ReportService(
             report.UpdateVersion++;
         }
 
+        report.PeriodStart = start;
+        report.PeriodEnd = end;
         report.TotalHours = hours;
         report.DeterministicBody = body;
         report.Body = body;
@@ -222,7 +224,9 @@ public sealed class ReportService(
         var aiProjectIds = aiProjects.Select(x => x.Id).ToArray();
         var aiProjectNames = aiProjects.ToDictionary(x => x.Id, x => x.Name);
         var reportStartDate = DateOnly.FromDateTime(report.PeriodStart.LocalDateTime);
-        var reportEndDate = DateOnly.FromDateTime(report.PeriodEnd.LocalDateTime);
+        var reportEndDate = reportStartDate.AddDays(report.Kind == ReportKind.Weekly ? 7 : 1);
+        var (periodStart, _) = GetLocalDayBounds(reportStartDate);
+        var (periodEnd, _) = GetLocalDayBounds(reportEndDate);
         var entries = await db.WorkEntries.AsNoTracking()
             .Where(x => x.WorkDate >= reportStartDate &&
                         x.WorkDate < reportEndDate &&
@@ -238,17 +242,24 @@ public sealed class ReportService(
             .Select(x => x.Id)
             .ToListAsync(cancellationToken);
         var allEvidence = await db.SourceEvidence.AsNoTracking().ToListAsync(cancellationToken);
-        var evidence = allEvidence
-            .Where(x => ((sourceIds.Contains(x.SourceId) &&
-                         (x.ProjectId == null || aiProjectIds.Contains(x.ProjectId.Value))) ||
-                         (x.Kind == EvidenceKind.Manual &&
-                          (x.ProjectId == null || aiProjectIds.Contains(x.ProjectId.Value)))) &&
-                        x.OccurredAt >= report.PeriodStart &&
-                        x.OccurredAt < report.PeriodEnd)
-            .OrderBy(x => x.OccurredAt)
+        var eligibleEvidence = allEvidence
+            .Where(x => (sourceIds.Contains(x.SourceId) || x.Kind == EvidenceKind.Manual) &&
+                        (x.ProjectId == null || aiProjectIds.Contains(x.ProjectId.Value)))
+            .ToList();
+        var sessionMessages = eligibleEvidence
+            .Where(x => IsConversationEvidence(x.Kind))
+            .ToDictionary(x => x.Id, GetAiSessionMessages);
+        var evidence = eligibleEvidence
+            .Where(x => sessionMessages.TryGetValue(x.Id, out var messages) && messages.Count > 0
+                ? messages.Any(message => message.Timestamp >= periodStart && message.Timestamp < periodEnd)
+                : x.OccurredAt >= periodStart && x.OccurredAt < periodEnd)
+            .OrderBy(x => sessionMessages.TryGetValue(x.Id, out var messages) && messages.Count > 0
+                ? messages.Where(message => message.Timestamp >= periodStart && message.Timestamp < periodEnd)
+                    .Min(message => message.Timestamp)
+                : x.OccurredAt)
             .ToList();
 
-        var input = BuildAiInput(report, entries, evidence, aiProjectNames);
+        var input = BuildAiInputWithMessages(report, entries, evidence, aiProjectNames, sessionMessages, periodStart, periodEnd);
         PromptTemplate? promptTemplate = null;
         try
         {
@@ -643,7 +654,18 @@ public sealed class ReportService(
         ReportDocument report,
         IReadOnlyList<WorkEntry> entries,
         IReadOnlyList<SourceEvidence> evidence,
-        IReadOnlyDictionary<Guid, string> projectNames)
+        IReadOnlyDictionary<Guid, string> projectNames) =>
+        BuildAiInputWithMessages(report, entries, evidence, projectNames,
+            new Dictionary<Guid, IReadOnlyList<AiSessionMessage>>(), report.PeriodStart, report.PeriodEnd);
+
+    private static string BuildAiInputWithMessages(
+        ReportDocument report,
+        IReadOnlyList<WorkEntry> entries,
+        IReadOnlyList<SourceEvidence> evidence,
+        IReadOnlyDictionary<Guid, string> projectNames,
+        IReadOnlyDictionary<Guid, IReadOnlyList<AiSessionMessage>> sessionMessages,
+        DateTimeOffset periodStart,
+        DateTimeOffset periodEnd)
     {
         var builder = new StringBuilder();
         builder.AppendLine($"報告 ID：{report.Id}");
@@ -664,13 +686,66 @@ public sealed class ReportService(
         var standaloneWorkItemIds = GetStandaloneWorkItemIds(evidence);
         foreach (var item in evidence)
         {
-            builder.AppendLine($"- {item.OccurredAt:O}｜{item.Kind}｜專案={ProjectName(item.ProjectId, projectNames)}｜title={item.Title}｜message={item.CommitMessage}｜branch={item.Branch}");
+            if (sessionMessages.TryGetValue(item.Id, out var messages) && messages.Count > 0)
+            {
+                builder.AppendLine($"- {item.Kind}｜專案={ProjectName(item.ProjectId, projectNames)}｜使用者訊息：");
+                foreach (var message in messages.Where(message => message.Timestamp >= periodStart && message.Timestamp < periodEnd))
+                {
+                    builder.AppendLine($"  - {message.Timestamp.ToLocalTime():O}｜{message.Text}");
+                }
+                continue;
+            }
+
+            builder.AppendLine($"- {item.OccurredAt.ToLocalTime():O}｜{item.Kind}｜專案={ProjectName(item.ProjectId, projectNames)}｜title={item.Title}｜message={item.CommitMessage}｜branch={item.Branch}");
             AppendAzureDevOpsAiSummary(builder, item, standaloneWorkItemIds);
             AppendAzureDevOpsWorkItemActivityAiSummary(builder, item);
         }
 
         return builder.ToString();
     }
+
+    private static bool IsConversationEvidence(EvidenceKind kind) => kind is
+        EvidenceKind.CodexSession or EvidenceKind.ClaudeCodeSession or
+        EvidenceKind.CopilotSession or EvidenceKind.AntigravityCliSession;
+
+    private sealed record AiSessionMessage(DateTimeOffset Timestamp, string Text);
+
+    private static IReadOnlyList<AiSessionMessage> GetAiSessionMessages(SourceEvidence evidence) => evidence.Kind switch
+    {
+        EvidenceKind.CodexSession => SelectUserMessages(
+            SourceSettingsSerializer.DeserializeCodexMetadata(evidence.MetadataJson)?.Messages,
+            message => message.Role, message => message.Timestamp, message => message.Text),
+        EvidenceKind.ClaudeCodeSession => SelectUserMessages(
+            SourceSettingsSerializer.DeserializeClaudeCodeMetadata(evidence.MetadataJson)?.Messages,
+            message => message.Role, message => message.Timestamp, message => message.Text),
+        EvidenceKind.CopilotSession => GetCopilotAiSessionMessages(evidence),
+        EvidenceKind.AntigravityCliSession => SelectUserMessages(
+            SourceSettingsSerializer.DeserializeAntigravityCliMetadata(evidence.MetadataJson)?.Messages,
+            message => message.Role, message => message.Timestamp, message => message.Text),
+        _ => []
+    };
+
+    private static IReadOnlyList<AiSessionMessage> GetCopilotAiSessionMessages(SourceEvidence evidence)
+    {
+        var metadata = SourceSettingsSerializer.DeserializeCopilotMetadata(evidence.MetadataJson);
+        // Visual Studio stores a session time but no individual message times.
+        var visualStudioPlatform = ActivitySourceType.WindowsVisualStudioCopilot.ToString();
+        if (metadata?.Platform == visualStudioPlatform || evidence.Environment == visualStudioPlatform) return [];
+        return SelectUserMessages(metadata?.Messages,
+            message => message.Role, message => message.Timestamp, message => message.Text);
+    }
+
+    private static IReadOnlyList<AiSessionMessage> SelectUserMessages<T>(
+        IEnumerable<T>? messages,
+        Func<T, string> role,
+        Func<T, DateTimeOffset> timestamp,
+        Func<T, string> content) => messages?
+        .Where(message => role(message) == "user" &&
+                          timestamp(message) != default &&
+                          !string.IsNullOrWhiteSpace(content(message)))
+        .Select(message => new AiSessionMessage(timestamp(message), content(message).Trim()))
+        .OrderBy(message => message.Timestamp)
+        .ToList() ?? [];
 
     public static string ResolvePrompt(AiProviderConfiguration configuration, ReportKind kind)
     {

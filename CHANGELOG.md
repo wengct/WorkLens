@@ -4,6 +4,13 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [Unreleased]
 
+## [1.12.2] - 2026-09-28
+
+### 修正
+
+- 日報與週報送給 AI 的 Codex、Claude Code、具備逐則時間的 Copilot 與 Antigravity 對話資料改用每則使用者訊息的本機時間篩選與標示，跨日或跨週的對話會歸入訊息實際發生的期間；不傳送期間外訊息與 AI 回覆。沒有逐則時間的來源仍以整段對話時間處理。
+- 修正週報結束界線多包含下週一的問題；既有週報再次送出 AI 時也使用正確的週一至週日範圍。
+
 ## [1.12.1] - 2026-09-25
 
 ### 修正
@@ -305,7 +312,8 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.12.1...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.12.2...HEAD
+[1.12.2]: https://github.com/wengct/WorkLens/compare/v1.12.1...v1.12.2
 
 [1.12.1]: https://github.com/wengct/WorkLens/compare/v1.12.0...v1.12.1
 [1.12.0]: https://github.com/wengct/WorkLens/compare/v1.11.0...v1.12.0

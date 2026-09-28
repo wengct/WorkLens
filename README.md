@@ -215,6 +215,8 @@ WorkLens 唯讀掃描 `brain/<session-id>/.system_generated/logs/transcript_full
 
 資料來源支援 Windows、macOS 與 WSL 的 Git、Codex、Claude Code、GitHub Copilot CLI／App，以及 VS Code Copilot Chat，也支援以 Azure DevOps CLI 讀取 Azure DevOps Services 的 PR 與 Work Item。Azure DevOps 來源可分別收集目前登入使用者建立的 PR，以及該使用者實際修改的 Work Item 欄位與自己撰寫／修改的 Discussion；Work Item 同一天的活動會合併為一筆。Work Item 的完整活動優先於 PR 中的關聯內容，避免 AI 報告重複整理；兩者都沿用同一組報告 AI 設定與機敏資訊防護。Codex 會從 `sessions` 與 `archived_sessions` 讀取本機會話；Claude Code 會從 `projects/<project>/<session-id>.jsonl` 讀取主會話；GitHub Copilot CLI／App 會從 `~/.copilot/session-state/<session-id>/events.jsonl` 讀取會話；三者都排除子代理 transcript、工具內容、思考區塊與附件。VS Code Copilot Chat 會自動探索 Stable／Insiders 的 `workspaceStorage/*/chatSessions`，重建 JSON 快照或 JSONL 操作紀錄；自訂、可攜版與 VS Code Server 位置可在來源設定中填入多個根目錄。這些來源以來源格式、正規化資料根目錄、session id 去重；VS Code 另外區分 workspace，保存 User／AI 可見文字對話；每日、每週及 AI 報告上下文只使用 User 訊息。GitHub Copilot 整合不收集 Token、費用或用量統計。Codex 資料目錄可自動偵測 `CODEX_HOME`／`~/.codex`；Claude Code 可自動偵測 `CLAUDE_CONFIG_DIR`／`~/.claude`；Copilot CLI／App 可自動偵測 `COPILOT_HOME`／`~/.copilot`；這些路徑都可在來源設定中覆寫。
 
+日／週 AI 摘要會依每則已保存的使用者訊息時間挑選所選期間內的對話內容，並附上本機日期、時間與時區；跨日或跨週對話不再全部歸到開始當日。沒有逐則訊息時間的來源仍只能依整段對話的時間處理，不能推算每則訊息的實際時間。
+
 Visual Studio Copilot Chat 已支援 Visual Studio 2026 Chat 與 Agent（Preview）。非空 session 是 MessagePack 二進位串流，包含 `TimeCreated`、`TimeUpdated` 與巢狀訊息內容；同一個 Session GUID 的 before／after 樣本已確認檔案會持續更新，Agent（Preview）則以 `CopilotCliResponder` 辨識。日期會以 session 的建立／更新欄位為準，沒有逐則訊息時間時不會自行推算細分時間。
 
 VS Code Copilot Chat 的自動探索位置如下；只會檢查這些 `workspaceStorage` 根目錄，不會掃描整台電腦：

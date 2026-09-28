@@ -45,6 +45,10 @@ public sealed class ReportServiceRemoteEvidenceTests
             : await service.GenerateDeterministicAsync(date);
 
         Assert.Contains("同步佐證", report.Body);
+        if (weekly)
+        {
+            Assert.Equal(new DateOnly(2026, 9, 14), DateOnly.FromDateTime(report.PeriodEnd.LocalDateTime));
+        }
     }
 
     private static ReportService CreateService(DbContextOptions<WorkLensDbContext> options)
