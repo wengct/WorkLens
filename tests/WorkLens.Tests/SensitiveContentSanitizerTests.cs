@@ -10,6 +10,85 @@ namespace WorkLens.Tests;
 
 public sealed class SensitiveContentSanitizerTests
 {
+    [Theory]
+    [InlineData("{\"value\":1234567890,\"keep\":42}", "1234567890")]
+    [InlineData("{\"value\":true,\"keep\":42}", "true")]
+    [InlineData("{\"value\":false,\"keep\":42}", "false")]
+    [InlineData("{\"value\":-1.23e10,\"keep\":42}", "23")]
+    [InlineData("{\"value\":null,\"keep\":42}", "null")]
+    [InlineData("{\"value\":\"prefix \\u0041 suffix\",\"keep\":42}", "u0041")]
+    [InlineData("{\"value\":\"prefix \\\"secret\\\" suffix\",\"keep\":42}", "\"secret")]
+    public async Task Json_redaction_preserves_structure_and_preview_positions(string input, string word)
+    {
+        await using var fixture = await SanitizerFixture.CreateAsync((_, invocation) =>
+            new ProcessResult(0, invocation == 1 ? "leak-hunter 0.5.4" : ReportJson(), string.Empty));
+        await fixture.AddSensitiveWordAsync(word);
+        var request = new AiReportRequest(Guid.NewGuid(), "chatgpt", input, [], 1,
+            fixture.ExecutablePath, "請整理。", AiInputFormat.Json);
+
+        var result = await fixture.Sanitizer.PrepareAsync(request);
+
+        Assert.True(result.Succeeded, result.Summary.Error);
+        using var document = JsonDocument.Parse(result.PreparedRequest!.InputMarkdown);
+        Assert.Equal("[已遮蔽：自訂敏感詞]", document.RootElement.GetProperty("value").GetString());
+        Assert.Equal(42, document.RootElement.GetProperty("keep").GetInt32());
+        Assert.Equal(input, request.InputMarkdown);
+        Assert.Equal(3, fixture.Runner.Calls.Count);
+        var preview = Assert.Single(result.PreviewValues);
+        Assert.StartsWith("[已遮蔽：", result.PreparedRequest.InputMarkdown[preview.Start..]);
+    }
+
+    [Fact]
+    public async Task Json_string_redaction_preserves_surrounding_unicode_and_property_syntax()
+    {
+        await using var fixture = await SanitizerFixture.CreateAsync((_, invocation) =>
+            new ProcessResult(0, invocation == 1 ? "leak-hunter 0.5.4" : ReportJson(), string.Empty));
+        await fixture.AddSensitiveWordAsync("secret");
+        var input = "{\"😀secret\" : \"中文 secret tail\",\"list\":[123,\"secret\"]}";
+        var request = new AiReportRequest(Guid.NewGuid(), "chatgpt", input, [], 1,
+            fixture.ExecutablePath, "請整理。", AiInputFormat.Json);
+
+        var result = await fixture.Sanitizer.PrepareAsync(request);
+
+        Assert.True(result.Succeeded, result.Summary.Error);
+        using var document = JsonDocument.Parse(result.PreparedRequest!.InputMarkdown);
+        Assert.Equal("中文 [已遮蔽：自訂敏感詞] tail",
+            document.RootElement.GetProperty("😀[已遮蔽：自訂敏感詞]").GetString());
+        Assert.Equal(123, document.RootElement.GetProperty("list")[0].GetInt32());
+        Assert.DoesNotContain("secret", result.PreparedRequest.InputMarkdown);
+        Assert.Equal(3, result.PreviewValues.Count);
+        foreach (var preview in result.PreviewValues)
+        {
+            Assert.StartsWith("[已遮蔽：", result.PreparedRequest.InputMarkdown[preview.Start..]);
+        }
+    }
+
+    [Fact]
+    public async Task Scanner_json_numeric_finding_uses_valid_string_marker()
+    {
+        await using var fixture = await SanitizerFixture.CreateAsync((_, invocation) => invocation switch
+        {
+            1 => new ProcessResult(0, "leak-hunter 0.5.4", string.Empty),
+            2 => new ProcessResult(1, ReportJson(new object[] { new
+            {
+                type = "synthetic_secret", filePath = "work-data.json",
+                lineNumber = 1, columnNumber = 10, secret = "1234567890"
+            }}), string.Empty),
+            _ => new ProcessResult(0, ReportJson(), string.Empty)
+        });
+        await fixture.AddSensitiveWordAsync("3456");
+        var request = new AiReportRequest(Guid.NewGuid(), "chatgpt", "{\"value\":1234567890}", [], 1,
+            fixture.ExecutablePath, "請整理。", AiInputFormat.Json);
+
+        var result = await fixture.Sanitizer.PrepareAsync(request);
+
+        Assert.True(result.Succeeded, result.Summary.Error);
+        using var document = JsonDocument.Parse(result.PreparedRequest!.InputMarkdown);
+        Assert.Equal("[已遮蔽：機敏憑證]", document.RootElement.GetProperty("value").GetString());
+        Assert.Single(result.PreviewValues);
+        Assert.Equal(3, fixture.Runner.Calls.Count);
+    }
+
     [Fact]
     public async Task Prepare_redacts_credentials_email_and_custom_words_without_changing_sources()
     {

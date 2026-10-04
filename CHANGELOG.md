@@ -4,6 +4,12 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [Unreleased]
 
+## [1.13.1] - 2026-10-05
+
+### 修正
+
+- 修正 AI 工作資料遮蔽數字、布林值、null 或含跳脫字元的字串時破壞 JSON 格式的問題；遮蔽後保留合法 JSON 與預覽位置，涉及跳脫字元時遮蔽完整欄位值。
+
 ## [1.13.0] - 2026-09-29
 
 ### 改善
@@ -318,7 +324,8 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.13.0...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.13.1...HEAD
+[1.13.1]: https://github.com/wengct/WorkLens/compare/v1.13.0...v1.13.1
 [1.13.0]: https://github.com/wengct/WorkLens/compare/v1.12.2...v1.13.0
 [1.12.2]: https://github.com/wengct/WorkLens/compare/v1.12.1...v1.12.2
 

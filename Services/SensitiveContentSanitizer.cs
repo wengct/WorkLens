@@ -185,7 +185,9 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
             var previewValues = new List<AiRedactionPreview>();
             var sanitizedSegments = segments.ToDictionary(
                 pair => pair.Key,
-                pair => pair.Value with { Text = ApplyRedactions(pair.Value.Text, rangesByFile.GetValueOrDefault(pair.Key) ?? [], pair.Value.Label, previewValues) },
+                pair => pair.Value with { Text = pair.Key == WorkJsonSegmentFile
+                    ? ApplyJsonRedactions(pair.Value.Text, rangesByFile.GetValueOrDefault(pair.Key) ?? [], pair.Value.Label, previewValues)
+                    : ApplyRedactions(pair.Value.Text, rangesByFile.GetValueOrDefault(pair.Key) ?? [], pair.Value.Label, previewValues) },
                 StringComparer.OrdinalIgnoreCase);
             if (request.InputFormat == AiInputFormat.Json && !IsValidJson(sanitizedSegments[workSegmentFile].Text))
             {
@@ -485,8 +487,59 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
         ranges.Add(range);
     }
 
-    private static string ApplyRedactions(string text, IReadOnlyList<RedactionRange> ranges,
+    private static string ApplyJsonRedactions(string text, IReadOnlyList<RedactionRange> ranges,
         string segment, List<AiRedactionPreview> previewValues)
+    {
+        if (ranges.Count == 0) return text;
+        var bytes = Encoding.UTF8.GetBytes(text);
+        var reader = new Utf8JsonReader(bytes);
+        var replacements = new List<RedactionRange>();
+        var quotedRanges = new HashSet<(int Start, int End)>();
+        var covered = new HashSet<RedactionRange>();
+        var previousByteOffset = 0;
+        var previousCharOffset = 0;
+        while (reader.Read())
+        {
+            if (reader.TokenType is not (JsonTokenType.String or JsonTokenType.PropertyName or
+                JsonTokenType.Number or JsonTokenType.True or JsonTokenType.False or JsonTokenType.Null)) continue;
+
+            var byteStart = checked((int)reader.TokenStartIndex);
+            var byteEnd = checked((int)reader.BytesConsumed);
+            var start = previousCharOffset + Encoding.UTF8.GetCharCount(bytes.AsSpan(previousByteOffset, byteStart - previousByteOffset));
+            var end = start + Encoding.UTF8.GetCharCount(bytes.AsSpan(byteStart, byteEnd - byteStart));
+            previousByteOffset = byteEnd;
+            previousCharOffset = end;
+            // PropertyName consumes the colon too; the replacement must preserve it.
+            if (reader.TokenType == JsonTokenType.PropertyName)
+            {
+                end = start + Encoding.UTF8.GetCharCount(reader.ValueSpan) + 2;
+            }
+            var matches = ranges.Where(range => range.Start >= start && range.End <= end).ToList();
+            if (matches.Count == 0) continue;
+            foreach (var match in matches) covered.Add(match);
+            var isString = reader.TokenType is JsonTokenType.String or JsonTokenType.PropertyName;
+            if (isString && !reader.ValueIsEscaped && matches.All(range => range.Start > start && range.End < end))
+            {
+                replacements.AddRange(matches);
+            }
+            else
+            {
+                var category = matches.MaxBy(range => CategoryPriority(range.Category))!.Category;
+                replacements.Add(new RedactionRange(start, end, category));
+                quotedRanges.Add((start, end));
+            }
+        }
+
+        // Findings crossing JSON syntax cannot be replaced safely. Retain the fail-closed check.
+        if (covered.Count != ranges.Distinct().Count())
+        {
+            throw new JsonException("Sensitive range crosses JSON token boundaries.");
+        }
+        return ApplyRedactions(text, replacements, segment, previewValues, quotedRanges);
+    }
+
+    private static string ApplyRedactions(string text, IReadOnlyList<RedactionRange> ranges,
+        string segment, List<AiRedactionPreview> previewValues, HashSet<(int Start, int End)>? quotedRanges = null)
     {
         if (ranges.Count == 0) return text;
         var merged = MergeRanges(ranges);
@@ -495,8 +548,10 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
         foreach (var range in merged)
         {
             builder.Append(text.AsSpan(start, range.Start - start));
-            previewValues.Add(new AiRedactionPreview(segment, builder.Length, text[range.Start..range.End]));
-            builder.Append(MarkerFor(range.Category));
+            var marker = MarkerFor(range.Category);
+            var quoteMarker = quotedRanges?.Contains((range.Start, range.End)) == true;
+            previewValues.Add(new AiRedactionPreview(segment, builder.Length + (quoteMarker ? 1 : 0), text[range.Start..range.End]));
+            builder.Append(quoteMarker ? $"\"{marker}\"" : marker);
             start = range.End;
         }
         builder.Append(text.AsSpan(start));
