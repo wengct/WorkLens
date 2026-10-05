@@ -518,9 +518,9 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
             if (matches.Count == 0) continue;
             foreach (var match in matches) covered.Add(match);
             var isString = reader.TokenType is JsonTokenType.String or JsonTokenType.PropertyName;
-            if (isString && !reader.ValueIsEscaped && matches.All(range => range.Start > start && range.End < end))
+            if (isString && matches.All(range => range.Start > start && range.End < end))
             {
-                replacements.AddRange(matches);
+                replacements.AddRange(matches.Select(range => ExpandJsonEscapeRange(text, start + 1, end - 1, range)));
             }
             else
             {
@@ -536,6 +536,32 @@ public sealed class SensitiveContentSanitizer : IAiContentSanitizer
             throw new JsonException("Sensitive range crosses JSON token boundaries.");
         }
         return ApplyRedactions(text, replacements, segment, previewValues, quotedRanges);
+    }
+
+    private static RedactionRange ExpandJsonEscapeRange(string text, int contentStart, int contentEnd, RedactionRange range)
+    {
+        var start = range.Start;
+        var end = range.End;
+        for (var index = contentStart; index < contentEnd; index++)
+        {
+            if (text[index] != '\\') continue;
+            var escapeEnd = index + (text[index + 1] == 'u' ? 6 : 2);
+            if (text[index + 1] == 'u' &&
+                char.IsHighSurrogate((char)Convert.ToInt32(text.Substring(index + 2, 4), 16)) &&
+                escapeEnd + 6 <= contentEnd && text[escapeEnd] == '\\' && text[escapeEnd + 1] == 'u' &&
+                char.IsLowSurrogate((char)Convert.ToInt32(text.Substring(escapeEnd + 2, 4), 16)))
+            {
+                escapeEnd += 6;
+            }
+            // Extend only across the indivisible escape, never across the rest of the string.
+            if (start < escapeEnd && end > index)
+            {
+                start = Math.Min(start, index);
+                end = Math.Max(end, escapeEnd);
+            }
+            index = escapeEnd - 1;
+        }
+        return range with { Start = start, End = end };
     }
 
     private static string ApplyRedactions(string text, IReadOnlyList<RedactionRange> ranges,

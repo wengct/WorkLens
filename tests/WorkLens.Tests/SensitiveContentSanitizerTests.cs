@@ -16,8 +16,6 @@ public sealed class SensitiveContentSanitizerTests
     [InlineData("{\"value\":false,\"keep\":42}", "false")]
     [InlineData("{\"value\":-1.23e10,\"keep\":42}", "23")]
     [InlineData("{\"value\":null,\"keep\":42}", "null")]
-    [InlineData("{\"value\":\"prefix \\u0041 suffix\",\"keep\":42}", "u0041")]
-    [InlineData("{\"value\":\"prefix \\\"secret\\\" suffix\",\"keep\":42}", "\"secret")]
     public async Task Json_redaction_preserves_structure_and_preview_positions(string input, string word)
     {
         await using var fixture = await SanitizerFixture.CreateAsync((_, invocation) =>
@@ -36,6 +34,34 @@ public sealed class SensitiveContentSanitizerTests
         Assert.Equal(3, fixture.Runner.Calls.Count);
         var preview = Assert.Single(result.PreviewValues);
         Assert.StartsWith("[已遮蔽：", result.PreparedRequest.InputMarkdown[preview.Start..]);
+    }
+
+    [Theory]
+    [InlineData("prefix \\u0041 suffix", "u0041", "prefix [已遮蔽：自訂敏感詞] suffix")]
+    [InlineData("prefix \\\"secret\\\" suffix", "\"secret", "prefix [已遮蔽：自訂敏感詞]\" suffix")]
+    [InlineData("first\\nsecret\\nlast", "secret", "first\n[已遮蔽：自訂敏感詞]\nlast")]
+    [InlineData("path \\\\server secret tail", "secret", "path \\server [已遮蔽：自訂敏感詞] tail")]
+    [InlineData("prefix \\uD83D\\uDE00 suffix", "uD83D", "prefix [已遮蔽：自訂敏感詞] suffix")]
+    public async Task Json_escaped_string_redacts_only_the_matching_fragment(string rawValue, string word, string expected)
+    {
+        await using var fixture = await SanitizerFixture.CreateAsync((_, invocation) =>
+            new ProcessResult(0, invocation == 1 ? "leak-hunter 0.5.4" : ReportJson(), string.Empty));
+        await fixture.AddSensitiveWordAsync(word);
+        var input = "{\"text\":\"" + rawValue + "\"}";
+        var request = new AiReportRequest(Guid.NewGuid(), "chatgpt", input, [], 1,
+            fixture.ExecutablePath, "請整理。", AiInputFormat.Json);
+
+        var result = await fixture.Sanitizer.PrepareAsync(request);
+
+        Assert.True(result.Succeeded, result.Summary.Error);
+        using var document = JsonDocument.Parse(result.PreparedRequest!.InputMarkdown);
+        Assert.Equal(expected, document.RootElement.GetProperty("text").GetString());
+        var preview = Assert.Single(result.PreviewValues);
+        Assert.StartsWith("[已遮蔽：", result.PreparedRequest.InputMarkdown[preview.Start..]);
+        Assert.Contains(word, preview.OriginalValue);
+        Assert.DoesNotContain("prefix", preview.OriginalValue);
+        Assert.DoesNotContain("suffix", preview.OriginalValue);
+        Assert.Equal(input, request.InputMarkdown);
     }
 
     [Fact]

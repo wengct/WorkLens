@@ -4,6 +4,12 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [Unreleased]
 
+## [1.13.2] - 2026-10-05
+
+### 修正
+
+- 修正 JSON 字串含換行、引號或其他跳脫字元時，命中敏感詞會遮蔽整個欄位值的問題；改為僅遮蔽命中片段，必要時包含完整跳脫字元，保留其餘文字與有效 JSON 格式。
+
 ## [1.13.1] - 2026-10-05
 
 ### 修正
@@ -324,7 +330,8 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.13.1...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.13.2...HEAD
+[1.13.2]: https://github.com/wengct/WorkLens/compare/v1.13.1...v1.13.2
 [1.13.1]: https://github.com/wengct/WorkLens/compare/v1.13.0...v1.13.1
 [1.13.0]: https://github.com/wengct/WorkLens/compare/v1.12.2...v1.13.0
 [1.12.2]: https://github.com/wengct/WorkLens/compare/v1.12.1...v1.12.2
