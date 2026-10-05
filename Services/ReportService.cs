@@ -224,6 +224,69 @@ public sealed class ReportService(
             return PreparationFailure(validation.Summary);
         }
 
+        var context = await BuildShareableContextAsync(db, report, cancellationToken);
+        var input = context.Input;
+        PromptTemplate? promptTemplate = null;
+        try
+        {
+            promptTemplate = await promptTemplates.GetEffectiveAsync(promptTemplateId, cancellationToken);
+        }
+        catch (InvalidOperationException)
+        {
+            // Existing databases are upgraded at startup. This fallback keeps direct
+            // service tests and recovery scenarios compatible during that transition.
+        }
+        var effectivePrompt = promptTemplate?.Content ?? ResolvePrompt(configuration, report.Kind);
+        var providerTarget = configuration.ProviderType == "ask-bridge"
+            ? configuration.Provider
+            : configuration.Model ?? configuration.ProviderType;
+
+        var sanitization = await aiProviders.PrepareAsync(
+            new AiReportRequest(
+                report.Id,
+                providerTarget,
+                input,
+                context.EntryIds,
+                report.TotalHours,
+                configuration.ExecutablePath,
+                effectivePrompt,
+                AiInputFormat.Json),
+            cancellationToken);
+        if (!sanitization.Succeeded)
+        {
+            return new AiReportPreparationResult(
+                null,
+                sanitization.Summary,
+                sanitization.Summary.Error ?? "機敏資訊檢查未完成，本次未傳送 AI。");
+        }
+
+        var preparedRequest = sanitization.PreparedRequest!;
+        return new AiReportPreparationResult(
+            new AiPreparedReport(
+                report.Id,
+                report.UpdateVersion,
+                configuration,
+                preparedRequest,
+                promptTemplate?.Id,
+                promptTemplate?.Name ?? "舊版 Prompt",
+                preparedRequest.EffectivePrompt) { PreviewValues = sanitization.PreviewValues },
+            sanitization.Summary,
+            null);
+    }
+
+
+    public async Task<ShareableDailyContext> GetShareableDailyContextAsync(DateOnly date, CancellationToken cancellationToken = default)
+    {
+        await using var db = await factory.CreateDbContextAsync(cancellationToken);
+        var (start, end) = GetLocalDayBounds(date);
+        var report = new ReportDocument { Kind = ReportKind.Daily, PeriodKey = date.ToString("yyyy-MM-dd"), PeriodStart = start, PeriodEnd = end };
+        var context = await BuildShareableContextAsync(db, report, cancellationToken, recalculateHours: true);
+        var existing = await db.Reports.AsNoTracking().SingleOrDefaultAsync(x => x.Kind == ReportKind.Daily && x.PeriodKey == report.PeriodKey, cancellationToken);
+        return new(context.Input, context.EntryIds, report.TotalHours, existing?.Id, existing?.UpdateVersion);
+    }
+
+    private async Task<(string Input, Guid[] EntryIds)> BuildShareableContextAsync(WorkLensDbContext db, ReportDocument report, CancellationToken cancellationToken, bool recalculateHours = false)
+    {
         var aiProjects = await db.Projects.AsNoTracking()
             .Where(x => x.IncludeInAi && !x.IsArchived)
             .Select(x => new { x.Id, x.Name })
@@ -267,54 +330,49 @@ public sealed class ReportService(
                 : x.OccurredAt)
             .ToList();
 
+        if (recalculateHours) report.TotalHours = WorkLogService.CalculateHours(entries);
         var input = BuildAiInputWithMessages(
             report, entries, evidence, aiProjectNames, sourceById, sessionMessages, periodStart, periodEnd);
-        PromptTemplate? promptTemplate = null;
+        return (input, entries.Select(x => x.Id).ToArray());
+    }
+
+    private static readonly SemaphoreSlim summaryGate = new(1, 1);
+
+    public async Task<ReportDocument> SaveExternalDailySummaryAsync(DateOnly date, string body, int? expectedVersion, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(body)) throw new ArgumentException("摘要正文不可空白。");
+        await summaryGate.WaitAsync(cancellationToken);
         try
         {
-            promptTemplate = await promptTemplates.GetEffectiveAsync(promptTemplateId, cancellationToken);
+            await using var db = await factory.CreateDbContextAsync(cancellationToken);
+            await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+            var key = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            var report = await db.Reports.SingleOrDefaultAsync(x => x.Kind == ReportKind.Daily && x.PeriodKey == key, cancellationToken);
+            if ((report is null && expectedVersion is not null) || (report is not null && report.UpdateVersion != expectedVersion))
+                throw new InvalidOperationException("摘要版本已變更，請重新取得當日資料。");
+            if (report is null)
+            {
+                var (start, end) = GetLocalDayBounds(date);
+                report = new ReportDocument { Kind = ReportKind.Daily, PeriodKey = key, PeriodStart = start, PeriodEnd = end };
+                db.Reports.Add(report);
+            }
+            else
+            {
+                await CapturePreviousAsync(db, report, "MCP 外部摘要", cancellationToken);
+                report.UpdateVersion++;
+            }
+            var hours = await db.WorkEntries.Where(x => x.WorkDate == date).Select(x => x.Hours).ToListAsync(cancellationToken);
+            var remoteHours = await db.RemoteWorkEntries.Where(x => !x.IsDeleted && x.WorkDate == date).Select(x => x.Hours).ToListAsync(cancellationToken);
+            report.TotalHours = hours.Concat(remoteHours).Sum();
+            report.Body = body.Trim();
+            report.IsStale = false;
+            report.GeneratedAt = report.UpdatedAt = DateTimeOffset.UtcNow;
+            report.AiJobId = null;
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return report;
         }
-        catch (InvalidOperationException)
-        {
-            // Existing databases are upgraded at startup. This fallback keeps direct
-            // service tests and recovery scenarios compatible during that transition.
-        }
-        var effectivePrompt = promptTemplate?.Content ?? ResolvePrompt(configuration, report.Kind);
-        var providerTarget = configuration.ProviderType == "ask-bridge"
-            ? configuration.Provider
-            : configuration.Model ?? configuration.ProviderType;
-
-        var sanitization = await aiProviders.PrepareAsync(
-            new AiReportRequest(
-                report.Id,
-                providerTarget,
-                input,
-                entries.Select(x => x.Id).ToArray(),
-                report.TotalHours,
-                configuration.ExecutablePath,
-                effectivePrompt,
-                AiInputFormat.Json),
-            cancellationToken);
-        if (!sanitization.Succeeded)
-        {
-            return new AiReportPreparationResult(
-                null,
-                sanitization.Summary,
-                sanitization.Summary.Error ?? "機敏資訊檢查未完成，本次未傳送 AI。");
-        }
-
-        var preparedRequest = sanitization.PreparedRequest!;
-        return new AiReportPreparationResult(
-            new AiPreparedReport(
-                report.Id,
-                report.UpdateVersion,
-                configuration,
-                preparedRequest,
-                promptTemplate?.Id,
-                promptTemplate?.Name ?? "舊版 Prompt",
-                preparedRequest.EffectivePrompt) { PreviewValues = sanitization.PreviewValues },
-            sanitization.Summary,
-            null);
+        finally { summaryGate.Release(); }
     }
 
     public async Task<AiReportResult> SendPreparedWithAiAsync(
@@ -1055,3 +1113,5 @@ public sealed class ReportService(
             new DateTimeOffset(localEnd, zone.GetUtcOffset(localEnd)));
     }
 }
+
+public sealed record ShareableDailyContext(string Input, Guid[] EntryIds, double TotalHours, Guid? ReportId, int? ReportVersion);

@@ -88,6 +88,10 @@ start_app() {
 }
 
 case "$command" in
+  mcp)
+    version="$(tr -d '\r\n' < "${install_dir}/current.txt")"
+    exec "${install_dir}/versions/${version}/WorkLens" --mcp-command "$@" --url "$(url)/mcp"
+    ;;
   register) register_agent ;;
   unregister) unregister_agent ;;
   start) start_app; echo "WorkLens is running at $(url)" ;;
@@ -102,5 +106,5 @@ case "$command" in
     [[ "${1:-}" == "--purge-data" ]] && purge="--purge-data"
     "${install_dir}/scripts/uninstall.sh" ${purge:+$purge}
     ;;
-  *) echo "Usage: worklens [open|start|stop|restart|status|uninstall [--purge-data]]" >&2; exit 2 ;;
+  *) echo "Usage: worklens [open|start|stop|restart|status|mcp setup CLIENT|mcp status|uninstall [--purge-data]]" >&2; exit 2 ;;
 esac

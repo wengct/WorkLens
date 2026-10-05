@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("open", "start", "stop", "restart", "status", "register", "unregister", "uninstall")]
+    [ValidateSet("open", "start", "stop", "restart", "status", "register", "unregister", "uninstall", "mcp")]
     [string]$Command = "open",
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$RemainingArguments,
@@ -146,6 +146,12 @@ function Stop-WorkLens {
 }
 
 switch ($Command) {
+    "mcp" {
+        $Version = (Get-Content -LiteralPath (Join-Path $InstallDir "current.txt") -Raw).Trim()
+        $Executable = Join-Path $InstallDir "versions\$Version\WorkLens.exe"
+        & $Executable --mcp-command @RemainingArguments --url "http://127.0.0.1:$(Get-WorkLensPort)/mcp"
+        exit $LASTEXITCODE
+    }
     "register" { Register-WorkLensTask }
     "unregister" { Unregister-WorkLensTask }
     "start" { Start-WorkLens; Write-Host "WorkLens is running at http://127.0.0.1:$(Get-WorkLensPort)" }

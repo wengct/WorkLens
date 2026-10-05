@@ -76,3 +76,14 @@ dotnet test tests/WorkLens.Tests/WorkLens.Tests.csproj --configuration Release
 - 將說明寫入 UTF-8 暫存 Markdown 檔，以 `gh release edit <tag> --notes-file <暫存檔>` 更新，避免多行內容經 shell 插值而破壞格式。暫存檔放在 repository 外。
 - 更新後讀回 Release，確認版本、說明內容、正式發布狀態，以及 Windows、Intel Mac、Apple Silicon 套件與 `SHA256SUMS` 均正確，再提供發行頁連結。
 - 若建置或說明同步失敗，回報已完成的階段與失敗原因，不宣稱整個發行已完成；重試前先確認遠端狀態，避免重複發布或覆蓋其他版本。
+
+### 發行完成驗證
+
+發布新版本的任務必須持續到下列條件全部確認，才可回報「發行成功」。推送 commit／tag、工作流程已啟動，或單一平台建置成功，都不代表發行完成。
+
+- 找到此次 tag 與目標 commit 對應的 `release.yml` 執行，等待所有支援平台的建置、測試、安裝煙霧測試及 `Publish GitHub Release` 工作結束，確認結論全部為 `success`；失敗、取消、跳過或仍在執行均不可視為成功。
+- 讀回目標 GitHub Release，確認 tag 與預期版本一致，tag 指向此次簽入的 commit，且 Release 已正式發布（不是 draft 或 prerelease）；確認發行說明已與該版本的 `CHANGELOG.md` 同步。
+- 依該版本的 `release.yml` 平台矩陣核對資產，不沿用過期平台清單。目前須完整包含 `win-x64.zip`、`osx-x64.tar.gz`、`osx-arm64.tar.gz` 三個對應版本套件及 `SHA256SUMS`，每個資產大小須大於零。
+- 將上述資產下載到 repository 外的暫存目錄，確認可下載，並核對每個套件的 SHA-256 與 `SHA256SUMS` 一致。只看資產名稱或上傳成功不足以確認交付完整。
+- 最終回覆提供版本、簽入 commit、Release 連結及各平台驗證結果。若任一條件未完成，列出失敗或未確認的項目，明確回報尚未全部發行成功；無法讀取遠端狀態時不得推定成功。
+- 修復失敗後重新執行驗證；若修改了程式或版本內容，使用新的修正 commit 與版本 tag，不移動已發布的 tag。重試既有執行前先確認其狀態與既有 Release 資產，避免重複發行。

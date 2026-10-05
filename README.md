@@ -2,6 +2,18 @@
 
 WorkLens 是一個以本機優先為設計的個人工作歷程與工時回報網站。
 
+## 閱讀導覽
+
+- [介面預覽](#介面預覽)
+- [一鍵安裝](#一鍵安裝)
+- [日常操作](#日常操作)
+- [資料來源](#資料來源)
+- [隱私與版控邊界](#隱私與版控邊界)
+- [本機 MCP 與 Coding CLI](#本機-mcp-與-coding-cli)
+- [跨電腦同步](#跨電腦同步)
+- [開發與測試](#開發與測試)
+- [維護者發行](#維護者發行)
+
 ## 介面預覽
 
 ### 工作填寫
@@ -14,7 +26,7 @@ WorkLens 是一個以本機優先為設計的個人工作歷程與工時回報�
 
 ![工作摘要月曆檢視](screenshot/02.工作摘要_2.png)
 
-### 資料來源
+### 資料來源畫面
 
 ![資料來源](screenshot/03.資料來源.png)
 
@@ -44,7 +56,7 @@ WorkLens 是一個以本機優先為設計的個人工作歷程與工時回報�
 
 ![專案](screenshot/08.專案.png)
 
-### 跨電腦同步
+### 跨電腦同步畫面
 
 ![跨電腦同步](screenshot/09.跨電腦同步.png)
 
@@ -113,6 +125,53 @@ $installer = irm https://raw.githubusercontent.com/wengct/WorkLens/main/scripts/
 curl -fsSL https://raw.githubusercontent.com/wengct/WorkLens/main/scripts/get.sh | bash -s -- --no-autostart --no-open-browser
 ```
 
+## 日常操作
+
+開啟首頁就是「今日工作台」：可選擇日期、選填專案、輸入時數與 Markdown 工作內容，適合連續補登。Git 來源活動會依日期與專案自動顯示並納入報告，不需要人工關聯。
+
+今日工作台把兩種輸入清楚分開：使用「記工作與工時」記下做了什麼與花費時間；使用「貼上參考資料」補充會議紀錄、需求討論等脈絡。參考資料會保存為來源活動並納入日／週摘要，但不會自行增加確認工時。
+
+新增／編輯工作紀錄與參考資料都會在停止輸入約 1 秒後將草稿存入 WorkLens 本機資料庫。顯示「草稿已暫存」後，即使關閉瀏覽器也能恢復；草稿不會計入工時、提供給 AI 或讓摘要標示為需要重產。頁面的「未完成草稿」可接續其他日期或紀錄，新增表單切換日期時會先暫存原日期內容，再載入新日期的草稿。
+
+編輯視窗可「關閉並保留草稿」，正式儲存後才會清除草稿，也可明確選擇「捨棄草稿」。草稿不自動到期。暫存尚未完成或失敗時，離開會受到保護；請等暫存成功，或先複製內容。若其他分頁更新了同一草稿，或原紀錄已變更／刪除，系統會保留目前輸入並停止覆蓋；先複製要保留的文字，再重新載入最新草稿，必要時捨棄舊編輯草稿後重新開啟原紀錄。
+
+來源收集狀態與當日已匯入活動分開顯示，每 10 秒自動更新，不會重設填寫內容。來源最近成功不代表所選日期已完整收集；當天尚無資料時，可從「查看此日期並重新收集」前往工作摘要執行回補。
+
+「工作摘要」將工作歷程與摘要放在同一頁：可用月曆選擇每日或每週期間、依專案與關鍵字篩選左側歷程，並在右側產生、編輯、AI 整理與匯出完整期間摘要。篩選不會改變摘要涵蓋的資料範圍；回補來源可針對單日或整週執行，且不會改變正常收集的 checkpoint。
+
+「年度回顧」尚未正式提供，目前不列入可用功能。
+
+摘要可直接用 AI 產生；若尚無摘要，系統先建立基本摘要作為 AI 整理的起點。AI 未設定時會說明原因，基本摘要仍可使用。每份日／週摘要會保存一份上一版，可在摘要頁還原，還原後也能再次還原來撤回操作。切換期間、AI 整理、複製或下載前會先保存畫面的修改；其他分頁或排程已更新時，系統會停止覆蓋並要求重新載入。AI 整理可從「整理方式」選擇範本，系統仍固定驗證 JSON、工時與工作紀錄 ID。
+
+第一次使用時，工作台會自動開啟「建立第一份工作摘要」視窗：記一筆工作，或設定資料來源並自行完成首次收集，最後產生第一份摘要。AI 設定是選用步驟；之後可從「記工作與工時」右上角的同名按鈕重新開啟。
+
+「排程設定」可分別管理日報、週報與自動備份的啟用狀態、星期及時間。報告排程會先保留制式摘要，再使用指定或預設 Prompt 執行 AI 整理；AI 失敗時不會丟失制式內容。備份位置可從網頁選擇並驗證，變更後立即生效。資料庫備份合計保留最新一筆；新備份成功後才清理已追蹤的舊備份及 manifest（包含舊備份位置），刪除失敗會於下次備份重試。
+
+AI 日／週摘要與來源回補會自動在分頁標題顯示處理中狀態；若完成時正在其他分頁或軟體，會保留完成或失敗標記，回到頁面後恢復標題。「通知設定」可開啟、關閉及測試桌面通知，設定只保存在目前瀏覽器；首次等待時也會提供開啟入口，選擇「暫時不要」後不重複詢問。桌面通知只包含一般處理結果，不含工作內容，並受瀏覽器權限、系統通知及勿擾設定影響。請保持原功能頁開啟，通知不會讓任務在關閉頁面或停止程式後繼續執行。
+
+## 資料來源
+
+資料來源支援 Windows、macOS 與 WSL 的 Git、Codex、Claude Code、GitHub Copilot CLI／App，以及 VS Code Copilot Chat，也支援以 Azure DevOps CLI 讀取 Azure DevOps Services 的 PR 與 Work Item。Azure DevOps 來源可分別收集目前登入使用者建立的 PR，以及該使用者實際修改的 Work Item 欄位與自己撰寫／修改的 Discussion；Work Item 同一天的活動會合併為一筆。Work Item 的完整活動優先於 PR 中的關聯內容，避免 AI 報告重複整理；兩者都沿用同一組報告 AI 設定與機敏資訊防護。Codex 會從 `sessions` 與 `archived_sessions` 讀取本機會話；Claude Code 會從 `projects/<project>/<session-id>.jsonl` 讀取主會話；GitHub Copilot CLI／App 會從 `~/.copilot/session-state/<session-id>/events.jsonl` 讀取會話；三者都排除子代理 transcript、工具內容、思考區塊與附件。VS Code Copilot Chat 會自動探索 Stable／Insiders 的 `workspaceStorage/*/chatSessions`，重建 JSON 快照或 JSONL 操作紀錄；自訂、可攜版與 VS Code Server 位置可在來源設定中填入多個根目錄。這些來源以來源格式、正規化資料根目錄、session id 去重；VS Code 另外區分 workspace，保存 User／AI 可見文字對話；每日、每週及 AI 報告上下文只使用 User 訊息。GitHub Copilot 整合不收集 Token、費用或用量統計。Codex 資料目錄可自動偵測 `CODEX_HOME`／`~/.codex`；Claude Code 可自動偵測 `CLAUDE_CONFIG_DIR`／`~/.claude`；Copilot CLI／App 可自動偵測 `COPILOT_HOME`／`~/.copilot`；這些路徑都可在來源設定中覆寫。
+
+日／週 AI 摘要會依每則已保存的使用者訊息時間挑選所選期間內的對話內容，並附上本機日期、時間與時區；跨日或跨週對話不再全部歸到開始當日。沒有逐則訊息時間的來源仍只能依整段對話的時間處理，不能推算每則訊息的實際時間。
+
+Visual Studio Copilot Chat 已支援 Visual Studio 2026 Chat 與 Agent（Preview）。非空 session 是 MessagePack 二進位串流，包含 `TimeCreated`、`TimeUpdated` 與巢狀訊息內容；同一個 Session GUID 的 before／after 樣本已確認檔案會持續更新，Agent（Preview）則以 `CopilotCliResponder` 辨識。日期會以 session 的建立／更新欄位為準，沒有逐則訊息時間時不會自行推算細分時間。
+
+VS Code Copilot Chat 的自動探索位置如下；只會檢查這些 `workspaceStorage` 根目錄，不會掃描整台電腦：
+
+- Windows Stable：`%APPDATA%\Code\User\workspaceStorage`
+- Windows Insiders：`%APPDATA%\Code - Insiders\User\workspaceStorage`
+- macOS Stable：`~/Library/Application Support/Code/User/workspaceStorage`
+- macOS Insiders：`~/Library/Application Support/Code - Insiders/User/workspaceStorage`
+- WSL Stable：`${XDG_CONFIG_HOME:-$HOME/.config}/Code/User/workspaceStorage`
+- WSL Insiders：`${XDG_CONFIG_HOME:-$HOME/.config}/Code - Insiders/User/workspaceStorage`
+
+每個 workspace 目錄下的 `chatSessions` 會被讀取；自訂、可攜版與 VS Code Server 位置請在來源設定填入多個根目錄。Visual Studio 2026 來源則以方案目錄為單位搜尋 `<方案目錄>/.vs/<方案名稱>/copilot-chat/<識別碼>/sessions/`，不需要使用者填入內部識別碼目錄。
+
+各用戶端的實際格式驗證與 Visual Studio 關卡狀態記錄於 [`docs/copilot-format-validation.md`](docs/copilot-format-validation.md)。
+
+### 選用相依項與 Azure DevOps
+
 `Git`、Azure CLI、Azure DevOps CLI extension、Node.js、Chrome 與 `ask-bridge` 不會由安裝器自動安裝。它們是資料來源或 AI 功能的選用相依項，WorkLens 會在設定頁個別偵測。
 
 若要使用 Azure DevOps 資料來源，請先安裝 [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)，再安裝 Azure DevOps CLI extension：
@@ -126,9 +185,16 @@ Windows 也可以使用 `winget install --exact --id Microsoft.AzureCLI` 安裝 
 
 設定來源時，WorkLens 會以 `az ad signed-in-user show` 取得目前登入者的 Entra 身分與 UPN。Entra object ID 與 Azure DevOps 的 IdentityRef ID 是不同識別碼，因此 PR、Work Item 異動與 Discussion 的本人篩選會以 UPN／帳號欄位核對，不會直接比較兩者。
 
-## 跨電腦同步
+### Google Antigravity CLI
 
-在「跨電腦同步」指定雲端硬碟 client 已下載到本機的同一資料夾，即可讓多台 WorkLens 交換工作資料。WorkLens 只讀寫這個本機資料夾，不會登入 OneDrive、Google Drive、Dropbox 或其他雲端服務；Windows 與 macOS 使用相同 JSONL 協定。第一台建立同步空間，其餘電腦選擇相同資料夾後加入。同步內容包含正式工作紀錄、人工參考資料與已蒐集來源活動；草稿、摘要、AI 設定、排程、備份及憑證保留本機。其他電腦匯入的資料為唯讀。
+在「資料來源」選擇「Google Antigravity CLI 工作紀錄」，再選擇「此電腦」或 Windows 上的 WSL 環境。支援 Windows、macOS 與 WSL；WSL 必須指定 distro。資料目錄留空時使用 `~/.gemini/antigravity-cli`，也可填入自訂路徑（WSL 請使用 Linux 絕對路徑）。儲存後會驗證資料，並沿用既有的排程收集與歷史回補操作。
+
+WorkLens 唯讀掃描 `brain/<session-id>/.system_generated/logs/transcript_full.jsonl`，保存 `USER_INPUT` 使用者訊息與 `PLANNER_RESPONSE` AI 回覆，時間採用 `created_at` 或 `timestamp`。今日工作台與報告可展開可讀取的完整對話；日／週摘要與 AI 上下文只使用使用者請求，並持續遵循來源、Project 的 AI 分享限制與機敏資訊防護。不收集推理、工具輸出或附件，也不呼叫 Google API、不讀取憑證、不啟動 `agy`。
+
+若已有 `usage/usage-*.jsonl`，會按 Session ID 補充工作目錄與 CLI 版本；沒有這些檔案仍可收集對話，不需安裝 Token 收集腳本。不同來源設定各自保存會話，請避免重複新增相同資料目錄。檔案寫入中或格式損壞時會標記部分資料並重試，不以部分對話覆蓋既有完整紀錄。
+
+格式參考 [TokenUsageInsights 的來源讀取](https://github.com/doggy8088/TokenUsageInsights/blob/main/src/db.rs)與[對話解析](https://github.com/doggy8088/TokenUsageInsights/blob/main/src/timeline.rs)。支援範圍限於上述 JSONL 格式；摘要資料庫與二進位 conversations 不作為對話來源。目前已用人工 fixture 驗證解析與三平台路徑邏輯；實際 CLI 逐字稿及 WSL／macOS 收集仍待實機驗證。若只看見「尚無對話」，請確認使用中的 CLI 會產生該逐字稿，或改填正確資料目錄。
+
 ## 隱私與版控邊界
 
 此 repository 僅包含程式碼與安全的預設設定。執行期間的資料會儲存在 repository 外部，預設位置為：
@@ -158,7 +224,68 @@ WorkLens 每次準備把工作資料交給 AI 前，都會在本機掃描最終�
 
 畫面上的錯誤 Toast 會統一寫入 Error log，包含元件、操作名稱與錯誤訊息；頁面內的草稿、設定匯入及來源更新錯誤也會記錄。正常中斷使用資訊提示，不視為失敗。AI 回覆格式錯誤保留欄位與批次資訊，不額外記錄完整 AI 回覆或工作資料。
 
-## 執行
+## 本機 MCP 與 Coding CLI
+
+WorkLens 隨網站啟動 Streamable HTTP `/mcp`，使用官方 C# MCP SDK，不需額外程序或 token。支援同一主機上的 Codex CLI、Claude Code、Antigravity CLI、GitHub Copilot CLI。既有網站 AI 設定與排程保留；MCP 摘要由目前客户端的 AI 產生，不必設定 WorkLens AI provider。
+
+安裝版先啟動 WorkLens，再在終端機執行需要的設定指令（不必全部執行）：
+
+```text
+worklens mcp setup codex
+worklens mcp setup claude
+worklens mcp setup antigravity
+worklens mcp setup copilot
+worklens mcp status
+```
+
+設定使用安裝時的實際連接埠。助手不會安裝或升級客户端；相同設定不重複新增，位址衝突不覆蓋，停用項目維持停用。Antigravity 合併全域 JSON 前備份，格式錯誤時停止。安裝 WorkLens 本身不會修改 AI 客户端設定。設定後重新載入客户端，透過 `/mcp` 或其 MCP 管理介面確認連線；`status` 的服務端工具探索成功，不代表 AI 已實際使用工具。
+
+手動設定（預設連接埠）：
+
+```text
+codex mcp add worklens --url http://127.0.0.1:5077/mcp
+claude mcp add --scope user --transport http worklens http://127.0.0.1:5077/mcp
+copilot mcp add --transport http worklens http://127.0.0.1:5077/mcp
+```
+
+Copilot 指令依安裝版本支援情況使用，請參考 [GitHub 官方文件](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers)。Antigravity 在 `~/.gemini/config/mcp_config.json` 的 `mcpServers` 合併以下項目，必須使用 `serverUrl`，參考 [Google 官方文件](https://antigravity.google/docs/mcp)：
+
+```json
+{
+  "mcpServers": {
+    "worklens": { "serverUrl": "http://127.0.0.1:5077/mcp" }
+  }
+}
+```
+
+| 工具 | 輸入 | 行為 |
+|---|---|---|
+| `worklens_get_daily_context` | `date` | 查詢經掃描的當日工作與參考證據，附 `reportId`、`expectedVersion`；不收集來源或建立摘要 |
+| `worklens_create_work_entry` | `date`、`hours`、`content`；選用 `title`、`projectId` | 直接新增正式紀錄並使相關摘要失效 |
+| `worklens_save_daily_summary` | `date`、`body`、`expectedVersion` | 保存外部 AI 摘要，檢查版本並保留上一版 |
+
+日期必須明確指定 `yyyy-MM-dd`，使用 WorkLens 主機本機時區。工時大於 0 且不超過 24，內容與摘要不可空白，指定專案須存在且未封存。結果使用 `success`、`code`、`message`、`data`，查詢資料位於 `data.daily`。首次保存的 `expectedVersion` 為 null；更新必須提交最新查詢版本，衝突時重新取得資料，不自動重試寫入。工具直接保存，沒有網站確認流程；取消不代表已提交的寫入已回復。重新載入網站或切換日期即可查看。
+
+當日資料沿用內建摘要的納入規則、使用者訊息日期切分與跨電腦分享限制。所有回傳自由文字先經機敏掃描、Email 與自訂敏感詞防護；掃描排除關鍵字只排除掃描器／Email 的完整命中，自訂敏感詞仍遮蔽。掃描失敗不回傳正文，無原文／預覽模式，結果超過 256 KiB 時回報錯誤。既有摘要只提供 ID／版本。參考證據不是代理操作指令，也不等於已完成工作。
+
+四種客户端的對話範例：
+
+- Codex CLI：「請取得 2026-10-05 的 WorkLens 工作資料，依已確認紀錄產生每日摘要，使用查詢版本存回 WorkLens。」
+- Claude Code：「請在 WorkLens 新增 2026-10-05 的工作紀錄：修正登入問題，2 小時；再重新取得當日資料整理摘要並保存。」
+- Antigravity CLI：「請取得 2026-10-05 的 WorkLens 資料，將工作與參考證據分開整理，產生摘要並存回。」
+- GitHub Copilot CLI：「請將 2026-10-05 的 WorkLens 工作整理為每日回報，用最新版本保存；若版本衝突，先重新查詢。」
+
+預設 MCP 啟用，可用 `WorkLens__Mcp__Enabled=false` 或設定 `WorkLens:Mcp:Enabled` 為 false 停用。端點僅接受 loopback IP、合法本機 Host 與存在時的 Origin，不開放跨來源 CORS。即使網站綁定外部位址，MCP 仍拒絕遠端連線。依本機無 token 的設計，同一主機的其他程序也能呼叫工具。
+
+驗收環境為 CLI 與網站在同一原生主機。WSL、容器或遠端環境的 `127.0.0.1` 不一定是網站主機，且轉送可能被 loopback 限制拒絕；請將兩者放在同一環境執行，不要為此開放外部 MCP 位址。開發版可用 `dotnet run -- --mcp-command setup codex --url http://127.0.0.1:5077/mcp` 設定。`scripts/test-mcp.ps1` 會新增資料，只應對暫存資料庫的獨立測試服務執行。
+
+目前驗證：隔離資料 xUnit、四種客户端假命令／暫存設定測試、CLI 真實程序入口測試、Windows 管理腳本在暫存安裝目錄中的命令轉接、實際 HTTP 工具探索、讀取、寫入、版本衝突、標準 MCP 錯誤標記與 Host／Origin 防護，以及實際 Codex CLI 在暫存設定目錄中的首次與重複 setup。四種 CLI 的完整 AI 對話流程、macOS 啟動器及 WSL／容器連線尚未實機驗證。
+
+## 跨電腦同步
+
+在「跨電腦同步」指定雲端硬碟 client 已下載到本機的同一資料夾，即可讓多台 WorkLens 交換工作資料。WorkLens 只讀寫這個本機資料夾，不會登入 OneDrive、Google Drive、Dropbox 或其他雲端服務；Windows 與 macOS 使用相同 JSONL 協定。第一台建立同步空間，其餘電腦選擇相同資料夾後加入。同步內容包含正式工作紀錄、人工參考資料與已蒐集來源活動；草稿、摘要、AI 設定、排程、備份及憑證保留本機。其他電腦匯入的資料為唯讀。
+
+## 開發與測試
 
 ```shell
 dotnet run
@@ -176,66 +303,3 @@ dotnet run
 git tag v1.0.0
 git push origin v1.0.0
 ```
-
-### Google Antigravity CLI
-
-在「資料來源」選擇「Google Antigravity CLI 工作紀錄」，再選擇「此電腦」或 Windows 上的 WSL 環境。支援 Windows、macOS 與 WSL；WSL 必須指定 distro。資料目錄留空時使用 `~/.gemini/antigravity-cli`，也可填入自訂路徑（WSL 請使用 Linux 絕對路徑）。儲存後會驗證資料，並沿用既有的排程收集與歷史回補操作。
-
-WorkLens 唯讀掃描 `brain/<session-id>/.system_generated/logs/transcript_full.jsonl`，保存 `USER_INPUT` 使用者訊息與 `PLANNER_RESPONSE` AI 回覆，時間採用 `created_at` 或 `timestamp`。今日工作台與報告可展開可讀取的完整對話；日／週摘要與 AI 上下文只使用使用者請求，並持續遵循來源、Project 的 AI 分享限制與機敏資訊防護。不收集推理、工具輸出或附件，也不呼叫 Google API、不讀取憑證、不啟動 `agy`。
-
-若已有 `usage/usage-*.jsonl`，會按 Session ID 補充工作目錄與 CLI 版本；沒有這些檔案仍可收集對話，不需安裝 Token 收集腳本。不同來源設定各自保存會話，請避免重複新增相同資料目錄。檔案寫入中或格式損壞時會標記部分資料並重試，不以部分對話覆蓋既有完整紀錄。
-
-格式參考 [TokenUsageInsights 的來源讀取](https://github.com/doggy8088/TokenUsageInsights/blob/main/src/db.rs)與[對話解析](https://github.com/doggy8088/TokenUsageInsights/blob/main/src/timeline.rs)。支援範圍限於上述 JSONL 格式；摘要資料庫與二進位 conversations 不作為對話來源。目前已用人工 fixture 驗證解析與三平台路徑邏輯；實際 CLI 逐字稿及 WSL／macOS 收集仍待實機驗證。若只看見「尚無對話」，請確認使用中的 CLI 會產生該逐字稿，或改填正確資料目錄。
-
-### Google Antigravity CLI
-
-在「資料來源」選擇「Google Antigravity CLI 工作紀錄」，再選擇「此電腦」或 Windows 上的 WSL 環境。支援 Windows、macOS 與 WSL；WSL 必須指定 distro。資料目錄留空時使用 `~/.gemini/antigravity-cli`，也可填入自訂路徑（WSL 請使用 Linux 絕對路徑）。儲存後會驗證資料，並沿用既有的排程收集與歷史回補操作。
-
-WorkLens 唯讀掃描 `brain/<session-id>/.system_generated/logs/transcript_full.jsonl`，保存 `USER_INPUT` 使用者訊息與 `PLANNER_RESPONSE` AI 回覆，時間採用 `created_at` 或 `timestamp`。今日工作台與報告可展開可讀取的完整對話；日／週摘要與 AI 上下文只使用使用者請求，並持續遵循來源、Project 的 AI 分享限制與機敏資訊防護。不收集推理、工具輸出或附件，也不呼叫 Google API、不讀取憑證、不啟動 `agy`。
-
-若已有 `usage/usage-*.jsonl`，會按 Session ID 補充工作目錄與 CLI 版本；沒有這些檔案仍可收集對話，不需安裝 Token 收集腳本。不同來源設定各自保存會話，請避免重複新增相同資料目錄。檔案寫入中或格式損壞時會標記部分資料並重試，不以部分對話覆蓋既有完整紀錄。
-
-格式參考 [TokenUsageInsights 的來源讀取](https://github.com/doggy8088/TokenUsageInsights/blob/main/src/db.rs)與[對話解析](https://github.com/doggy8088/TokenUsageInsights/blob/main/src/timeline.rs)。支援範圍限於上述 JSONL 格式；摘要資料庫與二進位 conversations 不作為對話來源。目前已用人工 fixture 驗證解析與三平台路徑邏輯；實際 CLI 逐字稿及 WSL／macOS 收集仍待實機驗證。若只看見「尚無對話」，請確認使用中的 CLI 會產生該逐字稿，或改填正確資料目錄。
-
-## 日常操作
-
-開啟首頁就是「今日工作台」：可選擇日期、選填專案、輸入時數與 Markdown 工作內容，適合連續補登。Git 來源活動會依日期與專案自動顯示並納入報告，不需要人工關聯。
-
-今日工作台把兩種輸入清楚分開：使用「記工作與工時」記下做了什麼與花費時間；使用「貼上參考資料」補充會議紀錄、需求討論等脈絡。參考資料會保存為來源活動並納入日／週摘要，但不會自行增加確認工時。
-
-新增／編輯工作紀錄與參考資料都會在停止輸入約 1 秒後將草稿存入 WorkLens 本機資料庫。顯示「草稿已暫存」後，即使關閉瀏覽器也能恢復；草稿不會計入工時、提供給 AI 或讓摘要標示為需要重產。頁面的「未完成草稿」可接續其他日期或紀錄，新增表單切換日期時會先暫存原日期內容，再載入新日期的草稿。
-
-編輯視窗可「關閉並保留草稿」，正式儲存後才會清除草稿，也可明確選擇「捨棄草稿」。草稿不自動到期。暫存尚未完成或失敗時，離開會受到保護；請等暫存成功，或先複製內容。若其他分頁更新了同一草稿，或原紀錄已變更／刪除，系統會保留目前輸入並停止覆蓋；先複製要保留的文字，再重新載入最新草稿，必要時捨棄舊編輯草稿後重新開啟原紀錄。
-
-來源收集狀態與當日已匯入活動分開顯示，每 10 秒自動更新，不會重設填寫內容。來源最近成功不代表所選日期已完整收集；當天尚無資料時，可從「查看此日期並重新收集」前往工作摘要執行回補。
-
-「工作摘要」將工作歷程與摘要放在同一頁：可用月曆選擇每日或每週期間、依專案與關鍵字篩選左側歷程，並在右側產生、編輯、AI 整理與匯出完整期間摘要。篩選不會改變摘要涵蓋的資料範圍；回補來源可針對單日或整週執行，且不會改變正常收集的 checkpoint。
-
-「年度回顧」可自訂最多一年的期間，先顯示每月的工作紀錄、來源活動與已填工時，再直接從符合 AI 納入設定的既有資料產生可編輯的績效考核草稿。使用者可選填未被工具記錄的貢獻；同步資料只會在明確勾選後納入。草稿不會自行推算效益或把待確認活動當成交付。
-
-資料來源支援 Windows、macOS 與 WSL 的 Git、Codex、Claude Code、GitHub Copilot CLI／App，以及 VS Code Copilot Chat，也支援以 Azure DevOps CLI 讀取 Azure DevOps Services 的 PR 與 Work Item。Azure DevOps 來源可分別收集目前登入使用者建立的 PR，以及該使用者實際修改的 Work Item 欄位與自己撰寫／修改的 Discussion；Work Item 同一天的活動會合併為一筆。Work Item 的完整活動優先於 PR 中的關聯內容，避免 AI 報告重複整理；兩者都沿用同一組報告 AI 設定與機敏資訊防護。Codex 會從 `sessions` 與 `archived_sessions` 讀取本機會話；Claude Code 會從 `projects/<project>/<session-id>.jsonl` 讀取主會話；GitHub Copilot CLI／App 會從 `~/.copilot/session-state/<session-id>/events.jsonl` 讀取會話；三者都排除子代理 transcript、工具內容、思考區塊與附件。VS Code Copilot Chat 會自動探索 Stable／Insiders 的 `workspaceStorage/*/chatSessions`，重建 JSON 快照或 JSONL 操作紀錄；自訂、可攜版與 VS Code Server 位置可在來源設定中填入多個根目錄。這些來源以來源格式、正規化資料根目錄、session id 去重；VS Code 另外區分 workspace，保存 User／AI 可見文字對話；每日、每週及 AI 報告上下文只使用 User 訊息。GitHub Copilot 整合不收集 Token、費用或用量統計。Codex 資料目錄可自動偵測 `CODEX_HOME`／`~/.codex`；Claude Code 可自動偵測 `CLAUDE_CONFIG_DIR`／`~/.claude`；Copilot CLI／App 可自動偵測 `COPILOT_HOME`／`~/.copilot`；這些路徑都可在來源設定中覆寫。
-
-日／週 AI 摘要會依每則已保存的使用者訊息時間挑選所選期間內的對話內容，並附上本機日期、時間與時區；跨日或跨週對話不再全部歸到開始當日。沒有逐則訊息時間的來源仍只能依整段對話的時間處理，不能推算每則訊息的實際時間。
-
-Visual Studio Copilot Chat 已支援 Visual Studio 2026 Chat 與 Agent（Preview）。非空 session 是 MessagePack 二進位串流，包含 `TimeCreated`、`TimeUpdated` 與巢狀訊息內容；同一個 Session GUID 的 before／after 樣本已確認檔案會持續更新，Agent（Preview）則以 `CopilotCliResponder` 辨識。日期會以 session 的建立／更新欄位為準，沒有逐則訊息時間時不會自行推算細分時間。
-
-VS Code Copilot Chat 的自動探索位置如下；只會檢查這些 `workspaceStorage` 根目錄，不會掃描整台電腦：
-
-- Windows Stable：`%APPDATA%\Code\User\workspaceStorage`
-- Windows Insiders：`%APPDATA%\Code - Insiders\User\workspaceStorage`
-- macOS Stable：`~/Library/Application Support/Code/User/workspaceStorage`
-- macOS Insiders：`~/Library/Application Support/Code - Insiders/User/workspaceStorage`
-- WSL Stable：`${XDG_CONFIG_HOME:-$HOME/.config}/Code/User/workspaceStorage`
-- WSL Insiders：`${XDG_CONFIG_HOME:-$HOME/.config}/Code - Insiders/User/workspaceStorage`
-
-每個 workspace 目錄下的 `chatSessions` 會被讀取；自訂、可攜版與 VS Code Server 位置請在來源設定填入多個根目錄。Visual Studio 2026 來源則以方案目錄為單位搜尋 `<方案目錄>/.vs/<方案名稱>/copilot-chat/<識別碼>/sessions/`，不需要使用者填入內部識別碼目錄。
-
-各用戶端的實際格式驗證與 Visual Studio 關卡狀態記錄於 [`docs/copilot-format-validation.md`](docs/copilot-format-validation.md)。
-
-摘要可直接用 AI 產生；若尚無摘要，系統先建立基本摘要作為 AI 整理的起點。AI 未設定時會說明原因，基本摘要仍可使用。每份日／週摘要會保存一份上一版，可在摘要頁還原，還原後也能再次還原來撤回操作。切換期間、AI 整理、複製或下載前會先保存畫面的修改；其他分頁或排程已更新時，系統會停止覆蓋並要求重新載入。AI 整理可從「整理方式」選擇範本，系統仍固定驗證 JSON、工時與工作紀錄 ID。
-
-第一次使用時，工作台會自動開啟「建立第一份工作摘要」視窗：記一筆工作，或設定資料來源並自行完成首次收集，最後產生第一份摘要。AI 設定是選用步驟；之後可從「記工作與工時」右上角的同名按鈕重新開啟。
-
-「排程設定」可分別管理日報、週報與自動備份的啟用狀態、星期及時間。報告排程會先保留制式摘要，再使用指定或預設 Prompt 執行 AI 整理；AI 失敗時不會丟失制式內容。備份位置可從網頁選擇並驗證，變更後立即生效。資料庫備份合計保留最新一筆；新備份成功後才清理已追蹤的舊備份及 manifest（包含舊備份位置），刪除失敗會於下次備份重試。
-
-AI 日／週摘要、年度回顧 AI 草稿與來源回補會自動在分頁標題顯示處理中狀態；若完成時正在其他分頁或軟體，會保留完成或失敗標記，回到頁面後恢復標題。「通知設定」可開啟、關閉及測試桌面通知，設定只保存在目前瀏覽器；首次等待時也會提供開啟入口，選擇「暫時不要」後不重複詢問。桌面通知只包含一般處理結果，不含工作內容，並受瀏覽器權限、系統通知及勿擾設定影響。請保持原功能頁開啟，通知不會讓任務在關閉頁面或停止程式後繼續執行。

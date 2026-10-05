@@ -4,6 +4,13 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-10-05
+
+### 新增
+
+- 本機 MCP `/mcp` 提供取得經機敏防護的每日資料、新增工作紀錄、以版本檢查保存外部 AI 摘要三個工具，不需內建 AI 設定或 token；僅接受 loopback、合法 Host／Origin，可透過 `WorkLens:Mcp:Enabled` 停用。
+- 新增 `worklens mcp setup` 與 `worklens mcp status`，協助設定 Codex CLI、Claude Code、Antigravity CLI、GitHub Copilot CLI，保留既有設定並回報衝突與停用狀態。
+
 ## [1.13.2] - 2026-10-05
 
 ### 修正
@@ -330,7 +337,8 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.13.2...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.14.0...HEAD
+[1.14.0]: https://github.com/wengct/WorkLens/compare/v1.13.2...v1.14.0
 [1.13.2]: https://github.com/wengct/WorkLens/compare/v1.13.1...v1.13.2
 [1.13.1]: https://github.com/wengct/WorkLens/compare/v1.13.0...v1.13.1
 [1.13.0]: https://github.com/wengct/WorkLens/compare/v1.12.2...v1.13.0

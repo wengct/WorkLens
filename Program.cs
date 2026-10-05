@@ -1,3 +1,4 @@
+using ModelContextProtocol.Server;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.DataProtection;
 using WorkLens;
@@ -7,7 +8,22 @@ using WorkLens.Domain;
 using WorkLens.Logging;
 using WorkLens.Services;
 
+if (args.FirstOrDefault() == "--mcp-command")
+{
+    Environment.ExitCode = await McpCliSetup.RunCommandAsync(args);
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
+var mcpEnabled = builder.Configuration.GetValue("WorkLens:Mcp:Enabled", true);
+if (mcpEnabled)
+{
+    builder.Services.AddMcpServer()
+        .WithHttpTransport(options => options.Stateless = true)
+        .WithTools<WorkLensMcpTools>()
+        .WithRequestFilters(filters => filters.AddCallToolFilter(next => async (request, cancellationToken) =>
+            McpToolResponse.Normalize(await next(request, cancellationToken))));
+}
 builder.WebHost.UseStaticWebAssets();
 var startupHealth = new StartupHealth();
 if (string.IsNullOrWhiteSpace(builder.Configuration["urls"]))
@@ -64,6 +80,7 @@ catch (Exception exception) when (
 
 builder.Logging.ClearProviders();
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Error);
+builder.Logging.AddFilter("ModelContextProtocol", LogLevel.Warning);
 builder.Logging.AddConsole();
 builder.Logging.AddLocalFile(paths.LogDirectory);
 builder.Services.Configure<HostOptions>(options =>
@@ -257,6 +274,16 @@ if (!app.Environment.IsDevelopment())
     app.UseHsts();
 }
 
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/mcp") && (!mcpEnabled || !McpLocalAccess.IsAllowed(context)))
+    {
+        context.Response.StatusCode = mcpEnabled ? 403 : 404;
+        return;
+    }
+    await next(context);
+});
+if (mcpEnabled) app.MapMcp("/mcp");
 app.UseStaticFiles();
 app.UseAntiforgery();
 app.MapStaticAssets();
