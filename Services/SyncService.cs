@@ -79,8 +79,11 @@ public sealed class SyncService(IDbContextFactory<WorkLensDbContext> factory, IL
                 config.LastError = null;
                 await db.SaveChangesAsync(ct);
             }
-            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException)
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException or DbUpdateException or ArgumentException)
             {
+                // Discard pending imports before saving the error; retry them on the next run.
+                db.ChangeTracker.Clear();
+                config = await GetConfigAsync(db, CancellationToken.None);
                 config.LastError = exception.Message;
                 await db.SaveChangesAsync(CancellationToken.None);
                 logger.LogError(exception, "跨電腦同步失敗");
@@ -188,7 +191,7 @@ public sealed class SyncService(IDbContextFactory<WorkLensDbContext> factory, IL
                 var item = JsonSerializer.Deserialize<SyncEvent>(line, Json) ?? throw new JsonException("同步事件無法讀取。");
                 if (item.ProtocolVersion != ProtocolVersion || item.SyncSpaceId != config.SyncSpaceId || item.OriginDeviceId == config.DeviceId) continue;
                 var eventHash = Hash(line);
-                var processed = await db.SyncProcessedEvents.SingleOrDefaultAsync(x => x.Id == item.EventId, ct);
+                var processed = await db.SyncProcessedEvents.FindAsync([item.EventId], ct);
                 if (processed is not null)
                 {
                     if (processed.ContentHash != eventHash) throw new InvalidOperationException("偵測到相同同步事件 ID 的內容衝突。");
@@ -207,7 +210,8 @@ public sealed class SyncService(IDbContextFactory<WorkLensDbContext> factory, IL
     {
         if (item.EntityKind == SyncEntityKind.WorkEntry)
         {
-            var row = await db.RemoteWorkEntries.SingleOrDefaultAsync(x => x.OriginDeviceId == item.OriginDeviceId && x.OriginEntityId == item.EntityId, ct);
+            // FindAsync also finds unsaved rows from earlier events in this import.
+            var row = await db.RemoteWorkEntries.FindAsync([Projection(item.OriginDeviceId, item.EntityId)], ct);
             if (row is null) { row = new RemoteWorkEntry { Id = Projection(item.OriginDeviceId, item.EntityId), OriginDeviceId = item.OriginDeviceId, OriginEntityId = item.EntityId }; db.RemoteWorkEntries.Add(row); }
             if (row.Version >= item.Version) return;
             row.OriginDeviceName = item.OriginDeviceName; row.Version = item.Version; row.IsDeleted = item.Operation == SyncOperation.Delete;
@@ -220,7 +224,7 @@ public sealed class SyncService(IDbContextFactory<WorkLensDbContext> factory, IL
         }
         if (item.EntityKind == SyncEntityKind.SourceEvidence)
         {
-            var row = await db.RemoteSourceEvidence.SingleOrDefaultAsync(x => x.OriginDeviceId == item.OriginDeviceId && x.OriginEntityId == item.EntityId, ct);
+            var row = await db.RemoteSourceEvidence.FindAsync([Projection(item.OriginDeviceId, item.EntityId)], ct);
             if (row is null) { row = new RemoteSourceEvidence { Id = Projection(item.OriginDeviceId, item.EntityId), OriginDeviceId = item.OriginDeviceId, OriginEntityId = item.EntityId }; db.RemoteSourceEvidence.Add(row); }
             if (row.Version >= item.Version) return;
             row.OriginDeviceName = item.OriginDeviceName; row.Version = item.Version; row.IsDeleted = item.Operation == SyncOperation.Delete;

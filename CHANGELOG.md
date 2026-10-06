@@ -4,6 +4,12 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [Unreleased]
 
+## [1.14.1] - 2026-10-07
+
+### 修正
+
+- 修正跨電腦同步補匯入同一筆資料的多個版本時發生資料追蹤衝突，導致新資料無法顯示的問題；匯入失敗時捨棄未完成的變更並保存錯誤，保留批次供下次重試。
+
 ## [1.14.0] - 2026-10-05
 
 ### 新增
@@ -337,7 +343,8 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.14.0...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.14.1...HEAD
+[1.14.1]: https://github.com/wengct/WorkLens/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/wengct/WorkLens/compare/v1.13.2...v1.14.0
 [1.13.2]: https://github.com/wengct/WorkLens/compare/v1.13.1...v1.13.2
 [1.13.1]: https://github.com/wengct/WorkLens/compare/v1.13.0...v1.13.1

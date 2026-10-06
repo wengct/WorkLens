@@ -113,6 +113,95 @@ public sealed class SyncServiceTests
         finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public async Task Catching_up_multiple_versions_imports_the_latest_work_and_evidence_once()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "worklens-sync-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await using var source = await Fixture.CreateAsync();
+            await using var target = await Fixture.CreateAsync();
+            var sourceService = new SyncService(source.Factory, NullLogger<SyncService>.Instance);
+            var targetService = new SyncService(target.Factory, NullLogger<SyncService>.Instance);
+            await sourceService.ConfigureAsync(root, "source", true);
+            await targetService.ConfigureAsync(root, "target", false);
+            for (var version = 1; version <= 3; version++)
+            {
+                await using var db = source.Factory.CreateDbContext();
+                if (version == 1)
+                {
+                    db.WorkEntries.Add(new WorkEntry { Title = "version 1", WorkDate = new DateOnly(2026, 10, 1) });
+                    db.SourceEvidence.Add(new SourceEvidence { ExternalKey = "evidence", Title = "version 1" });
+                }
+                else
+                {
+                    (await db.WorkEntries.SingleAsync()).Title = $"version {version}";
+                    (await db.SourceEvidence.SingleAsync()).Title = $"version {version}";
+                }
+                await db.SaveChangesAsync();
+                await sourceService.SyncAsync();
+            }
+            var status = await targetService.SyncAsync();
+            Assert.Null(status.LastError);
+            await targetService.SyncAsync();
+            await using var verify = target.Factory.CreateDbContext();
+            var work = Assert.Single(await verify.RemoteWorkEntries.ToListAsync());
+            var evidence = Assert.Single(await verify.RemoteSourceEvidence.ToListAsync());
+            Assert.Equal(3, work.Version);
+            Assert.Equal("version 3", work.Title);
+            Assert.Equal(3, evidence.Version);
+            Assert.Equal("version 3", evidence.Title);
+            Assert.Equal(6, await verify.SyncProcessedEvents.CountAsync());
+            Assert.Equal(3, await verify.SyncProcessedBatches.CountAsync());
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task Invalid_batch_records_error_without_committing_partial_imports_and_can_retry()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "worklens-sync-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await using var source = await Fixture.CreateAsync();
+            await using var target = await Fixture.CreateAsync();
+            var sourceService = new SyncService(source.Factory, NullLogger<SyncService>.Instance);
+            var targetService = new SyncService(target.Factory, NullLogger<SyncService>.Instance);
+            await sourceService.ConfigureAsync(root, "source", true);
+            await targetService.ConfigureAsync(root, "target", false);
+            await using (var db = source.Factory.CreateDbContext())
+            {
+                db.WorkEntries.Add(new WorkEntry { Title = "retry", WorkDate = new DateOnly(2026, 10, 1) });
+                await db.SaveChangesAsync();
+            }
+            await sourceService.SyncAsync();
+            var validPath = Assert.Single(Directory.EnumerateFiles(root, "*.jsonl", SearchOption.AllDirectories));
+            var bytes = System.Text.Encoding.UTF8.GetBytes(await File.ReadAllTextAsync(validPath) + "invalid json\n");
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+            var invalidPath = Path.Combine(Path.GetDirectoryName(validPath)!, $"invalid-{hash}.jsonl");
+            await File.WriteAllBytesAsync(invalidPath, bytes);
+            var status = await targetService.SyncAsync();
+            Assert.False(string.IsNullOrWhiteSpace(status.LastError));
+            Assert.Null(status.LastImportedAt);
+            await using (var verify = target.Factory.CreateDbContext())
+            {
+                Assert.Empty(await verify.RemoteWorkEntries.ToListAsync());
+                Assert.Empty(await verify.SyncProcessedEvents.ToListAsync());
+                Assert.Empty(await verify.SyncProcessedBatches.ToListAsync());
+                Assert.Equal(status.LastError, (await verify.SyncConfigurations.SingleAsync()).LastError);
+            }
+            File.Delete(invalidPath);
+            status = await targetService.SyncAsync();
+            Assert.Null(status.LastError);
+            Assert.NotNull(status.LastImportedAt);
+            await using var retried = target.Factory.CreateDbContext();
+            Assert.Equal("retry", Assert.Single(await retried.RemoteWorkEntries.ToListAsync()).Title);
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private readonly string path;
