@@ -9,6 +9,36 @@ namespace WorkLens.Tests;
 
 public sealed class ReportServiceRemoteEvidenceTests
 {
+    [Fact]
+    public async Task Shareable_context_includes_synced_entries_and_evidence_without_local_sources()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<WorkLensDbContext>().UseSqlite(connection).Options;
+        var date = new DateOnly(2026, 9, 11);
+        var timestamp = new DateTimeOffset(date.ToDateTime(new TimeOnly(10, 0)), TimeZoneInfo.Local.GetUtcOffset(date.ToDateTime(new TimeOnly(10, 0))));
+        var entryId = Guid.NewGuid();
+        await using (var db = new WorkLensDbContext(options))
+        {
+            await db.Database.EnsureCreatedAsync();
+            db.RemoteWorkEntries.Add(new RemoteWorkEntry { OriginDeviceId = Guid.NewGuid(), OriginEntityId = Guid.NewGuid(), Id = entryId, WorkDate = date, Hours = 2, Title = "同步工作紀錄" });
+            db.RemoteWorkEntries.Add(new RemoteWorkEntry { OriginDeviceId = Guid.NewGuid(), OriginEntityId = Guid.NewGuid(), Id = Guid.NewGuid(), WorkDate = date, Hours = 9, Title = "已刪除紀錄", IsDeleted = true });
+            db.RemoteSourceEvidence.Add(new RemoteSourceEvidence { OriginDeviceId = Guid.NewGuid(), OriginEntityId = Guid.NewGuid(), Id = Guid.NewGuid(), SourceId = Guid.NewGuid(), Kind = EvidenceKind.Commit, Title = "同步提交內容", OccurredAt = timestamp });
+            db.RemoteSourceEvidence.Add(new RemoteSourceEvidence { OriginDeviceId = Guid.NewGuid(), OriginEntityId = Guid.NewGuid(), Id = Guid.NewGuid(), SourceId = Guid.NewGuid(), Title = "已刪除佐證", OccurredAt = timestamp, IsDeleted = true });
+            db.RemoteSourceEvidence.Add(new RemoteSourceEvidence { OriginDeviceId = Guid.NewGuid(), OriginEntityId = Guid.NewGuid(), Id = Guid.NewGuid(), SourceId = Guid.NewGuid(), Title = "期間外佐證", OccurredAt = timestamp.AddDays(-1) });
+            await db.SaveChangesAsync();
+        }
+
+        var context = await CreateService(options).GetShareableDailyContextAsync(date);
+
+        Assert.Contains("同步工作紀錄", context.Input);
+        Assert.Contains("同步提交內容", context.Input);
+        Assert.DoesNotContain("已刪除", context.Input);
+        Assert.DoesNotContain("期間外", context.Input);
+        Assert.Equal(2, context.TotalHours);
+        Assert.Contains(entryId, context.EntryIds);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

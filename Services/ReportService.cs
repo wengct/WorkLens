@@ -302,6 +302,10 @@ public sealed class ReportService(
                         x.WorkDate < reportEndDate &&
                         (x.ProjectId == null || aiProjectIds.Contains(x.ProjectId.Value)))
             .ToListAsync(cancellationToken);
+        var remoteEntries = await db.RemoteWorkEntries.AsNoTracking()
+            .Where(x => !x.IsDeleted && x.WorkDate >= reportStartDate && x.WorkDate < reportEndDate)
+            .ToListAsync(cancellationToken);
+        entries.AddRange(remoteEntries.Select(ActivityQueryService.ToWorkEntry));
         entries = entries
             .OrderBy(x => x.WorkDate)
             .ThenBy(x => x.CreatedAt)
@@ -317,6 +321,12 @@ public sealed class ReportService(
             .Where(x => (sourceIds.Contains(x.SourceId) || x.Kind == EvidenceKind.Manual) &&
                         (x.ProjectId == null || aiProjectIds.Contains(x.ProjectId.Value)))
             .ToList();
+        // Synced sources belong to another device and have no local ActivitySource.
+        // Do not require their source IDs to exist in this device's configuration.
+        var remoteEvidence = await db.RemoteSourceEvidence.AsNoTracking()
+            .Where(x => !x.IsDeleted)
+            .ToListAsync(cancellationToken);
+        eligibleEvidence.AddRange(remoteEvidence.Select(ActivityQueryService.ToEvidence));
         var sessionMessages = eligibleEvidence
             .Where(x => IsConversationEvidence(x.Kind))
             .ToDictionary(x => x.Id, GetAiSessionMessages);
