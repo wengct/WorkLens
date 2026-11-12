@@ -70,6 +70,7 @@ public sealed class DatabaseInitializerTests
         var configuration = await db.AiProviders.SingleAsync();
         Assert.Equal("ask-bridge", configuration.ProviderType);
         Assert.True(configuration.UseHeadless);
+        Assert.True(configuration.UseTemporaryChat);
         Assert.Null(configuration.ProtectedApiKey);
         Assert.Null(configuration.ApiEndpoint);
         Assert.Null(configuration.Model);

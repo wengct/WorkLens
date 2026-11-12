@@ -180,6 +180,7 @@ public sealed class AiConfigurationService(
         destination.Name = source.Name;
         destination.ProviderType = source.ProviderType;
         destination.UseHeadless = source.UseHeadless;
+        destination.UseTemporaryChat = source.UseTemporaryChat;
         destination.Provider = source.Provider;
         destination.ExecutablePath = source.ExecutablePath;
         destination.ApiEndpoint = source.ApiEndpoint;

@@ -71,6 +71,7 @@
                 <div class="field"><label for="ai-service">AI 服務</label><select id="ai-service" @bind="configuration.Provider"><option value="chatgpt">ChatGPT</option><option value="gemini">Gemini</option><option value="claude">Claude</option></select></div>
                 <div class="field full"><label for="ask-bridge-path">ask-bridge 執行檔路徑（選填）</label><input id="ask-bridge-path" @bind="configuration.ExecutablePath" placeholder="留白則自動尋找" /></div>
                 <div class="field full"><label class="inline-checkbox"><input type="checkbox" @bind="configuration.UseHeadless" /> 背景執行瀏覽器（--headless=true）</label></div>
+                <div class="field full"><label class="inline-checkbox"><input type="checkbox" @bind="configuration.UseTemporaryChat" aria-describedby="temporary-chat-hint" /> 使用臨時聊天</label><small id="temporary-chat-hint" class="muted">適用於 AI 整理與測試。Gemini 需使用個人 Google 帳號。</small></div>
             }
             else
             {
@@ -350,6 +351,7 @@
         IsDefault = source.IsDefault,
         ProviderType = source.ProviderType,
         UseHeadless = source.UseHeadless,
+        UseTemporaryChat = source.UseTemporaryChat,
         Provider = source.Provider,
         ExecutablePath = source.ExecutablePath,
         ProtectedApiKey = source.ProtectedApiKey,

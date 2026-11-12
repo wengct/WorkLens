@@ -8,7 +8,7 @@ namespace WorkLens.Services;
 
 public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderAdapter
 {
-    private static readonly string[] RequiredFlags = ["--provider", "--new", "--timeout", "--file"];
+    private static readonly string[] RequiredFlags = ["--provider", "--timeout", "--file"];
     private const int ReportGenerationCliTimeoutSeconds = 300;
     private static readonly TimeSpan ReportGenerationTimeout = TimeSpan.FromSeconds(315);
     private readonly SemaphoreSlim aiLock = new(1, 1);
@@ -83,7 +83,7 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
             timeout: TimeSpan.FromSeconds(10),
             cancellationToken: cancellationToken);
         var help = helpResult.StandardOutput + Environment.NewLine + helpResult.StandardError;
-        var missingFlags = RequiredFlags.Where(flag =>
+        var missingFlags = RequiredFlags.Append(ChatModeArgument(configuration)).Where(flag =>
             !help.Contains(flag, StringComparison.OrdinalIgnoreCase)).ToArray();
 
         var nodeResult = await processRunner.RunAsync(
@@ -114,7 +114,7 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
                 new AiProviderValidationResult(
                     false,
                     "IncompatibleVersion",
-                    "ask-bridge 缺少 WorkLens 需要的 CLI 能力。",
+                    "ask-bridge 缺少 WorkLens 需要的 CLI 能力。請更新 ask-bridge 後重新偵測。",
                     executable,
                     version,
                     details),
@@ -259,7 +259,7 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
                         detection.ExecutablePath,
                         [
                             "--provider", configuration.Provider,
-                            "--new",
+                            ChatModeArgument(configuration),
                             HeadlessArgument(configuration.UseHeadless),
                             "--timeout", "60",
                             "這是 WorkLens 的連線測試。不要讀取或要求任何工作資料，只回覆 OK。"
@@ -371,7 +371,7 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
         {
             arguments.AddRange([
                 "--provider", request.Target,
-                "--new",
+                ChatModeArgument(configuration),
                 HeadlessArgument(configuration.UseHeadless),
                 "--timeout", ReportGenerationCliTimeoutSeconds.ToString(),
                 "--file", contextFile,
@@ -505,6 +505,9 @@ public sealed class AskBridgeService(ProcessRunner processRunner) : IAiProviderA
 
         return null;
     }
+
+    private static string ChatModeArgument(AiProviderConfiguration configuration) =>
+        configuration.UseTemporaryChat ? "--temporary" : "--new";
 
     private static string HeadlessArgument(bool useHeadless) =>
         $"--headless={useHeadless.ToString().ToLowerInvariant()}";

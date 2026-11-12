@@ -238,6 +238,7 @@ public sealed class AiProviderConfiguration
     public bool IsDefault { get; set; }
     public string ProviderType { get; set; } = "ask-bridge";
     public bool UseHeadless { get; set; } = true;
+    public bool UseTemporaryChat { get; set; } = true;
     public string Provider { get; set; } = "chatgpt";
     public string? ExecutablePath { get; set; }
     public string? ProtectedApiKey { get; set; }

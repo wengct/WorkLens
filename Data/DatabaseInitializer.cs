@@ -101,6 +101,7 @@ public sealed class DatabaseInitializer(IDbContextFactory<WorkLensDbContext> fac
         await EnsureSensitiveScanExclusionsSchemaAsync(db, cancellationToken);
         await RemoveLegacyAiProviderEnabledColumnAsync(db, cancellationToken);
         await EnsureUseHeadlessColumnAsync(db, cancellationToken);
+        await EnsureColumnAsync(db, "AiProviders", "UseTemporaryChat", "INTEGER NOT NULL DEFAULT 1", cancellationToken);
         await EnsureWorkEntryTitleColumnAsync(db, cancellationToken);
         await RecoverInterruptedSourceCollectionsAsync(db, cancellationToken);
         await RecoverInterruptedScheduleExecutionsAsync(db, cancellationToken);

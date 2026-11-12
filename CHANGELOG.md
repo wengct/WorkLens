@@ -4,6 +4,12 @@ WorkLens 的所有重要變更皆記錄於此文件。
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-11-12
+
+### 改善
+
+- 每筆 ask-bridge 設定可選擇是否在 AI 整理與測試中使用臨時聊天。預設開啟，需要支援 `--temporary` 的 ask-bridge 版本。
+
 ## [1.14.2] - 2026-11-02
 
 ### 修正
@@ -349,7 +355,8 @@ WorkLens 的所有重要變更皆記錄於此文件。
 - SQLite 排程紀錄排序不再嘗試於伺服器端執行不支援的 `DateTimeOffset` 排序。
 - 側邊欄的發布版本現在會正確呈現數值，而非 Razor 運算式文字。
 
-[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.14.2...HEAD
+[尚未發布]: https://github.com/wengct/WorkLens/compare/v1.15.0...HEAD
+[1.15.0]: https://github.com/wengct/WorkLens/compare/v1.14.2...v1.15.0
 [1.14.2]: https://github.com/wengct/WorkLens/compare/v1.14.1...v1.14.2
 [1.14.1]: https://github.com/wengct/WorkLens/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/wengct/WorkLens/compare/v1.13.2...v1.14.0

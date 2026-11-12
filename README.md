@@ -211,6 +211,8 @@ WorkLens 唯讀掃描 `brain/<session-id>/.system_generated/logs/transcript_full
 
 `ask-bridge` 負責管理自己的瀏覽器設定檔與登入狀態。WorkLens 只會呼叫 CLI，不會將 cookie 或憑證複製到 repository。
 
+在「AI 設定」中，每筆 ask-bridge 設定都可選擇是否「使用臨時聊天」，適用於 AI 整理與測試。此選項預設開啟，需要支援 `--temporary` 的 ask-bridge 版本。Gemini 的臨時聊天需要個人 Google 帳號。取消勾選後，每次會開啟一般的新對話。
+
 ### AI 傳送前的機敏資訊防護
 
 WorkLens 每次準備把工作資料交給 AI 前，都會在本機掃描最終工作資料與有效 Prompt。發行包目前隨附固定的官方 `leak-hunter v0.5.4` 執行檔，並在建置時以 SHA-256 驗證；使用者不需要另外安裝 `cargo`／`npm` 套件，也不會從系統 PATH 使用其他版本。更新 WorkLens 時會一併更新掃描器，版本檢查失敗會停止 AI 傳送。WorkLens 也會補充 Email 與自訂敏感詞比對。若掃描器或 Email 規則誤判特定完整值，可在「機敏資訊防護」設定掃描排除關鍵字；排除項目會原樣傳送，自訂敏感詞仍會遮蔽。

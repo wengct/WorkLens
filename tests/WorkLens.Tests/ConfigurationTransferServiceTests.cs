@@ -53,7 +53,7 @@ public sealed class ConfigurationTransferServiceTests
         {
             Includes = new ConfigurationTransferSelection(AiSettings: true),
             AiEnabled = true,
-            AiProviders = [new TransferAiProvider("Imported", true, "ask-bridge", true, "chatgpt", "C:\\tool\\ask-bridge", null, null, null, AiReasoningLevel.Default, "prompt", "", "")]
+            AiProviders = [new TransferAiProvider("Imported", true, "ask-bridge", true, "chatgpt", "C:\\tool\\ask-bridge", null, null, null, AiReasoningLevel.Default, "prompt", "", "", UseTemporaryChat: false)]
         };
         var result = await new ConfigurationTransferService(fixture.Factory).ApplyAsync(document, new Dictionary<string, TransferConflictAction>());
 
@@ -61,6 +61,7 @@ public sealed class ConfigurationTransferServiceTests
         await using var verify = await fixture.Factory.CreateDbContextAsync();
         Assert.False((await verify.AiFeatureSettings.SingleAsync()).Enabled);
         var provider = await verify.AiProviders.SingleAsync();
+        Assert.False(provider.UseTemporaryChat);
         Assert.Equal("NotConfigured", provider.Status);
         Assert.Null(provider.LastCheckedAt);
     }

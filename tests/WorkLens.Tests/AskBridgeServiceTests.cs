@@ -6,8 +6,11 @@ namespace WorkLens.Tests;
 
 public sealed class AskBridgeServiceTests
 {
-    [Fact]
-    public async Task Headless_generation_restarts_an_unknown_managed_browser_and_closes_it_after_invocation()
+    [Theory]
+    [InlineData(true, "--temporary", "--new")]
+    [InlineData(false, "--new", "--temporary")]
+    public async Task Headless_generation_uses_selected_chat_mode_and_closes_managed_browser(
+        bool useTemporaryChat, string expectedFlag, string excludedFlag)
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -38,7 +41,8 @@ public sealed class AskBridgeServiceTests
                 {
                     Provider = "chatgpt",
                     ExecutablePath = executable,
-                    UseHeadless = true
+                    UseHeadless = true,
+                    UseTemporaryChat = useTemporaryChat
                 },
                 PreparedRequest(
                     reportId,
@@ -53,6 +57,8 @@ public sealed class AskBridgeServiceTests
             var invocations = await File.ReadAllLinesAsync(invocationLog);
             Assert.Equal(["close", "--provider", "close"], invocations);
             Assert.Contains("--headless=true", result.RawResponse, StringComparison.Ordinal);
+            Assert.Contains(expectedFlag + " ", result.RawResponse, StringComparison.Ordinal);
+            Assert.DoesNotContain(excludedFlag + " ", result.RawResponse, StringComparison.Ordinal);
         }
         finally
         {
